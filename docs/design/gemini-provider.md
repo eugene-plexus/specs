@@ -142,3 +142,17 @@ takes `durationSeconds` only as a number (inference-driver `7d22ac9`).
 Unit tests against a fixture shaped from the docs; then one live run with
 Troy's key (chat with a tool round trip on a thinking model, embeddings, one
 image, one short video, one speech clip, one transcription), its cost stated.
+
+## 7. Row 58 follow-up (2026-10-22)
+
+Row 58 closes G5's temporary format restriction: PyAV encodes the provider's
+PCM as mp3 (the default), opus, aac or flac; explicit wav and pcm still work.
+This supersedes G11's old explicit-mp3 refusal. Native `countTokens` now
+counts the translated full prompt, and embedding `dimensions` reaches every
+batch entry as `outputDimensionality`. No layer imitates a requested width
+by truncating or padding vectors. Provider refusals retain their cause.
+
+The unit checks use fixture responses and real PyAV encoders/decoders.
+The SDK/CLI process acceptance is wired into Linux CI; its builder did not
+start agents or engines or use a live Google key. Live provider and target
+platform codec measurements remain separate, as recorded in `gemini-door.md`.

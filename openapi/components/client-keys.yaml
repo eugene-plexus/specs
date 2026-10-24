@@ -18,7 +18,21 @@ components:
         lastUsedAt:
           type: string
           format: date-time
-          description: Reserved; not currently measured.
+          description: When the authority last admitted a check or acquisition with this key, to the minute. Absent, no use recorded.
+        retiresAt:
+          type: string
+          format: date-time
+          description: Set when the key was rotated. The token works until then, and new requests on it are refused as replaced afterwards. Running requests finish.
+        replaces:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The id of the key this one replaced.
+        replacedBy:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The id of the key that replaced this one.
         limits:
           $ref: '#/components/schemas/ClientKeyLimits'
           description: Absent on legacy keys (all models, no per-key limits); new keys receive bounded defaults.
@@ -41,6 +55,21 @@ components:
         name: {type: string, minLength: 1, maxLength: 64}
         ttlDays: {type: integer, minimum: 1, maximum: 3650, default: 365}
         limits: {$ref: '#/components/schemas/ClientKeyLimits'}
+    ClientKeyRotateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        overlapSeconds:
+          type: integer
+          minimum: 0
+          maximum: 2592000
+          default: 86400
+          description: How long the old token keeps working. 0 stops it now. The old and new tokens share one concurrency and rate allowance during the overlap.
+        ttlDays:
+          type: integer
+          minimum: 1
+          maximum: 3650
+          description: Lifetime of the new key. Absent, the old key's lifetime.
     ClientKeyLimits:
       type: object
       additionalProperties: false

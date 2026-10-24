@@ -1,10 +1,12 @@
 # A Gemini API door: the first measurement
 
-**Status:** measured 2026-10-20. Not designed, and not scheduled.
+**Status:** CLI measured 2026-10-20; Python SDK measured 2026-10-22.
+Row 58 phase 2 is implemented and locally checked; process acceptance awaits CI.
 **Issue:** gateway#5.
 
 gateway#5 asked for a measurement before any code: does a client built on Google's SDK accept
-another base URL, and what does it send? This is that measurement, for Gemini CLI.
+another base URL, and what does it send? The CLI measurement is below;
+section 4 adds the Python SDK capture required by row 58a.
 
 ## 1. What was measured
 
@@ -57,3 +59,173 @@ GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8553 GEMINI_API_KEY=... gemini -p "Say h
   function-response parts onto tool calls and their results.
 - **Streaming as SSE** in Gemini's shape (`?alt=sse`), with `usageMetadata` and `finishReason` in
   its words, as gateway#5's proposed shape says.
+
+## 4. Python SDK capture (row 58a, 2026-10-22)
+
+**Measured, not inferred from Google's reference.** Python **3.12.10**, Windows,
+`google-genai` **2.31.0**, installed from a locally cached wheel into
+`.codex-tmp/genai-venv/`. The throwaway `ThreadingHTTPServer` listened on
+**127.0.0.1:18558**, used a fake key, recorded requests, and served fixture
+JSON/SSE. It was shut down after the capture. No gateway, agent, engine,
+Google service or real hardware inference ran. The temporary listener and
+sanitized capture are `.codex-tmp/capture-genai.py` and
+`.codex-tmp/google-genai-capture.json` in the row's workspace, outside the repos.
+
+The SDK accepts a custom origin through `http_options.base_url`:
+
+```python
+from google import genai
+from google.genai import types
+
+with genai.Client(
+    api_key="row58-sdk-capture-fake-key",
+    http_options=types.HttpOptions(
+        base_url="http://127.0.0.1:18558",
+        timeout=5000,
+        client_args={"trust_env": False},
+    ),
+) as client:
+    reply = client.models.generate_content(model="fixture/chat", contents="Say hi")
+    print(reply.text)
+```
+
+The listener's text printed as **"Hi from the Python capture."** The origin
+has no `/v1beta` suffix: the SDK adds it by default. Setting
+`types.HttpOptions(api_version="v1", ...)` changes every path below to `/v1`;
+the same operations passed there. Slashes in `fixture/chat` were preserved
+as path segments, so the door must capture the whole model id before the
+method suffix.
+
+Every captured request carried **`x-goog-api-key`**, with neither a bearer
+header nor a `key` query parameter. Both `user-agent` and
+`x-goog-api-client` were `google-genai-sdk/2.31.0 gl-python/3.12.10`.
+`timeout=5000` also sent `X-Server-Timeout: 5`. These are observations of this
+SDK version; query-key authentication remains part of the door's contract
+for other clients, with redaction required on every logging and metrics path.
+
+| SDK operation | Captured request | Fixture result parsed by SDK |
+|---|---|---|
+| `models.generate_content` | `POST /v1beta/models/fixture/chat:generateContent` | text, usage and actual `modelVersion` |
+| `models.generate_content_stream` | `POST /v1beta/models/fixture/chat:streamGenerateContent?alt=sse` | two data-only SSE frames joined to "Hi from the stream." |
+| `models.count_tokens` | `POST /v1beta/models/fixture/chat:countTokens` | `total_tokens == 7` |
+| `models.list(config={"page_size": 1})` | `GET /v1beta/models?pageSize=1`, then `&pageToken=capture-page-2` | two model names, iteration stops when `nextPageToken` is absent |
+| `models.get(model="fixture/chat")` | `GET /v1beta/models/fixture/chat` | `name == "models/fixture/chat"` |
+
+Plain generation, streaming and counting each sent this body:
+
+```json
+{"contents":[{"parts":[{"text":"Say hi"}],"role":"user"}]}
+```
+
+Structured output and thinking sent the following `generationConfig`.
+Both dictionary config and explicitly constructed `GenerateContentConfig`
+and `ThinkingConfig` objects produced these same spellings:
+
+```json
+{
+  "responseMimeType": "application/json",
+  "responseJsonSchema": {
+    "type": "object",
+    "properties": {"answer": {"type": "string"}},
+    "required": ["answer"]
+  },
+  "thinkingConfig": {"include_thoughts": true, "thinking_level": "HIGH"}
+}
+```
+
+The SDK parsed the fixture's `{"answer":"hi"}` response. Unlike the recorded
+CLI's camelCase nested fields, this Python SDK version sent **snake_case
+inside `thinkingConfig`**. Its function declarations likewise used
+**`parameters_json_schema`** inside camelCase `functionDeclarations`, for
+both dictionaries and typed `Tool`/`FunctionDeclaration` objects:
+
+```json
+{"tools":[{"functionDeclarations":[{
+  "name":"weather",
+  "parameters_json_schema":{
+    "type":"object",
+    "properties":{"city":{"type":"string"}},
+    "required":["city"]
+  }
+}]}],"generationConfig":{}}
+```
+
+With automatic function calling disabled, the fixture's function call
+parsed as `id="call-capture"`, `name="weather"`, `args={"city":"Eugene"}`.
+The next request carried that `functionCall` in a `role:"model"` turn, and
+`{"functionResponse":{"name":"weather","response":{"temperature":18}}}`
+in a `role:"user"` turn. The SDK helper omitted the response id, so matching
+by the preceding call's name is needed. The final fixture text parsed.
+
+**Counting limitation observed in the client:** adding `system_instruction`
+and tools through `CountTokensConfig` raised `ValueError` before any HTTP
+request: `system_instruction parameter is only supported in Gemini
+Enterprise Agent Platform mode, not in Gemini Developer API mode.` This
+happened with both API versions. It does not establish a server limitation:
+the door contract also accepts raw `generateContentRequest` for counting
+the complete translated prompt, including system instructions and tools.
+
+The fixture's first SSE frame had no `finishReason` or `usageMetadata`;
+the second carried `STOP` and usage. There were no `event:` lines and no
+`[DONE]` sentinel. The SDK accepted these partial frames, so their contract
+does not require complete-response fields on every frame.
+
+## 5. Defaults built into the row 58 contract
+
+- **R58-NAMES, default built:** known Eugene ids resolve directly;
+  configured Gemini names resolve to their selected model or role;
+  otherwise both CLI calls use `role:chat`. `geminiModelNames`, labelled
+  **Gemini model names**, is live and editable in the GUI using the existing
+  model-slot renderer. `modelVersion` and envelope headers identify what
+  actually answered. Model/tool scope and locality limits still apply.
+- **The `/v1/models` overlap:** retain OpenAI's `object`/`data` and model
+  `id`, adding the Gemini `models` projection and model `name`/metadata.
+  Both projections describe the same caller-visible page. Gemini-key
+  requests receive Google's error shape; bearer-only catalogue errors
+  retain the existing OpenAI shape. `/v1beta/models` always uses Gemini's
+  shape. This avoids changing the existing OpenAI discovery response.
+- **Thinking budgets:** map to effort as specified in the contract; name
+  `thinkingConfig.thinkingBudget` in ignored settings when an exact
+  positive budget is reduced to effort. Omitted `includeThoughts` is false.
+- **Wire compatibility:** accept both the CLI's camelCase and the Python
+  capture's nested snake_case fields. Conflicting spellings are refused
+  naming the field; a supported setting must not disappear silently.
+
+These captures establish the client's wire behavior and response parsing.
+At the contract commit, phase 2 still needed gateway/driver behavior tests
+and the row's fixture acceptance, including query-key redaction. A live run with an actual
+provider key and real speech encoders on the target platforms remains
+Troy's measurement; these captures do not establish Google's acceptance,
+model availability, audio fidelity or hardware performance.
+
+## 6. Phase 2 implementation evidence (2026-10-22)
+
+The gateway translates both captured spellings onto the shared inference path,
+including native token counts, model discovery, roles and client-key policy.
+Unknown names default to `role:chat`; the live **Gemini model names** setting
+uses the existing GUI model-slot editor. Stream headers are resolved at the
+first output, after failover commits, and the terminal frame identifies the
+model that answered. Safety settings and reduced thinking budgets are named
+in ignored settings. Query credentials are removed before access logging.
+
+The real `google-genai` 2.31.0 client was also checked in process against this
+gateway for both API versions: chat, streaming, JSON output, counting, paged
+listing and lookup. This used a fake driver and an HTTP transport into the
+app, with no listener, agent, engine or live provider.
+
+`scripts/row58-gemini-door-acceptance.py` is the Linux CI acceptance. It uses
+the signed provider fixture install with row 2's agent entry-point harness,
+then the unchanged SDK for a tool round trip and the other operations. The
+CLI replay fixture retains the request fields documented in section 2;
+private system context and the full eight-function catalogue were not
+retained by that measurement and are abbreviated explicitly. It checks that
+the routing JSON parses on the first request. It also checks native counts,
+dimensions, decodable mp3/opus and query-key absence in logs and metrics.
+This process acceptance has not been run in this builder workspace because
+starting agents and engines here is prohibited. CI must run it.
+
+Row 58's speech default is now mp3, with opus, aac, flac, wav and pcm also
+available. PyAV encoding/decoding tests use fixture PCM; live Google audio,
+listings, quota, hardware timing and codec fidelity on each target platform
+remain the owner's live measurement. The new PyAV runtime dependency also
+needs the orchestrator's normal release-lock resolution before shipping.
