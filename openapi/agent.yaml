@@ -1021,6 +1021,35 @@ paths:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
 
+  /v1/people/known:
+    post:
+      tags: [auth]
+      operationId: peopleKnown
+      summary: Ask the root which of these people it still has, for this machine's store (row 53).
+      description: |
+        A service token this machine minted for its own `store` only. The
+        agent asks the root's `POST /v1/people/known` with its own node
+        token and answers what the root said. A machine that has not
+        joined a root, or a root that cannot be asked, answers 503 naming
+        the cause: the store then deletes nothing for removal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "components/common.yaml#/components/schemas/PeopleKnownRequest"
+      responses:
+        "200":
+          description: The root's answer.
+          content:
+            application/json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/PeopleKnownResult"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
   /v1/components:
     get:
       tags: [components]
@@ -6259,10 +6288,10 @@ components:
 
     ComponentName:
       type: string
-      enum: [agent, control, gateway, inference-driver, library, tool-driver, ui]
+      enum: [agent, control, gateway, inference-driver, library, store, tool-driver, ui]
       description: |
-        One of the seven packages an install is made of (`tool-driver`
-        since P8, 2026-09-29). Named rather than
+        One of the eight packages an install is made of (`tool-driver`
+        since P8, 2026-09-29; `store` since row 53, 2026-10-23). Named rather than
         inline: an inline enum here renamed the engine install's `State`
         to `State1` in the agent's generated models (the S6 trap again).
 

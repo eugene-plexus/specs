@@ -295,6 +295,7 @@ def test_the_installer_pins_are_read_for_every_consumer_it_carries() -> None:
         "gateway",
         "inference-driver",
         "library",
+        "store",
         "tool-driver",
         "ui",
     }

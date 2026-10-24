@@ -29,7 +29,7 @@
 #   1. fetches `uv` into the install prefix and nowhere else -- and fetches
 #      it again over one older than UV_MINIMUM,
 #   2. makes a virtualenv there with a Python `uv` downloads itself,
-#   3. installs the seven Eugene Plexus packages into it,
+#   3. installs the eight Eugene Plexus packages into it,
 #   4. checks that what landed can actually serve — see VERIFY below,
 #   5. writes a systemd unit (Linux: a system unit, or a user unit with
 #      --user) or launchd agent (macOS),
@@ -52,24 +52,25 @@
 # that export is `next build` output, gitignored on `main`. Installing
 # from a `main` archive therefore *succeeds* and produces a package with
 # no UI inside it — verified 2026-09-11, `static_dir()` was not even a
-# directory. The `dist` branch carries the built export so that all seven
+# directory. The `dist` branch carries the built export so that all eight
 # packages install by one mechanism. See install-paths §12, step 3.
 
 set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=0579a8d4eec05b82974d23531766babb9176e265
-PIN_CONTROL=c90d76d0383103afeeb517c5e226b358c94229f1
-PIN_GATEWAY=a1ad7777530bca9a6529f1143474daac68e92653
+PIN_AGENT=ee95fc9e35cf4f51f29f9363deb1f862d78b04ca
+PIN_CONTROL=34f655e461455e8b38c468f2fb5dab77c0e442b5
+PIN_GATEWAY=a6da8f6924395abd453c976b92887968ce54efc7
 PIN_DRIVER=7fb4c875ef86ae65b601249818212b2934d8b506
 PIN_LIBRARY=1b015632de2dddde6139719916b77128a9019869
+PIN_STORE=845e6803a2af6825eb1ae3fd550076cf9f3d1d0c
 PIN_TOOL_DRIVER=a9c8b03439b60d2ba24275bf9f17da02c245190e
-PIN_UI=c7b19760772771cdd4f7d6f932c1b63dcd11b373   # branch `dist`, not `main`
+PIN_UI=aa58e2fdc071206630197b5282ad0cbcefb9f9d8   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
-# block above: it is not one of the seven packages in the agent's prefix. It
+# block above: it is not one of the eight packages in the agent's prefix. It
 # must equal SITE_HOST_COMMIT in agent/src/eugene_plexus_agent/site_host.py,
 # and it moves at landing, with the agent's pin.
 PIN_SITE_HOST=5ac27d6f840ed58cc0ab45a09133c8bca46a4d91
@@ -1447,7 +1448,8 @@ def inventory(prefix: Path) -> dict:
     ]
     apps = prefix / "apps"
     software += [apps / name for name in ("pythons", "launcher", "ctl")]
-    data = [prefix / name for name in ("logs", "passphrase", "control-state")]
+    # `store`: the files apps kept through the gateway (row 53).
+    data = [prefix / name for name in ("logs", "passphrase", "control-state", "store")]
     for app in apps.iterdir() if apps.is_dir() and not apps.is_symlink() else []:
         if (
             app.is_dir()
@@ -1472,6 +1474,7 @@ def inventory(prefix: Path) -> dict:
             or item.name.startswith(
                 (
                     ".update-channel",
+                    ".store-declared",
                     "agent.yaml.",
                     "node.yaml.",
                     "control.yaml.",
@@ -3945,13 +3948,14 @@ run_step "installing locked dependencies" \
     in_prefix "$UV" pip install --python "$PYBIN" --require-hashes --only-binary :all: \
     -r "$PREFIX/release-requirements.lock"
 say "installing Eugene Plexus"
-run_step "installing the seven Eugene Plexus packages" \
+run_step "installing the eight Eugene Plexus packages" \
     in_prefix "$UV" pip install --python "$PYBIN" --no-deps --no-build-isolation \
     "eugene-plexus-agent @ $(gh_archive agent "$PIN_AGENT")" \
     "eugene-plexus-control @ $(gh_archive control "$PIN_CONTROL")" \
     "eugene-plexus-gateway @ $(gh_archive gateway "$PIN_GATEWAY")" \
     "eugene-plexus-inference-driver @ $(gh_archive inference-driver "$PIN_DRIVER")" \
     "eugene-plexus-library @ $(gh_archive library "$PIN_LIBRARY")" \
+    "eugene-plexus-store @ $(gh_archive store "$PIN_STORE")" \
     "eugene-plexus-tool-driver @ $(gh_archive tool-driver "$PIN_TOOL_DRIVER")" \
     "eugene-plexus-ui @ $(gh_archive ui "$PIN_UI")"
 
@@ -3981,6 +3985,7 @@ for mod, what in [
     ("eugene_plexus_gateway", "the gateway"),
     ("eugene_plexus_inference_driver", "the inference driver"),
     ("eugene_plexus_library", "the model library"),
+    ("eugene_plexus_store", "the store that keeps apps' files"),
     ("eugene_plexus_tool_driver", "the web-search tool driver"),
 ]:
     if importlib.util.find_spec(mod) is None:
@@ -4003,7 +4008,7 @@ raise SystemExit(1 if bad else 0)
 PYEOF
 
 in_prefix test -x "$VENV/bin/eugene-plexus-agent" || die "the eugene-plexus-agent command did not install"
-say "all seven packages present, with a web UI"
+say "all eight packages present, with a web UI"
 
 # --- 4b. join, if this machine is a worker ----------------------------
 # **The installer owns the one onboarding question, because this is the

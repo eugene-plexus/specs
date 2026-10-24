@@ -76,6 +76,7 @@ CONSUMERS: dict[str, str] = {
     "inference-driver": "scripts/codegen.py",
     "library": "scripts/codegen.py",
     "site-host": "scripts/codegen.py",
+    "store": "scripts/codegen.py",
     "tool-driver": "scripts/codegen.py",
     "ui": "scripts/codegen.mjs",
     "workbench": "scripts/codegen.py",
@@ -89,6 +90,7 @@ INSTALLER_PINS: dict[str, str] = {
     "gateway": "PIN_GATEWAY",
     "inference-driver": "PIN_DRIVER",
     "library": "PIN_LIBRARY",
+    "store": "PIN_STORE",
     "tool-driver": "PIN_TOOL_DRIVER",
     "ui": "PIN_UI",
 }
@@ -101,6 +103,7 @@ TABLE: dict[str, Document] = {
     "openapi/inference-driver.yaml": Document(consumers=("gateway", "inference-driver", "ui")),
     "openapi/library.yaml": Document(consumers=("gateway", "library", "ui")),
     "openapi/site-host.yaml": Document(consumers=("agent", "site-host")),
+    "openapi/store.yaml": Document(consumers=("gateway", "store", "ui")),
     "openapi/tool-driver.yaml": Document(consumers=("gateway", "tool-driver", "ui")),
     "openapi/workbench-ag-ui.yaml": Document(
         why_not=(
@@ -122,6 +125,7 @@ TABLE: dict[str, Document] = {
             "openapi/gateway.yaml",
             "openapi/inference-driver.yaml",
             "openapi/library.yaml",
+            "openapi/store.yaml",
             "openapi/tool-driver.yaml",
         ),
     ),

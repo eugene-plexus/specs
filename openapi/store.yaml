@@ -1,0 +1,945 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — store
+  version: 0.1.0-draft
+  summary: What the gateway's doors keep for people, each object with an owner and an end.
+  description: |
+    The platform half of the OpenAI API needs a place to keep things:
+    uploaded files first (row 53), then stored responses and
+    conversations (row 54), batches (row 55) and vector stores (row 56).
+    This component is that place. Every install has one, on the root by
+    default, started by the agent like the gateway and the library
+    (`docs/design/rows/row-53.md`).
+
+    **The gateway is its only client door.** Apps never call this
+    component. The gateway reaches it through its own agent's
+    `/api/proxy/store`, which finds the store on this machine or on the
+    machine that holds it, and calls it with the gateway's own service
+    token. The store implements no OpenAI or Anthropic shape: the
+    gateway renders its objects in the shape of the door that asked.
+
+    ## Token verification
+
+    This component holds no signing key. Its agent gives it, at spawn,
+    the path of the install's trust bundle, the authority key that must
+    have signed it, its own recipient name (`node:<name>`) and a service
+    token addressed to this machine alone, as every component gets them.
+
+    ## Owners
+
+    Every object belongs to one owner, named by the gateway on each call
+    in `X-Eugene-Plexus-Owner`, from the gateway's own admission and
+    never from the client:
+
+    * `person:<id>` when the root verified a person (`personId`);
+    * `key:<id>` for a client key with no person: the key's lineage when
+      the admission authority reports one, else its id;
+    * `install` for the owner's own console session;
+    * `component:<sub>` for a service token of one of the gateway's own
+      machine's components (not `service:`, the audience prefix retired
+      with the shared key).
+
+    **The header is believed only beside a gateway's service token**
+    (`sub: gateway`, this machine's own, or another machine's whose key
+    holds the `gateway` grant). Any other credential that sends it,
+    including another component's token and an operator session, is
+    refused with 403. An object route without the header is refused with
+    400.
+
+    **An object is seen only by its owner.** Another owner's id answers
+    404 with the same body as an id that does not exist, so a request
+    learns nothing of what others keep. The install owner does not read
+    people's objects through any route: `GET /v1/owners` gives counts
+    and bytes per owner, never names or content.
+
+    ## Ends
+
+    **A file is kept until it is deleted**, as OpenAI keeps one, unless
+    its caller sent `expiresAfterSeconds` (at most 30 days, OpenAI's
+    bound) or the owner set a default life (`fileDefaultDays`, 0 by
+    default). An upload in progress lives one hour, as OpenAI's does. An
+    ended object answers 404 at once; the sweep, every
+    `sweepIntervalMinutes`, deletes it for good: its row (SQLite's
+    `secure_delete` is on) and, when the last reference to it goes, its
+    blob file.
+
+    **The quota bounds the disk.** Room is taken before a byte is
+    written: a whole file's size, or a part's against its upload's
+    declared size. An upload is joined once at a time (a second
+    `complete` is a 409), and its parts are deleted as they are joined.
+    An ended file counts until its bytes are deleted; an owner at its
+    quota has its own ended files deleted first.
+
+    **A removed person's objects are hidden, then deleted** (call
+    R53-REMOVE, Choice 2: Workbench's rules for a removed person, row 7).
+    Each sweep asks the root, through this machine's agent
+    (`POST /v1/people/known`, the answer Workbench gets from
+    `/oidc/subjects`), whether the people who own objects here still
+    exist. A person it no longer has is hidden at once: every lookup and
+    listing of theirs answers as if they kept nothing (the same 404 as an
+    id that does not exist, to them and to everyone), nothing new is kept
+    for them (403), and the owner's console shows only their counts and
+    their date. Their objects are deleted for good `removedPeopleDays`
+    (30) after, the date fixed when they were hidden; at once when
+    `removedPeopleRetention` is `none`; or when the owner presses Delete
+    now (`POST /v1/removals/delete`). Deleting is a true delete (MRC27):
+    the rows, the blob files no one else names, and the person's rows in
+    every copy kept before a migration. A person the root has again
+    before the date is restored: the same ids and the same bytes. A date
+    that has passed is final: a person the root has again after it is not
+    restored, and what they kept is deleted. A root that cannot be asked
+    hides and restores nobody; a date that has passed is kept to.
+
+    A write already under way when a person is removed never publishes.
+    A write is busy for its owner from admission, before a byte of its
+    body is read, and a hidden or deleted owner is refused there (403);
+    every commit (a file, an assembled upload, a part) re-checks the owner
+    in its own transaction; and deleting a removed person waits for that
+    person's writes under way, a body still arriving included. Once
+    everything is gone the person stays as a tombstone, the id and the
+    date and no bytes: a removed person's id is never reused, so it never
+    blocks a real person, and nothing more is ever kept for it. Deleting is
+    compare-and-delete on the marker the sweep saw, read again after the
+    root answered, so an answer that is stale by the time it is used cannot
+    delete a person restored meanwhile. The marker is the retry record and
+    is removed last, only after every copy kept before a migration is
+    purged; a copy that cannot be purged keeps it and is named in the
+    sweep's `error`. Each deletion takes only what is older than the
+    store's generation read before the root was asked.
+
+    ## Storage
+
+    `<data>/store/store.sqlite3` (objects, owners, ends, parts) and
+    `<data>/store/blobs/`, each blob named by its SHA-256, so two owners
+    who upload the same bytes share one file and neither can tell. Blob
+    names are computed, never taken from a request.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+servers:
+  - url: http://{host}:{port}
+    description: Loopback on the machine that holds it; one per install.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8084'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: files
+    description: Files and uploads, for the gateway's `/v1/files` and `/v1/uploads` doors.
+  - name: store
+    description: Counts, the sweep and removed people, for the owner's console.
+  - name: config
+    description: The standard config trio.
+  - name: meta
+    description: Health and restart.
+
+paths:
+
+  /v1/files:
+    post:
+      tags: [files]
+      operationId: createStoredFile
+      summary: Keep one file, sent whole as the request body.
+      description: |
+        The body is the file's bytes (at most 16 MiB, the gateway's body
+        limit; larger files come through `/v1/uploads`). The name, the
+        purpose and the end ride the query, so no multipart is decoded
+        twice. Answers 413 with the numbers when the owner's quota would
+        be passed, and 403 when the owner turned files off or the owner
+        is a person Eugene removed.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+        - name: filename
+          in: query
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 255}
+        - name: purpose
+          in: query
+          required: true
+          schema: {$ref: '#/components/schemas/StoredFilePurpose'}
+        - name: mimeType
+          in: query
+          required: false
+          schema: {type: string, maxLength: 255}
+          description: What the caller said the file is. Absent, it is `application/octet-stream`.
+        - name: expiresAfterSeconds
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 2592000}
+          description: |
+            The file's end, in seconds after it is kept, at most 30 days.
+            Absent, the install's `fileDefaultDays`, which by default is
+            none: the file is kept until it is deleted.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        '201':
+          description: The file, kept.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredFile'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {$ref: '#/components/responses/OverQuota'}
+    get:
+      tags: [files]
+      operationId: listStoredFiles
+      summary: The owner's files, newest first by default.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+        - name: purpose
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/StoredFilePurpose'}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 10000, default: 10000}
+        - name: order
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/StoredListOrder'}
+        - name: after
+          in: query
+          required: false
+          schema: {type: string, maxLength: 64}
+          description: A file id; the page starts after it, in `order`.
+        - name: before
+          in: query
+          required: false
+          schema: {type: string, maxLength: 64}
+          description: A file id; the page ends before it, in `order`.
+      responses:
+        '200':
+          description: One page of the owner's files. Another owner's files are never in it.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredFileList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /v1/files/{fileId}:
+    parameters:
+      - $ref: '#/components/parameters/FileId'
+    get:
+      tags: [files]
+      operationId: getStoredFile
+      summary: One of the owner's files.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: The file.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredFile'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [files]
+      operationId: deleteStoredFile
+      summary: Delete one of the owner's files, for good.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: Deleted. Its blob is unlinked when no other file shares it.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredFileDeleted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /v1/files/{fileId}/content:
+    parameters:
+      - $ref: '#/components/parameters/FileId'
+    get:
+      tags: [files]
+      operationId: getStoredFileContent
+      summary: The bytes of one of the owner's files.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: |
+            The bytes as kept, with `Content-Type` the file's `mimeType`
+            and `X-Eugene-Plexus-Sha256` its digest.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /v1/uploads:
+    post:
+      tags: [files]
+      operationId: createStoredUpload
+      summary: Start an upload of a file larger than one request.
+      description: |
+        Declares the file's size, name and purpose. Parts follow, then
+        `complete` with their order. The upload ends one hour after it
+        starts; its parts are deleted then, and on `cancel`. The declared
+        size counts against the owner's quota from now.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StoredUploadRequest'}
+      responses:
+        '201':
+          description: The upload, `pending`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredUpload'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {$ref: '#/components/responses/OverQuota'}
+
+  /v1/uploads/{uploadId}/parts:
+    parameters:
+      - $ref: '#/components/parameters/UploadId'
+    post:
+      tags: [files]
+      operationId: addStoredUploadPart
+      summary: Add one part, sent whole as the request body.
+      description: |
+        At most 16 MiB, the gateway's body limit. A part belongs to its
+        upload and its owner: no other upload, and no other owner, can
+        name it.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      responses:
+        '201':
+          description: The part.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredUploadPart'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: The upload is being completed, or is taking a part; try again when that has finished.
+          content:
+            application/problem+json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+
+  /v1/uploads/{uploadId}/complete:
+    parameters:
+      - $ref: '#/components/parameters/UploadId'
+    post:
+      tags: [files]
+      operationId: completeStoredUpload
+      summary: Join the parts, in the order given, into a file.
+      description: |
+        The parts are written in order to a temporary file and checked:
+        the total must be the declared `bytes`, and the MD5 (OpenAI's
+        field) and SHA-256, when sent, must match. Then it is renamed into
+        the blob folder and becomes a file. A failed check is a 400 that
+        names it, and the upload stays `pending` so the caller can send
+        the parts again.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StoredUploadCompleteRequest'}
+      responses:
+        '200':
+          description: The upload, `completed`, with its `file`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredUpload'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: The upload is being completed, or is taking a part; try again when that has finished.
+          content:
+            application/problem+json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+        '413': {$ref: '#/components/responses/OverQuota'}
+
+  /v1/uploads/{uploadId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/UploadId'
+    post:
+      tags: [files]
+      operationId: cancelStoredUpload
+      summary: Stop an upload; its parts are deleted.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: The upload, `cancelled`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredUpload'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /v1/owners:
+    get:
+      tags: [store]
+      operationId: listStoreOwners
+      summary: Counts and bytes per owner, for the owner's console. Never content.
+      description: |
+        An operator session only. Each owner as the store names it, with
+        how many files and bytes it keeps and how many uploads are in
+        progress. No file name, purpose or byte of content: the install
+        owner does not read people's objects (LD6).
+      responses:
+        '200':
+          description: Every owner with something kept.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoreOwnerList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /v1/store/status:
+    get:
+      tags: [store]
+      operationId: getStoreStatus
+      summary: Which parts are on, and the last sweep.
+      responses:
+        '200':
+          description: The store's state.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoreStatus'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /v1/sweep:
+    post:
+      tags: [store]
+      operationId: runStoreSweep
+      summary: Sweep now, instead of at the next interval.
+      description: |
+        An operator session only. Deletes what has expired and checks the
+        owners who are people with the root, as the timed sweep does.
+      responses:
+        '200':
+          description: What the sweep did.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SweepReport'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /v1/removals/delete:
+    post:
+      tags: [store]
+      operationId: deleteRemovedPersonNow
+      summary: Delete now, everything a removed person kept here.
+      description: |
+        An operator session only. The owner's Delete now (MRC27): every
+        file and upload of a hidden person, at once and for good, with
+        their rows in every copy kept before a migration. Only a person
+        Eugene removed (one `/v1/owners` lists with `deleteAt`): a person
+        Eugene still has keeps their files.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemovalDeleteRequest'}
+      responses:
+        '200':
+          description: What was deleted.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SweepReport'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404':
+          description: The owner named is not a person Eugene removed.
+          content:
+            application/problem+json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+        '503':
+          description: |
+            Not finished: the person still has an upload being written, or a
+            copy kept before a migration could not be purged (the file is
+            named). They stay removed, and the next sweep tries again.
+          content:
+            application/problem+json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: The store's settings, as in effect.
+      responses:
+        '200':
+          description: Current config values.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Change settings; `null` returns a field to its default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome, per key.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every setting.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /v1/admin/restart:
+    post:
+      tags: [meta]
+      operationId: restart
+      summary: Schedule a process restart.
+      responses:
+        '202':
+          description: Restart scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness, and whether the data folder and the last sweep are well.
+      security: []
+      description: |
+        `degraded` in safe mode, when the config file could not be read,
+        when the data folder cannot be opened, or when the last sweep
+        failed (its cause in `details.error`). A bad config never stops
+        the store from starting; its config endpoints stay reachable.
+      responses:
+        '200':
+          description: Health status.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        The object routes take a gateway's service token and the owner
+        header. The store routes, the config trio and restart take an
+        operator session addressed to this machine.
+
+  parameters:
+    Owner:
+      name: X-Eugene-Plexus-Owner
+      in: header
+      required: true
+      description: |
+        Whose object this is, said by the gateway from its own admission
+        (see the description above). Believed only beside a gateway's
+        service token.
+      schema:
+        type: string
+        pattern: '^(install|(person|key|component):[A-Za-z0-9._@:-]{1,200})$'
+    FileId:
+      name: fileId
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 64
+    UploadId:
+      name: uploadId
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 64
+
+  responses:
+    BadRequest:
+      description: The request names what is wrong with it.
+      content:
+        application/problem+json:
+          schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+    Unauthorized:
+      description: No credential, or one this store does not take here.
+      content:
+        application/problem+json:
+          schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+    Forbidden:
+      description: |
+        The owner header came with a credential that may not name owners,
+        the owner turned this part of the store off in its settings, or
+        the owner named is a person Eugene removed (nothing new is kept
+        for them, while their objects are hidden or after they are deleted).
+      content:
+        application/problem+json:
+          schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+    NotFound:
+      description: |
+        No such object for this owner. The same body for an id that does
+        not exist, one that has expired, and one another owner keeps.
+      content:
+        application/problem+json:
+          schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+    OverQuota:
+      description: |
+        The owner's quota would be passed. `detail` says the numbers: what
+        the owner keeps, what this adds and the quota.
+      content:
+        application/problem+json:
+          schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+
+  schemas:
+
+    PeopleKnownResult:
+      $ref: 'components/common.yaml#/components/schemas/PeopleKnownResult'
+      description: |
+        What the store reads back from its agent's `POST /v1/people/known`
+        at each sweep: which `person:<id>` owners the root still has.
+
+    StoredFilePurpose:
+      type: string
+      enum: [assistants, batch, fine-tune, vision, user_data, evals]
+      description: |
+        OpenAI's upload purposes. A file sent through Anthropic's Files
+        API, which has none, is kept as `user_data`.
+
+    StoredListOrder:
+      type: string
+      enum: [asc, desc]
+      default: desc
+      description: By `createdAt`, then by id.
+
+    StoredFileStatus:
+      type: string
+      enum: [processed]
+      description: A kept file is ready at once; nothing is processed after the upload.
+
+    StoredFile:
+      type: object
+      additionalProperties: false
+      required: [id, filename, purpose, bytes, mimeType, sha256, createdAt, status]
+      properties:
+        id:
+          type: string
+          pattern: '^file-[0-9a-f]{24}$'
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        purpose:
+          $ref: '#/components/schemas/StoredFilePurpose'
+        bytes:
+          type: integer
+          minimum: 0
+        mimeType:
+          type: string
+          maxLength: 255
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        createdAt:
+          type: integer
+          description: Unix seconds.
+        expiresAt:
+          type: integer
+          description: Unix seconds. Absent, the file is kept until it is deleted.
+        status:
+          $ref: '#/components/schemas/StoredFileStatus'
+
+    StoredFileList:
+      type: object
+      additionalProperties: false
+      required: [data, hasMore]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/StoredFile'}
+        hasMore:
+          type: boolean
+
+    StoredFileDeleted:
+      type: object
+      additionalProperties: false
+      required: [id, deleted]
+      properties:
+        id:
+          type: string
+        deleted:
+          type: boolean
+          const: true
+
+    StoredUploadStatus:
+      type: string
+      enum: [pending, completed, cancelled, expired]
+
+    StoredUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [filename, purpose, bytes]
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        purpose:
+          $ref: '#/components/schemas/StoredFilePurpose'
+        bytes:
+          type: integer
+          minimum: 1
+          description: The whole file's size; `complete` checks the parts add up to it.
+        mimeType:
+          type: string
+          maxLength: 255
+        expiresAfterSeconds:
+          type: integer
+          minimum: 1
+          maximum: 2592000
+          description: The file's end once completed, as on `POST /v1/files`.
+
+    StoredUpload:
+      type: object
+      additionalProperties: false
+      required: [id, filename, purpose, bytes, mimeType, createdAt, expiresAt, status]
+      properties:
+        id:
+          type: string
+          pattern: '^upload_[0-9a-f]{24}$'
+        filename:
+          type: string
+        purpose:
+          $ref: '#/components/schemas/StoredFilePurpose'
+        bytes:
+          type: integer
+        mimeType:
+          type: string
+        createdAt:
+          type: integer
+        expiresAt:
+          type: integer
+          description: One hour after `createdAt`; an upload not completed by then is deleted.
+        status:
+          $ref: '#/components/schemas/StoredUploadStatus'
+        file:
+          $ref: '#/components/schemas/StoredFile'
+          description: The file the upload became, once `completed`.
+
+    StoredUploadPart:
+      type: object
+      additionalProperties: false
+      required: [id, uploadId, createdAt, bytes]
+      properties:
+        id:
+          type: string
+          pattern: '^part_[0-9a-f]{24}$'
+        uploadId:
+          type: string
+        createdAt:
+          type: integer
+        bytes:
+          type: integer
+
+    StoredUploadCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [partIds]
+      properties:
+        partIds:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: {type: string, maxLength: 64}
+          description: The parts, in the order they are joined. A part may be named once.
+        md5:
+          type: string
+          pattern: '^[0-9a-fA-F]{32}$'
+          description: OpenAI's check of the joined file.
+        sha256:
+          type: string
+          pattern: '^[0-9a-fA-F]{64}$'
+          description: Eugene's check of the joined file.
+
+    StoreOwner:
+      type: object
+      additionalProperties: false
+      required: [owner, files, bytes, uploads]
+      properties:
+        owner:
+          type: string
+          description: '`install`, `person:<id>`, `key:<id>` or `component:<sub>`.'
+        files:
+          type: integer
+        bytes:
+          type: integer
+          description: The bytes of the owner's files and of its uploads in progress.
+        uploads:
+          type: integer
+          description: Uploads in progress.
+        removedAt:
+          type: integer
+          description: |
+            Unix seconds. Set for a person Eugene removed: their objects
+            have been hidden from everyone since then.
+        deleteAt:
+          type: integer
+          description: |
+            Unix seconds. Set with `removedAt`: when their objects are
+            deleted for good, unless Eugene has them again first or the
+            owner deletes them now.
+
+    RemovalDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [owner]
+      properties:
+        owner:
+          type: string
+          pattern: '^person:[A-Za-z0-9._@:-]{1,200}$'
+          description: The removed person, as `/v1/owners` names them.
+
+    StoreOwnerList:
+      type: object
+      additionalProperties: false
+      required: [owners, files, bytes, blobBytes]
+      properties:
+        owners:
+          type: array
+          items: {$ref: '#/components/schemas/StoreOwner'}
+        files:
+          type: integer
+        bytes:
+          type: integer
+          description: The sum of every owner's bytes.
+        blobBytes:
+          type: integer
+          description: What the blob folder holds; less than `bytes` when owners share content.
+
+    RemovalCheck:
+      type: object
+      additionalProperties: false
+      required: [checked, hidden, restored, deleted, lateRestored]
+      properties:
+        checked:
+          type: integer
+          description: How many people who own something here the root was asked about.
+        hidden:
+          type: integer
+          description: People the root no longer has, whose objects were hidden now.
+        restored:
+          type: integer
+          description: Hidden people the root has again, whose objects are theirs again.
+        deleted:
+          type: integer
+          description: |
+            Removed people whose objects were deleted for good: their date
+            passed, `removedPeopleRetention` is `none`, or Delete now.
+        lateRestored:
+          type: integer
+          description: |
+            People the root has again whose date had already passed: they
+            were not restored, and what they kept was deleted.
+        error:
+          type: string
+          description: |
+            Why a step could not finish: the root could not be asked (then
+            nobody was hidden or restored; a date that had passed was still
+            kept to), or a copy kept before a migration could not be purged
+            (named, and retried at the next sweep).
+
+    SweepReport:
+      type: object
+      additionalProperties: false
+      required: [at, files, uploads, parts, blobs, freedBytes]
+      properties:
+        at:
+          type: string
+          format: date-time
+        files:
+          type: integer
+          description: Files deleted, expired or removed.
+        uploads:
+          type: integer
+          description: Uploads deleted, expired or removed.
+        parts:
+          type: integer
+          description: Upload parts deleted.
+        blobs:
+          type: integer
+          description: Blob files unlinked.
+        freedBytes:
+          type: integer
+        removal:
+          $ref: '#/components/schemas/RemovalCheck'
+        error:
+          type: string
+          description: Why the sweep could not finish.
+
+    StoreParts:
+      type: object
+      additionalProperties: false
+      required: [files]
+      properties:
+        files:
+          type: boolean
+          description: '`/v1/files` and `/v1/uploads` keep files.'
+
+    StoreStatus:
+      type: object
+      additionalProperties: false
+      required: [parts]
+      properties:
+        parts:
+          $ref: '#/components/schemas/StoreParts'
+        lastSweep:
+          $ref: '#/components/schemas/SweepReport'

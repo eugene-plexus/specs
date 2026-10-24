@@ -289,7 +289,7 @@ class Log:
 def installer_copy(workdir: Path) -> Path:
     """install.sh as checked out, with any candidate pin substituted."""
     text = (HERE / "install.sh").read_text(encoding="utf-8")
-    for name in ("AGENT", "CONTROL", "GATEWAY", "DRIVER", "LIBRARY", "TOOL_DRIVER"):
+    for name in ("AGENT", "CONTROL", "GATEWAY", "DRIVER", "LIBRARY", "STORE", "TOOL_DRIVER"):
         override = os.environ.get(f"EP_PIN_{name}", "").strip()
         if override:
             if not re.fullmatch(r"[0-9a-f]{40}", override):
@@ -365,8 +365,8 @@ def phase_install(installer: Path, prefix: Path, port: int) -> dict:
           str(page)[:120])
     declared = (prefix / "agent.yaml").read_text(encoding="utf-8") if (prefix / "agent.yaml").exists() else ""
     kinds = re.findall(r"^- kind: (\S+)", declared, re.M)
-    check("9", "the agent declared control, gateway and library", sorted(kinds) == ["control", "gateway", "library"],
-          kinds)
+    check("9", "the agent declared control, gateway, library and the store",
+          sorted(kinds) == ["control", "gateway", "library", "store"], kinds)
     return {"base": base, "agent_pid": agent_pid, "python": python, "log": Log(prefix / "logs" / "agent.log")}
 
 
