@@ -3660,8 +3660,13 @@ paths:
           application/json:
             schema: {$ref: "#/components/schemas/NodePassphraseRequest"}
       responses:
-        "204":
-          description: Taken.
+        "200":
+          description: |
+            Taken. Whether its passphrase file now holds the new
+            passphrase, and why not when it does not.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NodePassphraseResult"}
         "401":
           description: Not the control root's token.
           content:
@@ -5532,6 +5537,17 @@ components:
           format: password
           minLength: 12
           writeOnly: true
+    NodePassphraseResult:
+      type: object
+      required: [passphraseFile]
+      properties:
+        passphraseFile: {$ref: "#/components/schemas/PassphraseFileState"}
+        detail:
+          type: string
+          description: |
+            When `passphraseFile` is `old`: why the file could not be
+            written. After a restart this machine stays locked until
+            someone signs in.
     PassphraseMachineState:
       type: string
       enum: [changed, pending, plain]
@@ -5559,6 +5575,9 @@ components:
           type: array
           items: {$ref: "#/components/schemas/PassphraseMachine"}
         passphraseFile: {$ref: "#/components/schemas/PassphraseFileState"}
+        cleanup:
+          type: string
+          description: The same as `control.yaml`'s.
     NodeIdentity:
       type: object
       description: |
