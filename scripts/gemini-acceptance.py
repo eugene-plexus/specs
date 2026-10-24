@@ -309,7 +309,12 @@ def serve(kind: str, directory: Path, port: int) -> None:
             contents = body.get("contents") or []
             last = contents[-1] if contents else {"parts": []}
             text = "".join(p.get("text", "") for p in last.get("parts", []))
-            if any("functionResponse" in p for p in last.get("parts", [])):
+            if (body.get("generationConfig") or {}).get("responseMimeType") == "application/json":
+                schema = body["generationConfig"].get("responseJsonSchema") or {}
+                value = {key: 1 if spec.get("type") in ("integer", "number") else "simple prompt"
+                         for key, spec in schema.get("properties", {}).items()}
+                parts = [{"text": json.dumps(value)}]
+            elif any("functionResponse" in p for p in last.get("parts", [])):
                 prior = contents[-2] if len(contents) > 1 else {"parts": []}
                 calls = [p for p in prior.get("parts", []) if "functionCall" in p]
                 if not calls or any(p.get("thoughtSignature") not in issued for p in calls):
@@ -320,8 +325,9 @@ def serve(kind: str, directory: Path, port: int) -> None:
             elif body.get("tools"):
                 signature = base64.b64encode(secrets.token_bytes(24)).decode()
                 issued.add(signature)
+                offered = body["tools"][0]["functionDeclarations"][0]["name"]
                 parts = [{"text": "The weather tool answers this.", "thought": True},
-                         {"functionCall": {"name": "get_weather", "args": {"city": "Paris"}},
+                         {"functionCall": {"name": offered, "args": {"city": "Paris"} if offered == "get_weather" else {"query": "Say hi"}},
                           "thoughtSignature": signature}]
             elif text == "unsafe":
                 frame = {"candidates": [{"finishReason": "SAFETY", "index": 0,
@@ -402,10 +408,12 @@ def serve(kind: str, directory: Path, port: int) -> None:
             body = await request.json()
             seen.setdefault(model, []).append({"method": method, "query": dict(request.query_params),
                                                "body": body})
+            if method == "countTokens":
+                return {"totalTokens": 23}
             if method == "batchEmbedContents":
                 if model != EMBED:
                     return error(400, "INVALID_ARGUMENT", f"{model} does not embed")
-                return {"embeddings": [{"values": [float(i), float(len(r["content"]["parts"][0]["text"])), 0.5]}
+                return {"embeddings": [{"values": [float(i), float(len(r["content"]["parts"][0]["text"])), 0.5][:r.get("outputDimensionality", 3)]}
                                        for i, r in enumerate(body["requests"])]}
             if method == "predictLongRunning":
                 # Google's own refusal, measured live (2026-10-09).
@@ -448,6 +456,14 @@ def serve(kind: str, directory: Path, port: int) -> None:
 
         app = create_app(Settings(config_file=directory / "control.yaml", state_dir=directory / "state"))
     elif kind == "agent":
+        if os.environ.get("EP_ROW58_DOOR"):
+            path = Path(__file__).with_name("s8-ui-acceptance.py")
+            spec = importlib.util.spec_from_file_location("row58_agent_harness", path)
+            assert spec and spec.loader
+            harness = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(harness)
+            harness.serve(directory, port)
+            return
         from eugene_plexus_agent.app import create_app
         from eugene_plexus_agent.settings import Settings
 
@@ -463,10 +479,12 @@ def serve(kind: str, directory: Path, port: int) -> None:
                                            metrics_file=directory / "metrics.sqlite3", **bootstrap))
     else:
         raise SystemExit(f"unknown process kind {kind!r}")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
+    row58 = bool(os.environ.get("EP_ROW58_DOOR"))
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info" if row58 else "error",
+                access_log=row58 and kind == "gateway")
 
 
-def exercise(directory: Path, *, live: bool, live_video: bool) -> None:
+def exercise(directory: Path, *, live: bool, live_video: bool, door_check=None) -> None:
     from eugene_plexus_agent.node_identity import NodeIdentityStore
     from eugene_plexus_agent.trust import NodeTrust
 
@@ -475,6 +493,7 @@ def exercise(directory: Path, *, live: bool, live_video: bool) -> None:
     for sock in sockets:
         sock.bind(("127.0.0.1", 0))
     ports = dict(zip(names, [sock.getsockname()[1] for sock in sockets], strict=True))
+    assert not set(ports.values()) & set(range(8079, 8084)), ports
     for sock in sockets:
         sock.close()
     processes: dict[str, subprocess.Popen[bytes]] = {}
@@ -525,6 +544,8 @@ def exercise(directory: Path, *, live: bool, live_video: bool) -> None:
             env.pop(inherited, None)
         env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
         env.update(extra_env or {})
+        if door_check is not None:
+            env["EP_ROW58_DOOR"] = "1"
         processes[name] = subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), "--serve", name,
              "--directory", str(work), "--port", str(ports[name])],
@@ -623,6 +644,9 @@ def exercise(directory: Path, *, live: bool, live_video: bool) -> None:
 
         wanted = {f"gem/{m}" for m in ROUTED}
         wait(lambda: wanted <= set(listing()), "the account's models are routable", 40)
+        if door_check is not None:
+            door_check(directory, url, call, operator, token, seen)
+            return
 
         # --- 1. the listing ------------------------------------------------------
         models = listing()
@@ -635,7 +659,10 @@ def exercise(directory: Path, *, live: bool, live_video: bool) -> None:
         assert models[f"gem/{CHAT}"]["context_length"] == 1048576, models[f"gem/{CHAT}"]
         assert "chat" in models[f"gem/{CHAT}"]["surfaces"], models[f"gem/{CHAT}"]
         assert models[f"gem/{TTS}"]["surfaces"] == ["speech"], models[f"gem/{TTS}"]
-        assert models[f"gem/{TTS}"]["speech_formats"] == ["wav", "pcm"], models[f"gem/{TTS}"]
+        # Row 58: PyAV encodes Gemini's PCM, so every OpenAI speech format is offered.
+        assert models[f"gem/{TTS}"]["speech_formats"] == ["mp3", "opus", "aac", "flac", "wav", "pcm"], (
+            models[f"gem/{TTS}"]
+        )
         assert "Kore" in models[f"gem/{TTS}"]["voices"], models[f"gem/{TTS}"]
         assert models[f"gem/{EMBED}"]["surfaces"] == ["embeddings"], models[f"gem/{EMBED}"]
         assert models[f"gem/{VEO}"]["surfaces"] == ["video"], models[f"gem/{VEO}"]
@@ -736,7 +763,7 @@ def exercise(directory: Path, *, live: bool, live_video: bool) -> None:
         embedded, image, speech, named_mp3, heard = sdk(token, [
             {"kind": "embed", "model": f"gem/{EMBED}", "input": ["one", "three", "seven"]},
             {"kind": "image", "model": f"gem/{IMAGE}", "prompt": "a blue square"},
-            {"kind": "speech", "model": f"gem/{TTS}", "voice": "Kore", "input": "Hello.", "save": str(spoken)},
+            {"kind": "speech", "model": f"gem/{TTS}", "voice": "Kore", "input": "Hello.", "response_format": "wav", "save": str(spoken)},
             {"kind": "speech", "model": f"gem/{TTS}", "voice": "Kore", "input": "Hello.", "response_format": "mp3"},
             {"kind": "transcribe", "model": f"gem/{TRANSCRIBE}", "file": str(clip)},
         ])[:5]
@@ -751,13 +778,12 @@ def exercise(directory: Path, *, live: bool, live_video: bool) -> None:
         voice = seen(TTS)[0]["body"]["generationConfig"]
         assert voice["responseModalities"] == ["AUDIO"], voice
         assert voice["speechConfig"]["voiceConfig"]["prebuiltVoiceConfig"]["voiceName"] == "Kore", voice
-        assert named_mp3["status"] == 400 and "wav, pcm" in named_mp3["error"], named_mp3
-        assert len(seen(TTS)) == 1, "mp3 reached Google"
+        assert named_mp3["status"] == 200 and named_mp3["type"] == "audio/mpeg", named_mp3
+        assert len(seen(TTS)) == 2, "both speech requests must reach Google"
         assert heard["status"] == 200 and heard["text"] == "Eugene Plexus says hello.", heard
         audio_part = seen(TRANSCRIBE)[-1]["body"]["contents"][0]["parts"][0]["inlineData"]
         assert audio_part["mimeType"] == "audio/wav", audio_part
-        ok("embeddings in order, an image, speech (no format named: a whole WAV around Google's 24 kHz PCM; "
-           "mp3 named: refused, naming wav and pcm) and a transcription, each through the SDK")
+        ok("embeddings in order, an image, WAV and encoded mp3 speech, and a transcription through the SDK")
 
         # --- 7. a Veo video, polled and fetched --------------------------------------
         video = sdk(token, [{"kind": "video", "model": f"gem/{VEO}", "prompt": "a red ball rolling",
@@ -838,7 +864,7 @@ def run_live(call, wait, listing, sdk, operator, token, directory, ok, *, live_v
     embedded, speech = sdk(token, [
         {"kind": "embed", "model": f"live/{embed}", "input": ["Eugene Plexus", "a local control plane"]},
         {"kind": "speech", "model": f"live/{tts}", "voice": "Kore",
-         "input": "Hello from Eugene Plexus.", "save": str(spoken)},
+         "input": "Hello from Eugene Plexus.", "response_format": "wav", "save": str(spoken)},
     ], timeout=600)[:2]
     assert embedded["status"] == 200 and len(embedded["vectors"]) == 2, embedded
     assert len(embedded["vectors"][0]) == len(embedded["vectors"][1]) > 0, "vectors differ"

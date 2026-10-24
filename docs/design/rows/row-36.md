@@ -159,3 +159,13 @@ M, about 1.5 days, cross. Risks:
   newer announcement.
 - An attacker without the key can raise the unverified count. It is a
   number and a time, nothing else.
+
+## Calls answered by Troy (2026-10-22)
+
+- **R36-ACCEPT: Choice 2.** Re-enrollment stays the only way to confirm a
+  machine's move onto the open internet. Machines says why the address was
+  refused and tells the owner to re-enroll the machine. Not built: the
+  **Accept this address** button, `POST /v1/nodes/{name}/announcement/accept`,
+  the held announcement body, `NodeAnnouncementRefusal.acceptable`, the
+  accept tests in section 4 and acceptance step 4 (the agent's next attempt
+  after re-enrollment is "unchanged" instead).
