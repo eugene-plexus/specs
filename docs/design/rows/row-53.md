@@ -296,11 +296,20 @@ OpenAI's and DI2's and are settings.
   ids and bytes, at the next sweep after the root has the person again (or
   at once with Sweep now). A file whose own `expires_after` passed while
   its owner was hidden is deleted on time, as it would have been.
+  **A date that has passed is final:** a person the root has again after it
+  is not restored, and what they kept is deleted (second review); the sweep
+  line says so (`lateRestored`).
 - **Delete now** (Settings -> Files apps keep, per removed person;
   `POST /v1/removals/delete`, an operator session only) deletes at once and
   for good: rows, blobs no one else names, and the person's rows in every
   copy kept before a migration (MRC27). It refuses a person Eugene still
   has (404): their files are theirs.
+- **The marker is the retry record.** Deleting is compare-and-delete on the
+  marker the sweep saw (read again after the root answered), waits for the
+  person's writes under way, and removes the marker last, after every
+  `.bak` copy is purged. A copy that cannot be purged (locked, say) is
+  named in a 503 and in the sweep's `error`, the marker stays, and the next
+  sweep tries again.
 - **A root that cannot be asked** hides and restores nobody; a date that
   has passed is still kept to, as row 7 keeps it (the date was decided when
   the root answered).
@@ -350,3 +359,35 @@ fix and one sabotage of each new check:
   root no longer knows, a key revoked for real); the acceptance checks
   another owner's file, content and deletion, and sabotages the listing and
   the lookup by id separately.
+
+### The second review (2026-10-24)
+
+A second look at the fixes found six more things; each was built with a test
+that fails without it and one sabotage of each new check:
+
+- **One attachment budget.** A 6 MiB text `file_id` plus a 6 MiB inline PDF
+  passed both checks (12 MiB against 11). The text the files door reads is
+  now handed to the validators and counts with the inline attachments, in
+  either order.
+- **A cancelled upload does not free what a part is still writing.** The
+  part's staged bytes count against its owner until the writer ends or
+  aborts, whatever happened to the upload meanwhile.
+- **A stale answer cannot delete a restored person.** Deletion is
+  compare-and-delete on the hidden marker's generation, read again after
+  the root answered; a stale "unknown" never re-hides a person already
+  hidden when it was asked.
+- **Delete now cannot resurrect a write under way** (blocker). Every write is
+  busy for its owner; every commit (file, assembled upload, part) re-checks
+  the owner's removal state in its own transaction; Delete now and the
+  sweep's deletion wait for the owner's writes (up to two minutes, then a
+  503 and the sweep tries again). A write paused across the removal
+  publishes nothing and leaves nothing staged.
+- **A late restoration is final** (should fix): see above.
+- **A failed `.bak` purge keeps its retry record** (blocker): see above.
+- **The acceptance's lookup sabotage** breaks read, content and delete by id
+  separately, so each verb's owner filter is proved on its own.
+
+Reconciling the review's items 3 and 5: the review asked both to re-ask the
+root after the date and to make a passed date final. A re-asked "known" would
+be ignored by the second rule, so the sweep does not re-ask; it reads the
+markers again after the answer and deletes only the marker it saw.
