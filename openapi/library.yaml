@@ -2449,6 +2449,15 @@ components:
       required:
         - folders
       properties:
+        safeMode:
+          type: boolean
+          readOnly: true
+          default: false
+          description: |
+            True when the Library ignores its saved config and runs in
+            safe mode. These folders may be defaults with no saved mounts.
+            Agents keep their saved folder list instead of saving this
+            answer. Absent means false for older Libraries.
         folders:
           type: array
           items:
@@ -3936,6 +3945,9 @@ components:
         predict; the other three are the person's override. This
         component never acts on it: it holds no engine knowledge.
 
+    PreparationIntent:
+      $ref: 'components/common.yaml#/components/schemas/PreparationIntent'
+
     ModelProfileSpec:
       type: object
       description: |
@@ -4036,6 +4048,15 @@ components:
             adapter's `flagSchema` — context size, GPU layers, batch
             size, parallel slots. Copied onto `RuntimeSpec.flags`
             verbatim.
+
+            Strata's keys are `speedProjection` (`SpeedProjectionMode`),
+            `gpus` (`StrataGpuSelection`) and `layerSplit`
+            (`StrataLayerSplit`). Preparation uses the same choices in
+            `PreparationIntent`, with defaults off, automatic single-card
+            selection and auto boundaries. Omitted profile flags preserve
+            the prepared configuration's values. The projection changes
+            answers when on and is experimental. A saved profile is intent,
+            not evidence of the applied launch.
 
             **Stored, not validated.** The validator is the agent's
             adapter schema, at runtime-creation time. A profile is
