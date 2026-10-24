@@ -300,6 +300,21 @@ Built on the same branch (agent `exec_trust.py`, `exec_approvals.py`, `routes/ex
 - **MLX's environment was built on a Python Eugene's account will not trust** (A4 30, 44). Run as the account, the recipe's `uv venv --python cpython-3.12-macos-aarch64-none` picked the python.org framework on the runner. Its `/Library/Frameworks/Python.framework/Versions` is group-writable (0775, `root:wheel` there; `root:admin` from python.org's installer). The environment check refused `mlx_lm.server`, correctly by the rule. The recipe now adds `--python-preference only-managed`, so uv puts its own Python under the account's home, the install's folder (agent `engines/mlx.py`; `test_the_recipe_builds_on_uv_s_own_python_never_one_installed_on_the_mac` failed first).
   - *Not built:* a group whose only member is root (`wheel` on a Mac) can write nothing that root cannot. Treating it as root's would need the group's members read on every check. With uv's own Python no engine path met it, so it stays refused.
 
+**The 8c review (Codex, 2026-10-23) found four blockers and two more, all fixed.** Each fix has a check that fails without it, and each was sabotaged once and caught (12 in the agent, 1 in the installer):
+1. *The move carried forged approvals.* A program running as the person could write `exec-approvals.json` into the per-user install, binding a program of the person's exactly as an owner's approval would. The move carried it, made it the account's, and the daemon honoured it. Now the move never carries it ("did not carry exec-approvals.json: the owner approves programs again for Eugene's own account").
+   - Stub check M4d covers the exclusion.
+   - Acceptance 11j plants an approval that binds exactly what the owner's own approval binds: the path, the uid, the SHA-256 and the chain. The test approves the same program through the API and compares the two. After the move, it checks that the planted approval did not cross and that the daemon asks.
+2. *ACL principals with spaces.* `group:Domain Users allow add_file,delete_child` did not match the parser and was passed over, so the program read as `needs_approval`. The principal is now read whole. An entry the parser does not understand is refused, naming the entry.
+3. *The interpreter checked was not always the one run.*
+   - `#!python` was walked from the agent's folder, while vLLM's probe ran a bare `python` through PATH. A link named `run` to `/usr/bin/env` passed the name check.
+   - Now an interpreter must be an absolute path, in the shebang and in uv's exec line. A program or interpreter that is `env` under any name is refused.
+   - In Eugene's own account, vLLM's probe runs only the absolute interpreter the check walked.
+4. *Unreadable files failed open.* An execute-only script's first line could not be read, and the check took the script for a binary. That is now refused, naming the cause. So is an environment whose `pyvenv.cfg` cannot be read or whose `lib` cannot be listed.
+5. *A refusal kept the approval.* Opening a folder to everyone and closing it again revived the approval. Now a refused check drops the program's approval.
+6. *Folder links.* An approval was kept by the resolved path, so a program configured as `/Users/troy/current/llama-server` (with `current -> /opt/real`) was approved with a shorter chain, and its next start lapsed it. Now `ExecTrust.path` is the path a setting looks the program up by, made absolute with its links kept. The approval is shown, made and kept by that path.
+
+Also from the review: the SHA-256 answer is no longer kept between checks. A file's change time moves on a coarse clock (a second on HFS+, a jiffy on Linux), so two writes could share one, and a changed file could keep its old hash. A test with the real hash changes one byte, keeps the size, puts the modification time back, and holds the clock still.
+
 **Not covered, and why:**
 - Windows, as before.
 - What an app or a tool server starts, as before.

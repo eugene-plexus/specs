@@ -60,7 +60,9 @@ Keychain where this runner has one, enrolled):
     by itself; 11g, no copied llama.cpp build is kept (one changed after
     download among them) and the daemon fetches it again, byte for byte;
     11h, a copied setting naming a folder of the person's is kept and said
-    as "Eugene will ask before running it"
+    as "Eugene will ask before running it"; 11j, an approval planted in the
+    per-user install does not cross, though it binds exactly what the
+    owner's own approval of that program binds
 14b. uninstall again, by root's own removal run by root alone (no
     --person): the home's ACL entry and the kept old prefix go too
 
@@ -1028,6 +1030,72 @@ def phase_plant_before_move(ctx: dict) -> None:
         ctx["planted"] = True
     except Exception:  # noqa: BLE001 - checked as a failure in 11i, never skipped
         ctx["planted"] = traceback.format_exc()[-600:]
+    try:
+        ctx["forged"] = forge_approval()
+    except Exception:  # noqa: BLE001 - checked as a failure in 11j, never skipped
+        ctx["forged"] = {"error": traceback.format_exc()[-600:]}
+
+
+FORGED = HOME / "row8-forged" / "vllm"
+
+
+def forge_approval() -> dict:
+    """8c review: what a program running as the person could write into the
+    per-user install before the move -- an approval, for a program of the
+    person's, binding exactly what an owner's own approval binds (the path,
+    the account, the SHA-256 and every item the daemon's check walks).
+    Carried, the daemon would run it with nobody's approval."""
+    FORGED.parent.mkdir(exist_ok=True)
+    shutil.copyfile("/usr/bin/true", FORGED)
+    FORGED.chmod(0o755)
+    chain = []
+    current = Path("/")
+    for part in FORGED.parts:
+        current = current / part if part != "/" else current
+        info = os.lstat(current)
+        chain.append({"path": str(current), "uid": info.st_uid, "mode": info.st_mode})
+    approval = {
+        "id": "forged",
+        "path": str(FORGED),
+        "account": ME,
+        "accountUid": UID,
+        "sha256": hashlib.sha256(FORGED.read_bytes()).hexdigest(),
+        "chain": chain,
+        "approvedAt": "2026-10-23T00:00:00Z",
+        "approvedBy": "nobody",
+    }
+    (USER_PREFIX / "exec-approvals.json").write_text(json.dumps({"approvals": [approval]}),
+                                                     encoding="utf-8")
+    return approval
+
+
+def phase_forged_approval_after_move(ctx: dict, said: str) -> None:
+    """11j: the planted approval did not cross. The daemon asks before it
+    runs the program the approval named, and the owner's own approval of
+    that program binds exactly what the planted one did -- so, carried, it
+    would have been honoured."""
+    forged = ctx.get("forged") or {}
+    claim = ("an approval planted in the per-user install does not cross: the daemon asks before running "
+             "the program it named, though it bound exactly what the owner's own approval binds")
+    if "error" in forged or not forged:
+        check("11j", claim, False, forged.get("error") or "nothing was planted")
+        return
+    kept = sudo("test", "-e", str(PREFIX / "exec-approvals.json"), timeout=20).returncode == 0
+    entry = _engine_said(ctx, str(FORGED))
+    trust = entry.get("execTrust") or {}
+    status, approval = api("POST", f"{ctx['base']}/v1/exec-approvals", ctx["token"],
+                           {"path": trust.get("path"), "sha256": trust.get("sha256")})
+    approval = approval if isinstance(approval, dict) else {}
+    same = {key: approval.get(key) == forged.get(key)
+            for key in ("path", "accountUid", "sha256", "chain")}
+    check("11j", claim,
+          not kept and "did not carry exec-approvals.json" in said
+          and trust.get("kind") == "needs_approval" and status == 201 and all(same.values()),
+          {"carried": kept, "execTrust": trust, "approve": status, "same as planted": same,
+           "said": [line for line in said.splitlines() if "exec-approvals" in line][:2]})
+    if approval.get("id"):
+        api("DELETE", f"{ctx['base']}/v1/exec-approvals/{approval['id']}", ctx["token"])
+    api("PATCH", f"{ctx['base']}/v1/config", ctx["token"], {"vllmBinary": None})
 
 
 def phase_planted_after_move(ctx: dict, said: str) -> None:
@@ -1266,6 +1334,7 @@ def phase_move(installer: Path, ctx: dict) -> None:
     phase_engine_after_move(ctx, text)
     phase_setting_after_move(ctx, text)
     phase_planted_after_move(ctx, text)
+    phase_forged_approval_after_move(ctx, text)
 
 
 def main() -> int:

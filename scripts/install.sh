@@ -2009,6 +2009,12 @@ mac_migrate_carries() {
         *.py|*.pyc|*.pyo|*.pth|*.so|*.dylib|*.pyd)
             say "did not carry $_name: code"
             return 1 ;;
+        # What an owner approved for Eugene's own account to run (row 8c):
+        # a program running as the person could have written it, and
+        # carried it would let the daemon run what nobody approved.
+        exec-approvals.json)
+            say "did not carry $_name: the owner approves programs again for Eugene's own account"
+            return 1 ;;
     esac
     return 0
 }

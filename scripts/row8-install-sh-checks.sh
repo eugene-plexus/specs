@@ -852,6 +852,10 @@ YAML
   # Code a component started in the prefix would import: never carried.
   printf 'raise SystemExit("planted")\n' > "$old/yaml.py"
   printf 'import os\n' > "$old/evil.pth"
+  # An approval a program running as the person could forge (8c review):
+  # it must not cross, or the daemon would run what nobody approved.
+  printf '{"approvals": [{"id": "forged", "path": "%s/llama/llama-server"}]}\n' "$home" \
+    > "$old/exec-approvals.json"
   mkdir -p "$old/httpx" "$old/tools/bin"
   printf '' > "$old/httpx/__init__.py"
   printf 'home = /usr/bin\n' > "$old/tools/pyvenv.cfg"
@@ -1084,6 +1088,12 @@ if [ ! -e "$PREFIX/yaml.py" ] && [ ! -e "$PREFIX/evil.pth" ] && [ ! -e "$PREFIX/
   ok "no module, .pth, package or environment crossed, and no copied file can be executed"
 else
   bad "left: $(ls -A "$PREFIX" | tr '\n' ' '); executable: $(printf '%s' "$executable" | tr '\n' ' ')"
+fi
+if [ ! -e "$PREFIX/exec-approvals.json" ] \
+    && printf '%s' "$OUT" | grep -q "did not carry exec-approvals.json: the owner approves programs again for Eugene's own account"; then
+  ok "no approval crossed: the owner approves again on the daemon"
+else
+  bad "approvals: $(ls -l "$PREFIX/exec-approvals.json" 2>&1)"; show "$OUT" 8
 fi
 
 say "M5. launchctl refusing the daemon puts the LaunchAgent back"
