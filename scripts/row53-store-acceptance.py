@@ -696,10 +696,13 @@ def exercise(directory: Path, sabotage: bool) -> None:
         assert ben.listed() == []
         check_isolation(ben, anns)
         missing = "file-" + "0" * 24
+        asked = len(install.client.get(install.url("fixture") + "/seen").json())
         theirs, none = ben.chat(notes["id"]), ben.chat(missing)
         assert theirs.status_code == none.status_code == 400, (theirs.text, none.text)
         assert without(theirs.text, notes["id"]) == without(none.text, missing), theirs.text
-        assert MARKER not in json.dumps(install.client.get(install.url("fixture") + "/seen").json()[-1])
+        assert MARKER not in theirs.text
+        # Refused before any backend was asked.
+        assert len(install.client.get(install.url("fixture") + "/seen").json()) == asked
         ok("step 2: Ben's list is empty, and Ann's ids read to him as ids that do not exist")
 
         # ---------------------------------------------------------------- #

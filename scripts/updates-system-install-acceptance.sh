@@ -266,8 +266,11 @@ before = dict(re.findall(r"^PIN_([A-Z_]+)=([0-9a-f]{40})", open(sys.argv[2]).rea
 names = {"agent": "AGENT", "control": "CONTROL", "gateway": "GATEWAY",
          "inference-driver": "DRIVER", "library": "LIBRARY", "ui": "UI",
          "tool-driver": "TOOL_DRIVER", "store": "STORE"}
-names = {n: k for n, k in names.items() if k in pins}
 now = {c["name"]: c.get("commit", "") for c in json.load(sys.stdin)["install"]["components"]}
+# A part the pins name and the reporting agent does not know is not judged: an
+# agent from before the store (row 53) lists no store at all. One that knows
+# the part lists it always, as missing when it is not installed.
+names = {n: k for n, k in names.items() if k in pins and n in now}
 wrong = ["%s %s not %s" % (n, (now.get(n) or "-")[:7], pins.get(k, "?")[:7])
          for n, k in names.items() if now.get(n) != pins.get(k)]
 moved = sum(1 for k in names.values() if pins.get(k) != before.get(k))
