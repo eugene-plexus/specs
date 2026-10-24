@@ -126,10 +126,12 @@ def test_identity_does_not_require_mount_id_or_device_number(tmp_path, monkeypat
 
 
 def test_installed_helper_is_exactly_the_reviewed_source():
-    source = (ROOT / "scripts/folder-access-helper.py").read_bytes()
+    # A Windows checkout may hold both files with CRLF line ends.
+    source = (ROOT / "scripts/folder-access-helper.py").read_bytes().replace(b"\r\n", b"\n")
     installed = (
         (ROOT / "scripts/install.sh")
         .read_bytes()
+        .replace(b"\r\n", b"\n")
         .split(b"<<'FOLDER_HELPER'\n", 1)[1]
         .split(b"FOLDER_HELPER\n", 1)[0]
     )
