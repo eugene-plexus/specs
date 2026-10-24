@@ -387,6 +387,25 @@ that fails without it and one sabotage of each new check:
 - **The acceptance's lookup sabotage** breaks read, content and delete by id
   separately, so each verb's owner filter is proved on its own.
 
+### The third review (2026-10-24)
+
+One blocker was left: busy tracking began inside the keeper, after a request
+had received its body. A write that started while Delete now waited, and held
+its body back, was admitted, and committed after the marker was cleared. Fixed
+twice over, each part sabotaged once:
+
+- **A write is busy from admission.** The routes call `begin_write` before
+  they read a byte: the write is counted for its owner, and a hidden or
+  deleted owner is refused (403) on the spot, before the body is read. Delete
+  now waits for a body still arriving.
+- **A deleted person leaves a tombstone.** When the deletion is complete the
+  marker becomes state `deleted` (the id and the date, no bytes) and stays.
+  Every commit refuses a hidden or deleted owner. A removed person's id is
+  never reused, so the tombstone never blocks a real person. It is never
+  asked about, restored or hidden again. The one exception is a stale
+  at-once deletion that left newer files: that person is back, so the marker
+  is removed and no tombstone is left.
+
 Reconciling the review's items 3 and 5: the review asked both to re-ask the
 root after the date and to make a passed date final. A re-asked "known" would
 be ignored by the second rule, so the sweep does not re-ask; it reads the

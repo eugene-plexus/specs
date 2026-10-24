@@ -90,10 +90,15 @@ info:
     restored, and what they kept is deleted. A root that cannot be asked
     hides and restores nobody; a date that has passed is kept to.
 
-    A write already under way when a person is removed never publishes:
+    A write already under way when a person is removed never publishes.
+    A write is busy for its owner from admission, before a byte of its
+    body is read, and a hidden or deleted owner is refused there (403);
     every commit (a file, an assembled upload, a part) re-checks the owner
-    in its own transaction and refuses for a hidden owner, and deleting a
-    removed person waits for that person's writes under way. Deleting is
+    in its own transaction; and deleting a removed person waits for that
+    person's writes under way, a body still arriving included. Once
+    everything is gone the person stays as a tombstone, the id and the
+    date and no bytes: a removed person's id is never reused, so it never
+    blocks a real person, and nothing more is ever kept for it. Deleting is
     compare-and-delete on the marker the sweep saw, read again after the
     root answered, so an answer that is stale by the time it is used cannot
     delete a person restored meanwhile. The marker is the retry record and
@@ -616,7 +621,7 @@ components:
         The owner header came with a credential that may not name owners,
         the owner turned this part of the store off in its settings, or
         the owner named is a person Eugene removed (nothing new is kept
-        for them while their objects are hidden).
+        for them, while their objects are hidden or after they are deleted).
       content:
         application/problem+json:
           schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
