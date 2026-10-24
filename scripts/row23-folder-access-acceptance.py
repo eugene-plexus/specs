@@ -143,6 +143,19 @@ def answer(request):
         except (OSError, subprocess.SubprocessError) as exc:
             reply['protected'] = False
             reply['protectError'] = str(exc)
+    if request.get('nullDacl'):
+        # A null DACL lets everyone do everything; the owner may set one.
+        made = folder / request['nullDacl']
+        try:
+            import win32security as ws
+            made.mkdir(exist_ok=True)
+            (made / 'secret.txt').write_text('app secret')
+            ws.SetNamedSecurityInfo(str(made), ws.SE_FILE_OBJECT, ws.DACL_SECURITY_INFORMATION,
+                                    None, None, None, None)
+            reply['opened'] = True
+        except Exception as exc:
+            reply['opened'] = False
+            reply['openError'] = str(exc)
     for name, action in [('read', lambda: (folder / request.get('readFile', 'seed.txt')).read_text()),
                          ('write', lambda: (folder / reply['writtenFile']).write_text('app data'))]:
         try:
@@ -746,9 +759,11 @@ def linux(specs: Path) -> None:
         grant = agent("add", str(manual), "read")
         assert grant["state"] == "ready", grant
         assert probe(io, manual)["read"]
+        # Re-review: provenance follows the file's identity, not its name.
+        (manual / "seed.txt").rename(manual / "moved.txt")
         assert agent("remove", grant["id"])["state"] == "removed"
-        assert run("getfacl", "-cpnE", str(manual / "seed.txt")) == by_hand
-        assert not probe(io, manual)["read"]
+        assert run("getfacl", "-cpnE", str(manual / "moved.txt")) == by_hand
+        assert not probe(io, manual, "moved.txt")["read"]
         # Real parser, masked named user AND owning group, unchanged on failure.
         step("Linux: a masked ACL entry is refused and left unchanged")
         for entry in ("u:65534:rwx", "g::rwx"):
@@ -947,13 +962,19 @@ def windows(root: Path) -> None:
     create_service(other, other_account, f'"{python}" -I -u "{script}" "{other_io}" {other}')
 
     def holders(tree):
-        """Every item under `tree` whose DACL names the probe's account."""
+        """Every item under `tree` that still lets the probe's account in: its DACL
+        names the account, the DACL is null, or the account owns the item."""
         found = []
         for item in [tree, *tree.rglob("*")]:
-            acl = ws.GetFileSecurity(str(item), 4).GetSecurityDescriptorDacl()
-            if acl is not None and any(
-                ws.ConvertSidToStringSid(acl.GetAce(i)[-1]) == sid_text
-                for i in range(acl.GetAceCount())
+            descriptor = ws.GetFileSecurity(str(item), 4 | 1)
+            acl = descriptor.GetSecurityDescriptorDacl()
+            if (
+                acl is None
+                or ws.ConvertSidToStringSid(descriptor.GetSecurityDescriptorOwner()) == sid_text
+                or any(
+                    ws.ConvertSidToStringSid(acl.GetAce(i)[-1]) == sid_text
+                    for i in range(acl.GetAceCount())
+                )
             ):
                 found.append(str(item))
         return found
@@ -1023,14 +1044,21 @@ def windows(root: Path) -> None:
         assert protected.get("protected"), protected
         keep = folder / "keep"
         assert str(keep) in holders(folder)
-        step("Windows: removing the write grant closes the folder and the app's files")
+        # Re-review blocker: a null DACL lets everyone in and reads as "no entries".
+        step("Windows: the app gives a folder it made a null DACL")
+        opened = probe(io, folder, nullDacl="open")
+        assert opened.get("opened"), opened
+        assert ws.GetFileSecurity(str(folder / "open"), 4).GetSecurityDescriptorDacl() is None
+        step("Windows: removal repairs it and gives the app's items to the folder's owner")
         assert access.remove("workbench", write.id).state == "removed"
         revoked = probe(io, folder)
         assert not revoked["read"] and not revoked["write"], revoked
         assert_app_revoked(io, folder, created)
         assert created.read_text() == "app data"
-        locked = probe(io, keep, "secret.txt")
-        assert not locked["read"] and not locked["write"], locked
+        for made in (keep, folder / "open"):
+            locked = probe(io, made, "secret.txt")
+            assert not locked["read"] and not locked["write"], (made, locked)
+        # No DACL names the account, none is null, and the account owns nothing.
         assert holders(folder) == []
         step("Windows: an entry made outside Eugene stays after a removal")
         manual, _, _ = backend.grant(str(folder), "read", lambda _: None)
@@ -1128,7 +1156,7 @@ def main() -> None:
                         "deleted folder restart",
                         "unsafe parent refusal",
                         "bind mount alias of /etc refused by the broker and the agent",
-                        "by-hand entry for Eugene's group kept",
+                        "by-hand entry for Eugene's group kept, across a rename",
                         "read grant removal restores the exact ACLs",
                         "unrelated account and outside folder gain nothing",
                     ],
@@ -1181,6 +1209,7 @@ def main() -> None:
                             "preexisting ACL preservation",
                             "refusals and authenticated routes",
                             "folder protected by the app after a grant loses the access",
+                            "null DACL set by the app repaired; app-owned items given to the folder's owner",
                             "grant inside another grant refused",
                             "read grant removal restores the exact DACLs",
                             "unrelated service account and outside folder gain nothing",

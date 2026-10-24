@@ -752,6 +752,110 @@ def test_revoke_restores_the_exact_acl_of_an_item_nobody_changed(fake_tree):
     assert {fd: f.acl[fd] for fd in (10, seed)} == before
 
 
+def test_revoke_keeps_a_by_hand_entry_on_a_file_renamed_after_the_grant(fake_tree):
+    """Re-review: provenance was keyed by path, so a rename lost it."""
+    f = fake_tree
+    seed = f.add("seed.txt")
+    f.acl[seed].update({"group:1001": "r--", "mask:": "r--"})
+    by_hand = f.acl[seed].copy()
+    record = {}
+    f.h.grant(10, "1001", False, record, lambda _: None)
+    f.nodes[seed] = (("moved.txt",), *f.nodes[seed][1:])  # the same inode, a new name
+    assert f.h.revoke(10, record)
+    assert f.acl[seed] == by_hand
+
+
+def test_revoke_restores_a_file_renamed_after_the_grant(fake_tree):
+    f = fake_tree
+    seed = f.add("seed.txt")
+    before = f.acl[seed].copy()
+    record = {}
+    f.h.grant(10, "1001", False, record, lambda _: None)
+    f.nodes[seed] = (("moved.txt",), *f.nodes[seed][1:])
+    assert f.h.revoke(10, record)
+    assert f.acl[seed] == before
+
+
+def test_grant_checks_again_just_before_it_saves_and_applies(fake_tree):
+    f = fake_tree
+    f.add("seed.txt")
+    before = {fd: acl.copy() for fd, acl in f.acl.items()}
+    saved = []
+
+    def gained_a_name():
+        raise ValueError("system: /srv/shared is /etc/ep-alias through a mount.")
+
+    with pytest.raises(ValueError, match="^system:"):
+        f.h.grant(10, "1001", False, {}, saved.append, check=gained_a_name)
+    assert saved == []
+    assert f.acl == before
+
+
+def test_folder_grant_runs_the_refusals_again_right_before_applying(
+    fake_tree, monkeypatch, tmp_path
+):
+    """Re-review: a bind made between the check and the grant gave the folder a
+    forbidden name that nothing looked at again."""
+    import sys
+
+    f = fake_tree
+    f.add("seed.txt")
+    before = {fd: acl.copy() for fd, acl in f.acl.items()}
+    checked = []
+
+    def refuse(path, prefix):
+        checked.append(path)
+        if len(checked) == 2:
+            raise ValueError("system: /srv/shared is /etc/ep-alias through a mount.")
+
+    ident = "c" * 32
+    monkeypatch.setattr(f.h, "refuse", refuse)
+    monkeypatch.setitem(
+        sys.modules,
+        "grp",
+        SimpleNamespace(getgrnam=lambda _: SimpleNamespace(gr_gid=1001)),
+    )
+    monkeypatch.setattr(
+        f.h,
+        "sys",
+        SimpleNamespace(
+            version_info=(3, 12),
+            argv=["helper", "/srv/install", "agent", "folder-grant", "workbench", "read", ident],
+        ),
+    )
+    monkeypatch.setattr(
+        f.h,
+        "Path",
+        lambda p: SimpleNamespace(read_text=lambda: MOUNT_ROOT)
+        if p == "/proc/self/mountinfo"
+        else tmp_path,
+    )
+    fake_run = f.h.run
+
+    def run(*args, **kwargs):
+        if args[0] == "runuser":
+            return "/srv/shared" if "4097" in args else json.dumps([10, 1, 2])
+        return fake_run(*args, **kwargs)
+
+    monkeypatch.setattr(f.h, "run", run)
+    monkeypatch.setattr(f.h, "running_access", lambda *args: (0, False))
+    monkeypatch.setattr(
+        f.h, "write_record", lambda path, data: path.write_text(json.dumps(data))
+    )
+    monkeypatch.setattr(f.h, "dropin", lambda *args: None)
+
+    @contextlib.contextmanager
+    def opened(path, **kwargs):
+        yield 10
+
+    monkeypatch.setattr(f.h, "opened", opened)
+    with pytest.raises(ValueError, match="^system:"):
+        f.h.main()
+    assert checked == ["/srv/shared", "/srv/shared"]
+    assert f.acl == before
+    assert not (tmp_path / "workbench" / (ident + ".json")).exists()
+
+
 @pytest.mark.parametrize("stage", ["stat", "open"])
 def test_revoke_continues_after_a_child_vanishes(fake_tree, stage):
     f = fake_tree

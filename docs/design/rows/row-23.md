@@ -187,3 +187,20 @@ Then one acceptance run, and one adversarial review.
 
 - **FA-C1: Choice 1.** Revoking a grant removes the permission Eugene added, and only that one.
 - **FA-C2: Choice 1.** Folders inside a home folder are refused, with a pointer to Job Sites.
+
+## What building found (2026-10-24)
+
+Built after two adversarial reviews. Each item has a test that failed before it, and the acceptance runs each one on real Windows and Linux.
+
+**Removal on Windows takes back what the app's account can reach, or says what it cannot.**
+- An app owns what it makes, and an owner can always change an item's DACL. Removal gives each item the app's account owns to the owner of the granted folder (the person). The agent enables `SeRestorePrivilege` on its own thread for this, and LocalSystem has it.
+- A null DACL lets everyone do everything. Removal replaces a null DACL that the app set with what the item inherits from its parent.
+- An app can protect a folder it made. Then Eugene's inherited entry becomes an explicit copy. Removal removes that copy and the inherited entries below it.
+- If removal cannot do one of these, it is incomplete, not done. It names the item: "Workbench's account can still open X: its permissions were changed outside Eugene."
+- An entry for the account that removal cannot attribute is reported, not deleted. The grant saves the account's own entries, the folders already protected, the items it already owned and the null DACLs. Removal leaves all of these as they are.
+- One grant per folder tree: Windows refuses a grant inside or around another grant for the same app. A grant inside another finds the outer grant's inherited rights and records nothing, so removing the outer grant would also take the inner grant's access. Linux keeps overlapping grants, because its helper restores them.
+
+**The Linux root helper checks every name a folder has.**
+- A bind mount, a disk mounted twice, or a home's disk bound elsewhere gives a folder another name, and `realpath` keeps it. The helper reads the mount table and refuses when any name is a system folder, a home or Eugene's folder. If the table cannot be read, the helper refuses. It reads the table again just before it applies a grant.
+- Removal keeps the entries for Eugene's group that were there before the grant, and finds them by identity, so a rename does not lose them. An item nobody changed since the grant gets its recorded ACL back exactly.
+- On a Linux system install, a folder inside Eugene's prefix or a home is refused with that rule ("This is Eugene's own folder", or the pointer to Job Sites). An unsafe parent is named only when no other rule refuses the folder.

@@ -959,8 +959,12 @@ def batches(fd, size=128, *, revoke=False, skipped=None):
             os.close(held)
 
 
-def grant(fd, group, write, ledger, save):
-    """Preflight and save a complete plan before the first ACL change."""
+def grant(fd, group, write, ledger, save, check=None):
+    """Preflight and save a complete plan before the first ACL change.
+
+    `check` runs after the preflight and before the plan is saved: the last
+    look at the folder's names before anything changes.
+    """
     ledger["group"] = group
     ledger["items"] = []
     # Entries for the group that a grant leaves as they are: removal keeps them.
@@ -975,6 +979,8 @@ def grant(fd, group, write, ledger, save):
                 )
             elif any(key in before for key in keys):
                 ledger["kept"].append(dict(names=names, identity=ident))
+    if check is not None:
+        check()
     save(ledger)
     plans = {tuple(item["names"]): item for item in ledger["items"]}
     for batch in batches(fd):
@@ -1009,8 +1015,8 @@ def revoke(fd, ledger):
         return True
     group = ledger["group"]
     skipped = []
-    plans = {tuple(item["names"]): item for item in ledger["items"] if "names" in item}
-    kept = {tuple(item["names"]): item for item in ledger.get("kept", [])}
+    plans = index(item for item in ledger["items"] if "names" in item)
+    kept = index(ledger.get("kept", []))
     for batch in batches(fd, revoke=True, skipped=skipped):
         normal = [item for item in batch if item[2]]
         entries = list(zip(normal, acls([c for _, c, _ in normal]))) if normal else []
@@ -1027,14 +1033,35 @@ def revoke(fd, ledger):
     return not skipped
 
 
+def index(items):
+    """Records by identity, which a rename keeps, and by path for the rest."""
+    found = {}
+    for item in items:
+        found[tuple(item["names"])] = item
+        if item.get("identity"):
+            found[("identity", *identity_key(item["identity"]))] = item
+    return found
+
+
+def identity_key(value):
+    return tuple(value[1:4] if len(value) == 5 else value)
+
+
+def recorded(records, names, ident):
+    """The record for this item: by identity first, then by path."""
+    if ident and ("identity", *identity_key(ident)) in records:
+        return records[("identity", *identity_key(ident))]
+    return records.get(tuple(names))
+
+
 def remove_entries(entries, group, plans, kept=None):
     kept = kept or {}
     keys = ("group:" + group, "default:group:" + group)
     restore, removable = [], []
     for (names, child, ident), current in entries:
-        item = plans.get(names)
+        item = recorded(plans, names, ident)
         planned = item is not None and same_identity(ident, item["identity"])
-        prior = kept.get(names)
+        prior = recorded(kept, names, ident)
         if planned and current == item["after"]:
             if current != item["before"]:
                 restore.append((child, item["before"]))
@@ -1081,7 +1108,7 @@ def remove_entries(entries, group, plans, kept=None):
     base = {"default:user:", "default:group:", "default:other:", "default:mask:"}
     # Default ACLs the grant created go; setfacl --restore leaves them.
     for (names, child, ident), current in everything:
-        item = plans.get(names)
+        item = recorded(plans, names, ident)
         defaults = {k for k in current if k.startswith("default:")}
         defaults.discard("default:group:" + group)
         if (
@@ -1334,7 +1361,7 @@ def main():
             # Mount IDs are transient; use the longest containing mount
             # only to reject remote filesystems, never as persistent identity.
             mounts = []
-            for line in Path("/proc/self/mountinfo").read_text().splitlines():
+            for line in mount_table().splitlines():
                 point = re.sub(
                     r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), line.split()[4]
                 )
@@ -1350,8 +1377,15 @@ def main():
                 removed=False,
                 items=[],
             )
+            # A mount made since the first check can give the folder a
+            # forbidden name without changing its identity: look again.
             added = grant(
-                fd, group, mode == "write", record, lambda r: write_record(target, r)
+                fd,
+                group,
+                mode == "write",
+                record,
+                lambda r: write_record(target, r),
+                check=lambda: refuse(path, prefix),
             )
             write_record(target, record)
             dropin(
