@@ -435,6 +435,9 @@ jobs:
       - name: The shared acceptance harness is the real server - console log copy, machine port, client doors, stop file (row 2)
         if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/harness-acceptance.py
+      - name: Measure people served through the shared harness and a two-slot fixture (row 10)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/serving-sweep-acceptance.py
       - name: Responses client tools and compact through the OpenAI SDK and fixture backend (row 57)
         if: matrix.shard == 'L1'
         run: python specs/scripts/row57-responses-tools-acceptance.py
@@ -447,12 +450,21 @@ jobs:
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
+      # Row 4: four agents on this runner's routable address, each behind its
+      # own machine port; a standby whose copy differs takes a fresh one, and
+      # after a promotion every machine follows the new root's address.
+      - name: Agents follow a promoted root's address, and a standby that differs takes a fresh copy (row 4)
+        if: matrix.shard == 'L1' || matrix.shard == 'W3'
+        run: python specs/scripts/root-moved-acceptance.py
       - name: Rotate a client key under a running stream, and record last use across a root restart (row 24)
         if: matrix.shard == 'L2' || matrix.shard == 'W2'
         run: python specs/scripts/ck-rotate-acceptance.py
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/r8-profile-acceptance.py
+      - name: Keep working when the Library and its share stop answering (row 48b)
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
+        run: python specs/scripts/row48b-library-down-acceptance.py
       - name: Verify engines declare what they accept and the Library judges (LS1)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/ls1-eligibility-acceptance.py
@@ -936,6 +948,12 @@ jobs:
 
       - name: Check Ollama Keep and worker report contracts
         run: python scripts/test_ollama_contract.py
+
+      - name: Check gateway routing node contract
+        run: python scripts/test_gateway_routing_node_contract.py
+
+      - name: Check Strata preparation and effective launch contracts
+        run: python scripts/test_strata_settings_contract.py
 
       - name: Check DeepSeek Flash template contracts
         run: python scripts/test_deepseek_flash_contract.py

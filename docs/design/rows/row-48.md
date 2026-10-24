@@ -263,3 +263,36 @@ without the grant must be refused.
   gateway's defaults.
 
 Both defaults are built until Troy answers.
+
+## What building found
+
+- **48b, phase 1:** `Runtime.localPathNote` already carries copy notes.
+  Its contract now also covers a start from an unchecked local copy;
+  no second runtime note field is needed.
+- The gateway has no `GET /v1/info` today. 48b adds the endpoint rather
+  than extending one. Its `library.reachable` is null until the first
+  check, including after a restart; loading saved settings alone does
+  not show whether the Library can answer.
+- The acceptance in §2.6 uses short real times with
+  `profileCacheSeconds: 1`. Gateway unit tests use an injected clock to
+  cover an outage past 300 s; the process acceptance does not inject time.
+- **48b, phase 2:** a folder with no path mapping still needs its saved
+  Library root for the source check. Checking the disk root instead would
+  mistake an unavailable folder for a removed model. Copy layout stays
+  unchanged, including sharded and prepared models; the first source
+  record also keeps their member list for a restart without the source.
+- Copy completion and runtime reads can record the same source at once.
+  Windows exposed competing writes to the record's temporary file. Record
+  reads and writes now share a lock, and an unchanged record is not written
+  again. Clearing a copy also clears its record; a running copy keeps both.
+- A Library answer that refuses a read or is malformed is not a transport
+  outage. Only transport errors, timeouts and proxy 502/503/504 preserve
+  saved defaults. An empty profile answer clears them, including on disk.
+- The local Windows acceptance passed with a removed `subst` drive and
+  cleared install variables. The CI dependency lock could not be installed
+  in the sandbox (`av==19.0.2` was unavailable offline); the isolated local
+  runner used the worktrees' installed dependencies and the release-pinned
+  control source. CI still installs the full lock on Linux and Windows.
+- The agent's existing real-app-install test needs a managed Python from
+  GitHub. That download is blocked by this sandbox, so its whole-suite
+  run reports that test as failed; the row's changed tests pass.

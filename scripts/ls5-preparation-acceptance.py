@@ -345,7 +345,7 @@ def main() -> int:
         prefix="ep-ls5-", ignore_cleanup_errors=True
     ) as raw:
         directory = Path(raw)
-        agent_port, library_port, gateway_port = free_ports(3)
+        agent_port, library_port, gateway_port, machine_port = free_ports(4)
         models = directory / "models"
         folder = models / REPO.replace("/", os.sep)
         folder.mkdir(parents=True)
@@ -407,6 +407,7 @@ def main() -> int:
                 "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(directory / "agent.yaml"),
                 "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1",
                 "EUGENE_PLEXUS_AGENT_BIND_PORT": str(agent_port),
+                "EUGENE_PLEXUS_AGENT_MACHINE_PORT": str(machine_port),
                 "EUGENE_PLEXUS_AGENT_ENGINE_ROOT": str(directory / "engines"),
                 "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
                 "PYTHONUNBUFFERED": "1",
@@ -885,7 +886,8 @@ def main() -> int:
                 and after.get("pid") is None,
                 {k: after.get(k) for k in ("status", "stopReason", "pid", "lastError")},
             )
-            client.post(f"/v1/runtimes/{stopped_rt}/start")
+            started = client.post(f"/v1/runtimes/{stopped_rt}/start")
+            assert started.is_success, f"start refused ({started.status_code}): {started.text}"
             ready = wait(
                 lambda: (lambda r: r if r["status"] == "ready" else None)(own()),
                 "it starts again",
