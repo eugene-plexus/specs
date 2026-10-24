@@ -824,6 +824,10 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
                 "entry": "eugene_plexus_workbench", "ui": True, "configTrio": True, "signIn": True,
                 "localActions": False})
             manifest.update({"id": app_id, "localActions": False})
+            # Only shipped entries may provide or use the memory-server link (row 72).
+            manifest["uses"] = [u for u in manifest.get("uses") or [] if u != "memory-server"]
+            if manifest.get("provides") == "memory-server":
+                del manifest["provides"]
             if source is not None:
                 manifest.update({"source": source, "version": "dev-" + secrets.token_hex(3)})
             added = call("agent", "POST", "/v1/app-catalogue/custom", operator, json=manifest)

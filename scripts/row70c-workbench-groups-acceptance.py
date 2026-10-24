@@ -4,7 +4,7 @@ server is everyone's in the group (`docs/design/rows/row-70.md` section 5, steps
 Real processes on free ports (never 8079-8083), every `EUGENE_PLEXUS_*` variable cleared: a
 control root, an enrolled agent that supervises a gateway and a model's inference-driver, a
 stand-in engine, Eugene's reference memory server (`m-memory-server.py`), and Workbench,
-installed by the agent as a custom catalogue entry from its archive at the commit under test
+installed by the agent as the shipped catalogue entry, pointed at its archive at the commit under test
 (`--workbench`, or `R70C_WORKBENCH_REF`: a commit, or a branch, else `main`; as row 7's).
 
 1. At the root: G1 (background, 70%) and G2 (interactive, 85%). A is in G1; B in G1 and G2;
@@ -42,7 +42,7 @@ import httpx
 import yaml
 
 HERE = Path(__file__).resolve().parent
-APP = "workbench-r70c"
+APP = "workbench"
 RESULTS: list[tuple[str, str, bool, str]] = []
 PASSWORDS = {"a": "row70c-a-password", "b": "row70c-b-password", "c": "row70c-c-password"}
 
@@ -142,7 +142,6 @@ def exercise(work: Path, commit: str) -> None:
             "advertiseUrl": f"http://{lan}:{ports['agent']}",
             "securityMode": "prompt_on_startup",
             "uvBinary": c3.uv_binary(),
-            "allowCustomApps": True,
             "components": [
                 {"name": "gateway", "kind": "gateway", "url": url["gateway"],
                  "spawn": {"configFile": str(agent_dir / "gateway.yaml")}},
@@ -150,6 +149,8 @@ def exercise(work: Path, commit: str) -> None:
                  "spawn": {"configFile": str(agent_dir / "model.yaml")}},
             ],
         }), encoding="utf-8")
+        archive = f"https://github.com/eugene-plexus/workbench/archive/{commit}.tar.gz"
+        r7.workbench_catalogue(agent_dir, version=commit, source=archive)
         start("agent")
         local = call("agent", "POST", "/v1/auth/initialize", json={"passphrase": passphrase}).json()["sessionToken"]
         join = call("control", "POST", "/v1/nodes/join-token", root,
@@ -167,11 +168,10 @@ def exercise(work: Path, commit: str) -> None:
 
         say(f"Workbench {commit[:12]}, installed by the agent from its archive")
         catalogue = call("agent", "GET", "/v1/app-catalogue", operator).json()
-        entry = next(e for e in catalogue["apps"] if e["manifest"]["id"] == "workbench")
-        manifest = {**entry["manifest"], "id": APP, "localActions": False, "version": commit,
-                    "source": f"https://github.com/eugene-plexus/workbench/archive/{commit}.tar.gz"}
-        added = call("agent", "POST", "/v1/app-catalogue/custom", operator, json=manifest)
-        must("0b", "the Workbench under test is a catalogue entry", added.status_code == 201, added.text[:300])
+        entry = next(e for e in catalogue["apps"] if e["manifest"]["id"] == APP)
+        must("0b", "the Workbench under test is a catalogue entry",
+             entry["origin"] == "catalogue" and entry["manifest"]["version"] == commit
+             and entry["manifest"]["source"] == archive, entry)
         began = call("agent", "POST", f"/v1/apps/{APP}/install", operator)
         must("0c", "its install starts", began.status_code == 202, began.text[:300])
 
