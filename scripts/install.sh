@@ -59,13 +59,13 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=f4996935bda7269c72f27f22d026ced201764655
+PIN_AGENT=0579a8d4eec05b82974d23531766babb9176e265
 PIN_CONTROL=c90d76d0383103afeeb517c5e226b358c94229f1
 PIN_GATEWAY=a1ad7777530bca9a6529f1143474daac68e92653
 PIN_DRIVER=7fb4c875ef86ae65b601249818212b2934d8b506
 PIN_LIBRARY=1b015632de2dddde6139719916b77128a9019869
 PIN_TOOL_DRIVER=a9c8b03439b60d2ba24275bf9f17da02c245190e
-PIN_UI=720a00516284e21233c587736f4af5d9fb8375e8   # branch `dist`, not `main`
+PIN_UI=c7b19760772771cdd4f7d6f932c1b63dcd11b373   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
@@ -595,6 +595,7 @@ LoadCredential=client_key:$PREFIX/apps/%i/data/client_key
 LoadCredential=admin_token:$PREFIX/apps/%i/admin_token
 # Its sign-in secret (C2); empty for an app that signs nobody in.
 LoadCredential=oidc_secret:$PREFIX/apps/%i/data/oidc_secret
+LoadCredential=memory_server_token:$PREFIX/apps/%i/memory_server_token
 ExecStart=$PREFIX/apps/%i/python -I -u $PREFIX/apps/launcher/app_launcher.py $PREFIX/apps/%i/launch.json
 Restart=on-failure
 RestartSec=5

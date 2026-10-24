@@ -83,9 +83,7 @@ PINNED_STEPS = {
 
 
 def workflow(name: str) -> dict:
-    return yaml.load(
-        (WORKFLOWS / name).read_text(encoding="utf-8"), Loader=yaml.BaseLoader
-    )
+    return yaml.load((WORKFLOWS / name).read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 
 def can_run_on_windows(job: dict) -> bool:
@@ -104,6 +102,46 @@ def can_run_on_windows(job: dict) -> bool:
 
 
 class WiringTests(unittest.TestCase):
+    def test_app_units_load_private_memory_link_credentials(self) -> None:
+        installer = (WORKFLOWS.parents[1] / "scripts/install.sh").read_text(encoding="utf-8")
+        for credential in ("memory_server_token",):
+            self.assertIn(f"LoadCredential={credential}:$PREFIX/apps/%i/{credential}", installer)
+        self.assertNotIn("LoadCredential=memory_server_model.json:", installer)
+
+    def test_hindsight_acceptance_runs_on_linux_with_candidate_repositories(self) -> None:
+        job = workflow("ci.yml")["jobs"]["mv5b-hindsight"]
+        self.assertEqual(job["runs-on"], "ubuntu-latest")
+        self.assertEqual(job["needs"], "plan")
+        steps = job["steps"]
+        repos = {s.get("with", {}).get("repository"): s["with"] for s in steps
+                 if s.get("uses", "").startswith("actions/checkout@")}
+        for repo in ("specs", "agent", "workbench"):
+            self.assertIn("eugene-plexus/" + repo, repos)
+        self.assertIn("needs.plan.outputs.agent_ref", repos["eugene-plexus/agent"]["ref"])
+        self.assertIn("inputs.workbench_ref", repos["eugene-plexus/workbench"]["ref"])
+        commands = "\n".join(s.get("run", "") for s in steps)
+        self.assertIn("mv5b-hindsight-acceptance.py", commands)
+        self.assertIn(".codex-tmp", commands)
+        self.assertTrue(any(s.get("if") == "always()" and s.get("uses", "").startswith("actions/upload-artifact@") for s in steps))
+
+    def test_hindsight_contract_runs_in_the_contract_validation_job(self) -> None:
+        job = workflow("ci.yml")["jobs"]["validate-openapi"]
+        self.assertEqual(job["if"], "needs.plan.outputs.contracts == 'true'")
+        steps = job["steps"]
+        checks = [
+            i
+            for i, step in enumerate(steps)
+            if step.get("run") == "python scripts/test_hindsight_contract.py"
+        ]
+        self.assertEqual(len(checks), 1)
+        dependencies = next(
+            i
+            for i, step in enumerate(steps)
+            if "pip install 'openapi-spec-validator==" in step.get("run", "")
+        )
+        self.assertLess(dependencies, checks[0])
+        self.assertNotIn("if", steps[checks[0]])
+
     def test_di7_repeatable_answers_runs_with_real_cpu_engine_and_keeps_evidence(self) -> None:
         steps = workflow("ci.yml")["jobs"]["r7-signing"]["steps"]
         step = next(s for s in steps if "di7-same-answer-acceptance.py" in s.get("run", ""))
@@ -129,23 +167,21 @@ class WiringTests(unittest.TestCase):
                 job_shell = ((job.get("defaults") or {}).get("run") or {}).get("shell")
                 for number, step in enumerate(job.get("steps") or [], 1):
                     if "run" in step and not (step.get("shell") or job_shell or workflow_shell):
-                        default.append(f"{path.name} {job_id} step {number}: {step.get('name', '')}")
+                        default.append(
+                            f"{path.name} {job_id} step {number}: {step.get('name', '')}"
+                        )
         self.assertEqual(default, [])
 
     def test_container_checks_install_yaml_in_the_selected_interpreter(self) -> None:
         steps = workflow("container.yml")["jobs"]["build-verify-publish"]["steps"]
-        setup = next(
-            i for i, step in enumerate(steps) if "setup-python@" in step.get("uses", "")
-        )
+        setup = next(i for i, step in enumerate(steps) if "setup-python@" in step.get("uses", ""))
         install = next(
             i
             for i, step in enumerate(steps)
             if "python -m pip install PyYAML==6.0.3" in step.get("run", "")
         )
         acceptance = next(
-            i
-            for i, step in enumerate(steps)
-            if "compose-acceptance.sh" in step.get("run", "")
+            i for i, step in enumerate(steps) if "compose-acceptance.sh" in step.get("run", "")
         )
         self.assertLess(setup, install)
         self.assertLess(install, acceptance)
@@ -154,9 +190,7 @@ class WiringTests(unittest.TestCase):
         steps = workflow("release-qualification.yml")["jobs"]["candidate"]["steps"]
         script = next(step["run"] for step in steps if step.get("id") == "pins")
         imports = script.split("root = Path.cwd()", 1)[0]
-        subprocess.run(
-            [sys.executable, "-c", imports], cwd=WORKFLOWS.parent.parent, check=True
-        )
+        subprocess.run([sys.executable, "-c", imports], cwd=WORKFLOWS.parent.parent, check=True)
 
     def test_branch_pushes_run_ci_and_main_pushes_are_never_cancelled(self) -> None:
         ci = workflow("ci.yml")
@@ -240,9 +274,7 @@ class WiringTests(unittest.TestCase):
         self.assertEqual(
             sorted((leg["os"], leg["shard"]) for leg in legs),
             sorted(
-                (system, f"{letter}{part}")
-                for system, letter in systems.items()
-                for part in "123"
+                (system, f"{letter}{part}") for system, letter in systems.items() for part in "123"
             ),
         )
         clause = re.compile(r"matrix\.shard == '([LW][123])'")
@@ -376,17 +408,13 @@ class WiringTests(unittest.TestCase):
 
     def test_only_publisher_moves_edge_and_publication_is_not_canceled(self) -> None:
         publisher = workflow("edge.yml")
-        self.assertEqual(
-            publisher["on"]["workflow_run"]["workflows"], ["CI", "Container image"]
-        )
+        self.assertEqual(publisher["on"]["workflow_run"]["workflows"], ["CI", "Container image"])
         self.assertEqual(publisher["concurrency"]["cancel-in-progress"], "false")
         checkout = publisher["jobs"]["publish"]["steps"][0]
         self.assertEqual(checkout["with"]["ref"], "main")
         self.assertEqual(checkout["with"]["persist-credentials"], "false")
         build = workflow("container.yml")["jobs"]["build-verify-publish"]
-        tagging = next(
-            step["run"] for step in build["steps"] if step.get("id") == "push"
-        )
+        tagging = next(step["run"] for step in build["steps"] if step.get("id") == "push")
         self.assertNotIn('"$IMAGE:edge"', tagging)
         self.assertNotIn('"$IMAGE:$RELEASE_TAG"', tagging)
 
@@ -441,38 +469,28 @@ class WiringTests(unittest.TestCase):
         for name in ("a4-macos.yml", "c1-app-accounts.yml", "c4-open-webui.yml"):
             self.assertNotIn("push", workflow(name)["on"])
         # macOS on a push runs beside CI, not in it, so Edge does not wait for it.
-        self.assertIn(
-            "github.event_name != 'push'", workflow("ci.yml")["jobs"]["macos"]["if"]
-        )
+        self.assertIn("github.event_name != 'push'", workflow("ci.yml")["jobs"]["macos"]["if"])
         pushed = workflow("macos-push.yml")
         self.assertIn("push", pushed["on"])
-        self.assertEqual(
-            pushed["jobs"]["macos"]["uses"], "./.github/workflows/a4-macos.yml"
-        )
+        self.assertEqual(pushed["jobs"]["macos"]["uses"], "./.github/workflows/a4-macos.yml")
         self.assertNotIn(
             "macOS after push", workflow("edge.yml")["on"]["workflow_run"]["workflows"]
         )
         jobs = workflow("container.yml")["jobs"]
         self.assertEqual(jobs["build-verify-publish"]["needs"], "coverage")
-        self.assertIn(
-            "needs.coverage.outputs.container", jobs["build-verify-publish"]["if"]
-        )
+        self.assertIn("needs.coverage.outputs.container", jobs["build-verify-publish"]["if"])
 
     def test_release_browser_checks_use_shipped_not_rebuilt_static_files(self) -> None:
         steps = workflow("release-qualification.yml")["jobs"]["components"]["steps"]
         script = next(
-            step["run"]
-            for step in steps
-            if step.get("name", "").startswith("Console regression")
+            step["run"] for step in steps if step.get("name", "").startswith("Console regression")
         )
         self.assertNotIn("build:python", script)
         browser_commands = [
             line for line in script.splitlines() if "browser-acceptance.mjs" in line
         ]
         self.assertEqual(len(browser_commands), 5)
-        self.assertTrue(
-            all("python/eugene_plexus_ui/static" in line for line in browser_commands)
-        )
+        self.assertTrue(all("python/eugene_plexus_ui/static" in line for line in browser_commands))
 
 
 if __name__ == "__main__":
