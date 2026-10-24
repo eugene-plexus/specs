@@ -1983,6 +1983,13 @@ paths:
                     status: 400
                     refusal: home
                     detail: "/home/sam/projects is inside a person's home. Use a Job Site to work in your own folders."
+                unsafe_parent:
+                  value:
+                    type: about:blank
+                    title: Folder access refused
+                    status: 400
+                    refusal: unsafe_parent
+                    detail: "/srv/shared can be changed by other accounts."
         "401":
           description: The credential is missing, invalid or expired.
           content:
@@ -2099,6 +2106,89 @@ paths:
                     status: 409
                     refusal: unavailable
                     detail: "Workbench runs in Eugene's own account here, so it already reaches what Eugene reaches. Folder access needs a Windows service or a Linux system install."
+
+  /v1/apps/{app}/folder-access/{id}/unknown/{entry}:
+    parameters:
+      - $ref: "#/components/parameters/FolderAccessApp"
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          minLength: 1
+        description: The recorded folder access id, scoped to this app on this node.
+      - in: path
+        name: entry
+        required: true
+        schema:
+          type: string
+          minLength: 1
+        description: The id of one entry in the record's unknown list.
+    post:
+      tags: [apps]
+      operationId: decideFolderAccessEntry
+      summary: Remove or keep one access entry that Eugene did not add.
+      description: |
+        Requires an operator session. A service token, gateway token or
+        client key is refused, including the app's own key.
+
+        A removal that finds access for the app's account that Eugene
+        did not add stops at incomplete and lists each such entry in
+        unknown. The owner decides each one (R23-UNKNOWN). Remove: the
+        agent checks the entry again (the same item, the same entry)
+        and deletes only that entry, then finishes the removal. Keep:
+        the entry stays, the app keeps that access, and the record says
+        so. Either way the removal runs again; when no entry waits, the
+        record reads removed and lists the kept entries.
+
+        An entry that changed since the agent found it, or that the
+        agent cannot change, is not removed; the response names the
+        observed cause.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FolderAccessDecision"
+      responses:
+        "200":
+          description: The record after the decision and the removal that follows it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderAccess"
+        "400":
+          description: The entry could not be removed; detail names the observed cause.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "401":
+          description: The credential is missing, invalid or expired.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "403":
+          description: The credential is valid but is not an operator session.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "404":
+          description: The app, the record or the entry was not found on this node.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "409":
+          description: The entry is not waiting for a decision, or the record is changing.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/apps/{app}/folder-access/release:
     parameters:
@@ -9460,7 +9550,7 @@ components:
           description: The app's own OS identity that receives these rights.
         state:
           type: string
-          enum: [applying, ready, removing, removed, changed_outside, failed]
+          enum: [applying, ready, removing, removed, changed_outside, failed, incomplete]
           description: |
             The effective access state. Applying and removing are in
             progress; ready means propagation completed, subject to
@@ -9469,6 +9559,9 @@ components:
             Changed_outside means the folder identity or recorded rights
             differ, so nothing was changed. Failed names its cause in
             message; it does not imply that all additions were removed.
+            Incomplete means removal found access for the app's account
+            that Eugene did not add; each such entry waits in unknown
+            for the owner's decision, and the app may still use it.
         preexisting:
           type: boolean
           description: The account already had the requested rights; nothing added and nothing to take back.
@@ -9490,6 +9583,56 @@ components:
         addedBy:
           type: string
           description: The operator identity that requested access, derived from the session.
+        unknown:
+          type: array
+          items:
+            $ref: "#/components/schemas/FolderAccessUnknown"
+          description: |
+            Access for the app's account that removal found and Eugene did
+            not add. A pending entry waits for the owner's decision; a kept
+            entry stays, and the app still has that access through it.
+            Absent or empty when there is none.
+
+    FolderAccessUnknown:
+      type: object
+      description: One entry that lets the app's account in and that Eugene did not add.
+      required: [id, path, kind, entry, decision]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Stable id of this entry within its record.
+        path:
+          type: string
+          minLength: 1
+          description: The file or folder that holds the entry.
+        kind:
+          type: string
+          enum: [entry, null_dacl, owner, unreadable]
+          description: |
+            entry is a permission entry for the app's account. null_dacl is
+            a Windows item with no permission list, which lets everyone
+            in. owner means the app's account owns the item, so it can
+            change the item's permissions. unreadable means Eugene cannot
+            read the item's permissions.
+        entry:
+          type: string
+          minLength: 1
+          description: The entry in words, as the console shows it.
+        decision:
+          type: string
+          enum: [pending, kept]
+          description: Pending waits for the owner; kept means the owner chose to keep it.
+
+    FolderAccessDecision:
+      type: object
+      description: The owner's decision about one unknown entry.
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [remove, keep]
+          description: Remove deletes only this entry after checking it again; keep leaves it.
 
     FolderAccessList:
       type: object
@@ -9510,9 +9653,11 @@ components:
         reparse point in the path; drive_root includes mount roots;
         network includes UNC paths and mapped network drives. System,
         Eugene and home refusals also cover ancestors containing those
-        folders. Unavailable means the app shares Eugene's own account
-        and is reported with 409; path refusals use 400.
-      enum: [not_a_folder, link, drive_root, network, system, eugene, home, unavailable]
+        folders. unsafe_parent means a parent folder can be changed by
+        accounts other than root (Linux), and applies only when no other
+        refusal does. Unavailable means the app shares Eugene's own
+        account and is reported with 409; path refusals use 400.
+      enum: [not_a_folder, link, drive_root, network, system, eugene, home, unsafe_parent, unavailable]
 
     FolderAccessProblem:
       description: A Problem with the observed folder-access refusal and its cause.

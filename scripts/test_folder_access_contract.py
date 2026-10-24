@@ -29,6 +29,7 @@ class FolderAccessContractTests(unittest.TestCase):
             (BASE, "get", "listFolderAccess"),
             (BASE, "post", "addFolderAccess"),
             (BASE + "/{id}", "delete", "removeFolderAccess"),
+            (BASE + "/{id}/unknown/{entry}", "post", "decideFolderAccessEntry"),
         ):
             with self.subTest(operation=operation_id):
                 item = self.paths[path]
@@ -164,7 +165,15 @@ class FolderAccessContractTests(unittest.TestCase):
         self.assertEqual(fields["mode"]["enum"], ["read", "write"])
         self.assertEqual(
             fields["state"]["enum"],
-            ["applying", "ready", "removing", "removed", "changed_outside", "failed"],
+            [
+                "applying",
+                "ready",
+                "removing",
+                "removed",
+                "changed_outside",
+                "failed",
+                "incomplete",
+            ],
         )
         self.assertEqual(fields["notInheriting"]["minimum"], 0)
         self.assertEqual(fields["addedAt"]["format"], "date-time")
@@ -189,6 +198,49 @@ class FolderAccessContractTests(unittest.TestCase):
             {"$ref": "#/components/schemas/FolderAccess"},
         )
 
+    def test_unknown_entries_wait_for_the_owner(self) -> None:
+        """R23-UNKNOWN (Troy, 2026-10-24): access Eugene did not add is the owner's call."""
+        fields = self.schemas["FolderAccess"]["properties"]
+        self.assertEqual(
+            fields["unknown"],
+            {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/FolderAccessUnknown"},
+                "description": fields["unknown"]["description"],
+            },
+        )
+        self.assertIn("incomplete", fields["state"]["description"].lower())
+        unknown = self.schemas["FolderAccessUnknown"]
+        self.assertEqual(
+            set(unknown["required"]), {"id", "path", "kind", "entry", "decision"}
+        )
+        self.assertEqual(
+            unknown["properties"]["kind"]["enum"],
+            ["entry", "null_dacl", "owner", "unreadable"],
+        )
+        self.assertEqual(unknown["properties"]["decision"]["enum"], ["pending", "kept"])
+        decision = self.schemas["FolderAccessDecision"]
+        self.assertEqual(decision["required"], ["action"])
+        self.assertEqual(decision["properties"]["action"]["enum"], ["remove", "keep"])
+        item = self.paths[BASE + "/{id}/unknown/{entry}"]
+        self.assertEqual(
+            [(p.get("name"), p.get("in")) for p in item["parameters"][1:]],
+            [("id", "path"), ("entry", "path")],
+        )
+        operation = item["post"]
+        self.assertEqual(
+            operation["requestBody"]["content"]["application/json"]["schema"],
+            {"$ref": "#/components/schemas/FolderAccessDecision"},
+        )
+        self.assertEqual(
+            operation["responses"]["200"]["content"]["application/json"]["schema"],
+            {"$ref": "#/components/schemas/FolderAccess"},
+        )
+        description = " ".join(operation["description"].split())
+        for boundary in ("checks the entry again", "Keep", "Remove"):
+            self.assertIn(boundary, description)
+        self.assertIn("application/problem+json", operation["responses"]["409"]["content"])
+
     def test_refusals_are_problem_responses_with_observed_causes(self) -> None:
         refusal = self.schemas["FolderAccessRefusal"]
         self.assertEqual(refusal["type"], "string")
@@ -202,6 +254,7 @@ class FolderAccessContractTests(unittest.TestCase):
                 "system",
                 "eugene",
                 "home",
+                "unsafe_parent",
                 "unavailable",
             ],
         )
