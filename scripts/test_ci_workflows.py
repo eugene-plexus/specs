@@ -17,7 +17,7 @@ WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
 # then these acceptance steps, by script (or step name), with the profile
 # each runs in ("every" profile, "full" only, or "always-full": even after a
 # failure, full only) and its systems. A change here is a gate change.
-SETUP_STEPS = 15
+SETUP_STEPS = 16
 FULL, EVERY = "full", "every"
 PINNED_STEPS = {
     "serving-sweep-acceptance.py": (EVERY, "linux"),
@@ -36,6 +36,8 @@ PINNED_STEPS = {
     # Row 4 (2026-10-22): a promoted root's address reaches every machine.
     "root-moved-acceptance.py": (EVERY, "both"),
     "row57-responses-tools-acceptance.py": (EVERY, "linux"),
+    # Row 53 (2026-10-23): files kept for one owner each, through the store.
+    "row53-store-acceptance.py": (EVERY, "both"),
     # Row 24 (2026-10-22): rotating a client key under a running stream.
     "ck-rotate-acceptance.py": (EVERY, "both"),
     "row70c-workbench-groups-acceptance.py": (EVERY, "both"),

@@ -31,7 +31,7 @@
 # AMD or Intel passthrough yet. And machines with their own GPUs still
 # run `install.sh` and `join` this — that topology is unchanged.
 #
-# The image is Path B's install run by Path B's own script. The seven
+# The image is Path B's install run by Path B's own script. The eight
 # source pins and hashed Python dependencies come from `release/manifest.json`
 # and `release/requirements.lock`, embedded into both generated installers.
 #

@@ -1145,6 +1145,35 @@ paths:
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
+  /v1/people/known:
+    post:
+      operationId: peopleKnown
+      summary: Which of these people the root still has, for a member node (row 53)
+      description: |
+        A member node's agent only (`sub: agent`, signed by its node's
+        key), asking for a component on its machine that keeps people's
+        objects: the store. The answer is `/oidc/subjects`' for an app:
+        each id `known` (a person record exists, on or off, or it is the
+        owner) or `unknown` (deleted). Only the ids sent are answered, so
+        it cannot list people. Nothing is said while the root cannot
+        vouch for its own list: locked, or a standby.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: 'components/common.yaml#/components/schemas/PeopleKnownRequest'}
+      responses:
+        '200':
+          description: Every id sent, in `known` or in `unknown`.
+          content:
+            application/json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/PeopleKnownResult'}
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '422':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          $ref: 'components/common.yaml#/components/responses/Problem'
   /v1/people:
     get:
       operationId: listPeople

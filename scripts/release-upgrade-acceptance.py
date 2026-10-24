@@ -43,6 +43,7 @@ COMPONENTS = (
     "gateway",
     "inference-driver",
     "library",
+    "store",
     "tool-driver",
     "ui",
 )
