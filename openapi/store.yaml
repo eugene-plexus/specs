@@ -35,7 +35,9 @@ info:
     * `key:<id>` for a client key with no person: the key's lineage when
       the admission authority reports one, else its id;
     * `install` for the owner's own console session;
-    * `service:<sub>` for a service token of the gateway's own machine.
+    * `component:<sub>` for a service token of one of the gateway's own
+      machine's components (not `service:`, the audience prefix retired
+      with the shared key).
 
     **The header is believed only beside a gateway's service token**
     (`sub: gateway`, this machine's own, or another machine's whose key
@@ -524,7 +526,7 @@ components:
         service token.
       schema:
         type: string
-        pattern: '^(install|(person|key|service):[A-Za-z0-9._@:-]{1,200})$'
+        pattern: '^(install|(person|key|component):[A-Za-z0-9._@:-]{1,200})$'
     FileId:
       name: fileId
       in: path
@@ -749,7 +751,7 @@ components:
       properties:
         owner:
           type: string
-          description: '`install`, `person:<id>`, `key:<id>` or `service:<sub>`.'
+          description: '`install`, `person:<id>`, `key:<id>` or `component:<sub>`.'
         files:
           type: integer
         bytes:
