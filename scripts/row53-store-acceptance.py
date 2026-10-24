@@ -839,8 +839,10 @@ def exercise(directory: Path, sabotage: bool) -> None:
                 assert without(hers.text, ident) == without(absent.text, missing), hers.text
         assert as_store(ann_owner, "").json()["data"] == []
         check_isolation(ben, anns)
+        # Refused at the door: the root no longer gives her token access (403),
+        # or no longer knows it (401).
         install.wait(
-            lambda: ann.files("GET").status_code == 401, "Ann's token refused at the gateway"
+            lambda: ann.files("GET").status_code in (401, 403), "Ann's token refused at the gateway"
         )
         listed = install.call("agent", "GET", "/api/proxy/store/v1/owners", session).json()
         entry = next(o for o in listed["owners"] if o["owner"] == ann_owner)
