@@ -466,6 +466,12 @@ try:
         r = a.remove('workbench', sys.argv[3])
     elif verb == 'decide':
         r = a.decide('workbench', sys.argv[3], sys.argv[4], sys.argv[5])
+    elif verb == 'decide-lost':
+        # The helper commits the answer; the agent stops before it saves its own.
+        row = a._read()[sys.argv[3]]
+        a.permissions.decide(row['path'], row['delta'], row['unknownKeys'][sys.argv[4]], sys.argv[5])
+        print(json.dumps({'ok': True}))
+        sys.exit(0)
     else:
         r = next(x for x in a.listing('workbench') if x.state == 'ready')
 except Refused as exc:
@@ -795,6 +801,63 @@ def linux(specs: Path) -> None:
         assert "through an entry Eugene did not add" in outcome["message"], outcome
         assert "group:" + group + ":rw-" in run("getfacl", "-cpnE", str(asked / "kept.txt"))
         assert not probe(io, asked)["read"]
+        # Re-review 2: a file with another name, and an entry on a file made after
+        # the grant, are the owner's call; Keep survives a lost answer.
+        step("Linux: a file with another name and a new file's own entry wait for the owner")
+        names = root / "names"
+        names.mkdir(mode=0o700)
+        for name in ("linked.txt", "linked-away.txt"):
+            (names / name).write_text("linked")
+            (names / name).chmod(0o600)
+        grant = agent("add", str(names), "read")
+        assert grant["state"] == "ready", grant
+        os.link(names / "linked.txt", root / "linked-outside.txt")
+        os.link(names / "linked-away.txt", root / "linked-away-outside.txt")
+        (names / "new.txt").write_text("made after the grant")
+        (names / "new.txt").chmod(0o600)
+        run("setfacl", "-m", f"g:{group}:rw-", str(names / "new.txt"))
+        granted_acl = run("getfacl", "-cpnE", str(names / "linked.txt"))
+        outcome = agent("remove", grant["id"])
+        assert outcome["state"] == "incomplete", outcome
+        pending = {Path(u["path"]).name: u for u in outcome["unknown"]}
+        assert set(pending) == {"linked.txt", "linked-away.txt", "new.txt"}, outcome
+        assert pending["linked.txt"]["kind"] == "hardlink", outcome
+        assert "another name" in pending["linked.txt"]["entry"], outcome
+        # Neither name of a linked file changed, and the new file's entry stayed.
+        assert run("getfacl", "-cpnE", str(names / "linked.txt")) == granted_acl
+        assert run("getfacl", "-cpnE", str(root / "linked-outside.txt")) == granted_acl
+        assert "group:" + group + ":rw-" in run("getfacl", "-cpnE", str(names / "new.txt"))
+        outcome = agent("decide", grant["id"], pending["linked-away.txt"]["id"], "remove")
+        assert outcome["state"] == "incomplete", outcome
+        for path in (names / "linked-away.txt", root / "linked-away-outside.txt"):
+            assert "group:" + group + ":" not in run("getfacl", "-cpnE", str(path)), path
+        outcome = agent("decide", grant["id"], pending["new.txt"]["id"], "keep")
+        assert outcome["state"] == "incomplete", outcome
+        outcome = agent("decide", grant["id"], pending["linked.txt"]["id"], "keep")
+        assert outcome["state"] == "removed", outcome
+        assert sorted((Path(u["path"]).name, u["decision"]) for u in outcome["unknown"]) == [
+            ("linked.txt", "kept"),
+            ("new.txt", "kept"),
+        ], outcome
+        assert run("getfacl", "-cpnE", str(names / "linked.txt")) == granted_acl
+        assert run("getfacl", "-cpnE", str(root / "linked-outside.txt")) == granted_acl
+        step("Linux: a Keep the helper committed shows again when the agent never saved it")
+        again = root / "again"
+        again.mkdir(mode=0o700)
+        (again / "seed.txt").write_text("again")
+        (again / "seed.txt").chmod(0o600)
+        grant = agent("add", str(again), "read")
+        assert grant["state"] == "ready", grant
+        run("setfacl", "-m", f"g:{group}:rw-", str(again / "seed.txt"))
+        (found,) = agent("remove", grant["id"])["unknown"]
+        # The agent's record is forgotten after the helper's commit, as in a crash.
+        agent("decide-lost", grant["id"], found["id"], "keep")
+        outcome = agent("remove", grant["id"])
+        assert outcome["state"] == "removed", outcome
+        assert [(Path(u["path"]).name, u["decision"]) for u in outcome["unknown"]] == [
+            ("seed.txt", "kept")
+        ], outcome
+        assert "group:" + group + ":rw-" in run("getfacl", "-cpnE", str(again / "seed.txt"))
         step("Linux: a masked ACL entry is refused and left unchanged")
         for entry in ("u:65534:rwx", "g::rwx"):
             run("setfacl", "-n", "-m", entry + ",m::r--", str(folder))
@@ -1143,6 +1206,47 @@ def windows(root: Path) -> None:
         still = probe(io, asked / "extra-keep")
         assert still["read"] and still["write"], still
         assert not probe(io, asked)["read"]
+        # Re-review 2: a file with another name is the owner's call, and a decision
+        # never follows a junction put where a folder was.
+        step("Windows: a file with another name waits; a swapped folder is never followed")
+        def sddl(path):
+            return ws.ConvertSecurityDescriptorToStringSecurityDescriptor(
+                ws.GetFileSecurity(str(path), 4), 1, 4
+            )
+
+        names = root / "names"
+        names.mkdir()
+        private(names)
+        (names / "linked.txt").write_text("linked")
+        (names / "sub").mkdir()
+        (names / "sub" / "f").write_text("by hand")
+        grant = access.add("workbench", str(names), "read", "acceptance")
+        assert grant.state == "ready", grant.message
+        os.link(names / "linked.txt", root / "linked-outside.txt")
+        private(names / "sub" / "f")
+        run("icacls", str(names / "sub" / "f"), "/grant", account + ":(F)")
+        outcome = access.remove("workbench", grant.id)
+        assert outcome.state == "incomplete", outcome.message
+        pending = {Path(u.path).name: u for u in outcome.unknown or []}
+        assert set(pending) == {"linked.txt", "f"}, outcome
+        assert pending["linked.txt"].kind == "hardlink", outcome
+        assert "another name" in pending["linked.txt"].entry, outcome
+        assert sddl(root / "linked-outside.txt") == sddl(names / "linked.txt")
+        # The folder holding `f` moves away and a junction takes its name.
+        moved = root / "names-moved"
+        (names / "sub").rename(moved)
+        run("cmd.exe", "/d", "/c", "mklink", "/J", str(names / "sub"), str(moved))
+        before = sddl(moved / "f")
+        outcome = access.decide("workbench", grant.id, pending["f"].id, "remove")
+        assert sddl(moved / "f") == before, "A decision followed a junction"
+        assert [Path(u.path).name for u in outcome.unknown or []] == ["linked.txt"], outcome
+        outcome = access.decide("workbench", grant.id, pending["linked.txt"].id, "keep")
+        assert outcome.state == "removed", outcome.message
+        assert [(Path(u.path).name, u.decision) for u in outcome.unknown or []] == [
+            ("linked.txt", "kept")
+        ]
+        assert sddl(root / "linked-outside.txt") == sddl(names / "linked.txt")
+        run("cmd.exe", "/d", "/c", "rmdir", str(names / "sub"))
         step("Windows: a folder swapped for a junction is left alone, and so is the target")
         swap, target = root / "swap", root / "swap-target"
         swap.mkdir()
@@ -1222,6 +1326,8 @@ def main() -> None:
                         "read grant removal restores the exact ACLs",
                         "unrelated account and outside folder gain nothing",
                         "an entry changed by hand is the owner's call: Remove and Keep",
+                        "a file with another name and a new file's own entry wait for the owner",
+                        "a Keep the helper committed shows again after the agent lost it",
                     ],
                 }
             ),
@@ -1277,6 +1383,7 @@ def main() -> None:
                             "read grant removal restores the exact DACLs",
                             "unrelated service account and outside folder gain nothing",
                             "an entry Eugene did not add is the owner's call: Remove and Keep",
+                            "a file with another name waits; a decision never follows a swapped folder",
                         ],
                     }
                 ),
