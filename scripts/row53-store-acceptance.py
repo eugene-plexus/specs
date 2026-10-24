@@ -32,7 +32,8 @@ person's own token); a plain client key has no person.
 6. The store is stopped: `/v1/files` is a 503 naming the cause, and a chat that
    names no file still answers.
 7. `--sabotage`: a store whose listing drops the owner filter, then one whose
-   lookup by id (read, content, delete) drops it, serves the install; step 2's
+   read by id drops it, one whose content read drops it and one whose delete
+   drops it (each breaks one verb only), serves the install; step 2's
    isolation check must fail against each. Each sabotage is made in that store's
    process only (a method replaced before it starts); no file changes, so
    nothing needs restoring.
@@ -169,19 +170,30 @@ def _sabotage_listing() -> None:
     keeper.Keeper.list_files = every_owners  # type: ignore[method-assign]
 
 
-def _sabotage_lookup() -> None:
-    """Read, content and delete by id, without the owner filter."""
+def _sabotage_verb(verb: str) -> None:
+    """One verb by id (read, content or delete), acting for whoever owns the file
+    instead of the caller: the other two keep their owner filter, so each verb's
+    own check is proved on its own."""
     from eugene_plexus_store import keeper
 
-    def anyones(self: Any, owner: str, file_id: str) -> Any:
-        row = self.database.connection.execute(
-            "SELECT * FROM files WHERE id = ?", (file_id,)
-        ).fetchone()
-        if row is None:
-            raise keeper.not_found("file", file_id)
-        return row
+    original = getattr(keeper.Keeper, verb)
 
-    keeper.Keeper._owned_file = anyones  # type: ignore[method-assign]
+    def anyones(self: Any, owner: str, file_id: str, *args: Any, **kw: Any) -> Any:
+        row = self.database.connection.execute(
+            "SELECT owner FROM files WHERE id = ?", (file_id,)
+        ).fetchone()
+        return original(self, row["owner"] if row else owner, file_id, *args, **kw)
+
+    setattr(keeper.Keeper, verb, anyones)
+
+
+#: The sabotages of step 7: what each one breaks, and the store method it breaks.
+SABOTAGES = {
+    "listing": ("a listing without its owner filter", None),
+    "read": ("a read by id without the owner filter", "get_file"),
+    "content": ("a content read by id without the owner filter", "content"),
+    "delete": ("a delete by id without the owner filter", "delete_file"),
+}
 
 
 def serve(kind: str, directory: Path, port: int) -> None:
@@ -221,7 +233,9 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 )
             )
         elif kind.startswith("store-sabotaged-"):
-            {"listing": _sabotage_listing, "lookup": _sabotage_lookup}[kind.rsplit("-", 1)[1]]()
+            broken = kind.rsplit("-", 1)[1]
+            verb = SABOTAGES[broken][1]
+            _sabotage_listing() if verb is None else _sabotage_verb(verb)
             from eugene_plexus_store.app import create_app as store_app
             from eugene_plexus_store.settings import Settings as StoreSettings
 
@@ -289,9 +303,7 @@ class Install:
         self.logs: list[Any] = []
         self.passphrase = secrets.token_urlsafe(24)
         self.ports: dict[str, int] = {}
-        for name in (
-            "control", "agent", "machine", "fixture", "model", "gateway", "listing", "lookup"
-        ):
+        for name in ("control", "agent", "machine", "fixture", "model", "gateway", *SABOTAGES):
             self.ports[name] = free_port(*self.ports.values())
 
     def url(self, name: str) -> str:
@@ -893,10 +905,7 @@ def exercise(directory: Path, sabotage: bool) -> None:
         # ---------------------------------------------------------------- #
         # 7. Sabotage: a store whose listing drops the owner filter
         # ---------------------------------------------------------------- #
-        for broken, what in (
-            ("listing", "a listing without its owner filter"),
-            ("lookup", "a read, content and delete by id without the owner filter"),
-        ):
+        for broken, (what, _) in SABOTAGES.items():
             sabotaged_dir = directory / broken
             sabotaged_dir.mkdir(exist_ok=True)
             (sabotaged_dir / "bootstrap.json").write_text(

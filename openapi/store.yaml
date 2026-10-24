@@ -85,9 +85,21 @@ info:
     now (`POST /v1/removals/delete`). Deleting is a true delete (MRC27):
     the rows, the blob files no one else names, and the person's rows in
     every copy kept before a migration. A person the root has again
-    before the date is restored: the same ids and the same bytes. A root
-    that cannot be asked hides and restores nobody; a date that has
-    passed is kept to. Each deletion takes only what is older than the
+    before the date is restored: the same ids and the same bytes. A date
+    that has passed is final: a person the root has again after it is not
+    restored, and what they kept is deleted. A root that cannot be asked
+    hides and restores nobody; a date that has passed is kept to.
+
+    A write already under way when a person is removed never publishes:
+    every commit (a file, an assembled upload, a part) re-checks the owner
+    in its own transaction and refuses for a hidden owner, and deleting a
+    removed person waits for that person's writes under way. Deleting is
+    compare-and-delete on the marker the sweep saw, read again after the
+    root answered, so an answer that is stale by the time it is used cannot
+    delete a person restored meanwhile. The marker is the retry record and
+    is removed last, only after every copy kept before a migration is
+    purged; a copy that cannot be purged keeps it and is named in the
+    sweep's `error`. Each deletion takes only what is older than the
     store's generation read before the root was asked.
 
     ## Storage
@@ -462,6 +474,14 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404':
           description: The owner named is not a person Eugene removed.
+          content:
+            application/problem+json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+        '503':
+          description: |
+            Not finished: the person still has an upload being written, or a
+            copy kept before a migration could not be purged (the file is
+            named). They stay removed, and the next sweep tries again.
           content:
             application/problem+json:
               schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
@@ -843,7 +863,7 @@ components:
     RemovalCheck:
       type: object
       additionalProperties: false
-      required: [checked, hidden, restored, deleted]
+      required: [checked, hidden, restored, deleted, lateRestored]
       properties:
         checked:
           type: integer
@@ -859,11 +879,18 @@ components:
           description: |
             Removed people whose objects were deleted for good: their date
             passed, `removedPeopleRetention` is `none`, or Delete now.
+        lateRestored:
+          type: integer
+          description: |
+            People the root has again whose date had already passed: they
+            were not restored, and what they kept was deleted.
         error:
           type: string
           description: |
-            Why the root could not be asked; then nobody was hidden or
-            restored. A date that had passed was still kept to.
+            Why a step could not finish: the root could not be asked (then
+            nobody was hidden or restored; a date that had passed was still
+            kept to), or a copy kept before a migration could not be purged
+            (named, and retried at the next sweep).
 
     SweepReport:
       type: object
