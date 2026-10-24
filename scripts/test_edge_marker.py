@@ -126,6 +126,22 @@ class EdgeTests(unittest.TestCase):
             edge_marker.fingerprint(self.root, head), edge_marker.fingerprint(self.root, self.base)
         )
 
+    def test_a_first_parent_commit_older_than_the_marker_is_never_chosen(self) -> None:
+        # Main fast-forwards to branches that merged main in, so its first-parent
+        # history runs through branch commits, then older main commits that the
+        # marker already passed. Those must be skipped, not chosen and refused.
+        self.command("branch", "-M", "main")
+        self.command("checkout", "-q", "-b", "train")
+        self.change("docs/train.md", "train\n")
+        self.command("checkout", "-q", "main")
+        marker = self.change("scripts/install.sh", "echo marker\n")
+        self.receipts(marker)
+        self.command("checkout", "-q", "train")
+        self.command("merge", "-q", "--no-edit", "main")
+        head = self.change("scripts/install.sh", "echo head\n")
+        self.receipts(head, runtime=False)
+        self.assertIsNone(self.choose(head, marker))
+
     def test_no_backward_or_divergent_marker_move(self) -> None:
         head = self.change("docs/change.md", "newer\n")
         self.assertIsNone(self.choose(self.base, self.base))
