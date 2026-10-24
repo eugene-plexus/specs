@@ -11431,6 +11431,15 @@ components:
       enum: [assistants, batch, fine-tune, vision, user_data, evals]
       description: OpenAI's upload purposes. Kept as given; nothing here processes a file by its purpose.
 
+    OpenAIFileStatus:
+      type: string
+      enum: [processed]
+      description: OpenAI's (deprecated) file status. A file kept here is ready at once.
+
+    OpenAIUploadStatus:
+      type: string
+      enum: [pending, completed, cancelled, expired]
+
     OpenAIExpiresAfter:
       type: object
       additionalProperties: false
@@ -11488,8 +11497,7 @@ components:
         purpose:
           $ref: '#/components/schemas/OpenAIFilePurpose'
         status:
-          type: string
-          enum: [processed]
+          $ref: '#/components/schemas/OpenAIFileStatus'
         status_details:
           type: ['string', 'null']
 
@@ -11560,8 +11568,7 @@ components:
         purpose:
           $ref: '#/components/schemas/OpenAIFilePurpose'
         status:
-          type: string
-          enum: [pending, completed, cancelled, expired]
+          $ref: '#/components/schemas/OpenAIUploadStatus'
         expires_at:
           type: integer
         file:
