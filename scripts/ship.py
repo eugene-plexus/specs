@@ -142,6 +142,15 @@ def dependencies(repo: Path, ref: str) -> list[str]:
     return sorted(deps)
 
 
+def lock_inputs() -> set[str]:
+    """What the release lock was resolved from (`release-inputs.py --resolve`)."""
+    try:
+        text = (SPECS / "release" / "requirements.in").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return set()
+    return {line.strip() for line in text.splitlines() if line.strip()}
+
+
 def venv_python(repo: Path) -> Path:
     for candidate in (
         repo / ".venv" / "Scripts" / "python.exe",
@@ -423,13 +432,15 @@ def ship(
             f"  {plan.name}: {plan.source[:7]} -> {plan.head[:7]}"
             + (" (push main)" if plan.push_main else "")
         )
+    resolved = lock_inputs()
     for plan in plans.values():
         if plan.name in (*MANIFEST_REPOS, "workbench"):
-            if dependencies(plan.repo, plan.source) != dependencies(
-                plan.repo, plan.head
-            ):
+            head = dependencies(plan.repo, plan.head)
+            missing = [d for d in head if d not in resolved]
+            if missing and dependencies(plan.repo, plan.source) != head:
                 raise Stop(
-                    f"{plan.name}: its dependencies changed. Re-resolve the lock first:\n"
+                    f"{plan.name}: its dependencies changed ({', '.join(missing)} "
+                    "not in the release lock). Re-resolve the lock first:\n"
                     "  python scripts/release-inputs.py --resolve --uv <uv>"
                 )
         static_checks(plan)
