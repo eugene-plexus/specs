@@ -575,6 +575,12 @@ components:
 
   schemas:
 
+    PeopleKnownResult:
+      $ref: 'components/common.yaml#/components/schemas/PeopleKnownResult'
+      description: |
+        What the store reads back from its agent's `POST /v1/people/known`
+        at each sweep: which `person:<id>` owners the root still has.
+
     StoredFilePurpose:
       type: string
       enum: [assistants, batch, fine-tune, vision, user_data, evals]
