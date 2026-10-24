@@ -1185,9 +1185,14 @@ def phase_engine_after_move(ctx: dict, said: str) -> None:
         _, engines = api("GET", f"{ctx['base']}/v1/engines", ctx.get("token"), timeout=120)
         llama = next((e for e in (engines or {}).get("engines", []) if e.get("engine") == "llama_cpp"), {})
         reason = (llama.get("acquisition") or {}).get("reason") or ""
-        if "limit of 60 requests an hour" in reason:
+        # The refetch at start can meet GitHub's limit while the list the
+        # console reads later is a cached one, so its reason is empty: the
+        # daemon's own log says what the refetch met.
+        limited = [line for line in (root_read(PREFIX / "logs" / "agent.log") or "").splitlines()
+                   if "limit of 60 requests an hour" in line]
+        if "limit of 60 requests an hour" in reason or limited:
             skip("11g", "a changed copied llama.cpp build is not kept, and is fetched again",
-                 f"GitHub refused the daemon's release list: {reason[:200]}")
+                 f"GitHub refused the daemon's release list: {(reason or limited[-1])[:200]}")
             return
     # The move copies no engine build at all (the final review), and says
     # so on the line that lists the version to fetch again.
