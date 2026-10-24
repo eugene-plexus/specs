@@ -570,6 +570,10 @@ def linux(specs: Path) -> None:
         refusal_target.mkdir(mode=0o700)
         refusal_link = root / "refusal-link"
         refusal_link.symlink_to(refusal_target, target_is_directory=True)
+        # Inside Eugene's prefix and inside a home, every parent below the
+        # account's own folder is "unsafe"; the folder's own rule is named.
+        in_home = specs.parent
+        assert in_home.is_relative_to(runner.pw_dir) and in_home != Path(runner.pw_dir)
         assert agent(
             "refusals",
             str(Path(__file__).resolve()),
@@ -578,7 +582,9 @@ def linux(specs: Path) -> None:
                     ("/", "drive_root"),
                     ("/etc", "system"),
                     (str(prefix), "eugene"),
+                    (str(prefix / "apps"), "eugene"),
                     (runner.pw_dir, "home"),
+                    (str(in_home), "home"),
                     (str(refusal_link), "link"),
                     (str(link), "link"),
                     ("//unreachable.invalid/share", "network"),
