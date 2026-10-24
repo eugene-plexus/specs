@@ -450,6 +450,12 @@ jobs:
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
+      # Row 4: four agents on this runner's routable address, each behind its
+      # own machine port; a standby whose copy differs takes a fresh one, and
+      # after a promotion every machine follows the new root's address.
+      - name: Agents follow a promoted root's address, and a standby that differs takes a fresh copy (row 4)
+        if: matrix.shard == 'L1' || matrix.shard == 'W3'
+        run: python specs/scripts/root-moved-acceptance.py
       - name: Rotate a client key under a running stream, and record last use across a root restart (row 24)
         if: matrix.shard == 'L2' || matrix.shard == 'W2'
         run: python specs/scripts/ck-rotate-acceptance.py

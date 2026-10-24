@@ -309,9 +309,13 @@ the changed code only.
 - **After a revoke and a new grant, the standby may come back on a
   different port.** Linux still holds the old one for a moment, and the
   agent walks past it. The acceptance reads the port from B's report.
-- **Found, not fixed (banked):** after a promotion, only the promoted
-  machine reaches the new root. The copy stays bound to loopback, and no
-  agent learns a new root address: m5 §9 step 4 says agents learn "the new
-  epoch and endpoint", but nothing carries an endpoint. The banked step
-  that turns a promoted copy into the install's `control` entry has to
-  answer both.
+- **Found, not fixed (banked), then built by row 4 (2026-10-22):** after a
+  promotion, only the promoted machine reached the new root. The copy stayed
+  bound to loopback, and no agent learned a new root address: m5 §9 step 4
+  says agents learn "the new epoch and endpoint", but nothing carried an
+  endpoint. Row 4 ([`rows/row-04.md`](rows/row-04.md)): the signed machine
+  list names the root, its node and its address; agents move only for a list
+  at a higher epoch; the copy is reached through its machine's port once a
+  list signed at its epoch names its machine; and a standby whose copy
+  differs from the root's (one that ran code older than LT1 holds no machine
+  keys) takes a fresh snapshot by itself.

@@ -33,6 +33,8 @@ PINNED_STEPS = {
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
     # Row 70 (2026-10-21): group policies at the root and through an agent.
     "row70-group-policy-acceptance.py": (EVERY, "both"),
+    # Row 4 (2026-10-22): a promoted root's address reaches every machine.
+    "root-moved-acceptance.py": (EVERY, "both"),
     "row57-responses-tools-acceptance.py": (EVERY, "linux"),
     # Row 24 (2026-10-22): rotating a client key under a running stream.
     "ck-rotate-acceptance.py": (EVERY, "both"),
