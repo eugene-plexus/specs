@@ -7146,12 +7146,22 @@ components:
           type: string
           readOnly: true
           description: |
-            Why this node is **not** opening a local copy, when it is
-            not and the operator asked for one: not enough free space to
-            leave the configured headroom, the copy failed, the source
-            could not be read. Absent when the copy was used, and absent
-            when copying is switched off — a node that was never asked
-            has nothing to explain.
+            Why a requested local copy was skipped or used without
+            checking its source. A skipped copy names the observed cause:
+            not enough free space to leave the configured headroom, a
+            failed copy, or a source that could not be read.
+
+            When the source's Library folder root on this machine raises
+            an OSError or exceeds the 5 s check limit, a copy whose size
+            matches its saved source record may be used. The note starts
+            "Started from this machine's copy" and names the folder root
+            and the observed cause. It remains until the next start that
+            checks the source. A missing file in a readable folder does
+            not permit this fallback.
+
+            Absent when the source was checked and the copy was used,
+            and absent when copying is switched off — a node that was
+            never asked has nothing to explain.
 
             On the wire because a silently skipped copy is the failure
             mode of this whole feature: the model still serves, the

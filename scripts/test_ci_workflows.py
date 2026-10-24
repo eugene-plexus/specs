@@ -37,6 +37,7 @@ PINNED_STEPS = {
     "ck-rotate-acceptance.py": (EVERY, "both"),
     "row70c-workbench-groups-acceptance.py": (EVERY, "both"),
     "r8-profile-acceptance.py": (EVERY, "both"),
+    "row48b-library-down-acceptance.py": (EVERY, "both"),
     "ls1-eligibility-acceptance.py": (EVERY, "both"),
     "ls2-discover-acceptance.py": (FULL, "both"),
     "ls3-prepared-acceptance.py": (FULL, "both"),

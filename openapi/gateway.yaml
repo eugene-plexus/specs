@@ -1681,14 +1681,24 @@ paths:
 
         Profile reads go through the gateway's own agent's Library proxy
         using its service credential. They are cached for profileCacheSeconds
-        (30 by default). During an unavailable or invalid Library response,
-        last-known values are usable for profileMaxStaleSeconds (300 by
-        default) after expiry, then gateway defaults apply. Failures are
+        (30 by default). During a transport error, a proxy 502/503/504, or
+        a timeout, last-known values remain in effect with no time limit.
+        profileMaxStaleSeconds is null by default, meaning no limit while
+        the Library cannot answer. An explicit number limits stale reuse
+        to that many seconds after cache expiry, then gateway defaults
+        apply. Zero disables stale reuse. Failures are
         retried no more often than every five seconds and logged with the
-        fallback decision. A successful empty result clears old defaults.
+        fallback decision. Every successful answer replaces the saved
+        values; a successful empty result clears old defaults.
         Setting either cache duration to zero takes effect on the next
         request. Profile edits take effect on subsequent requests after
         cache expiry and do not restart engines.
+
+        Profile and special-token caches survive a gateway restart in
+        `library-cache.json` beside its config file. They are written at
+        most once a minute, only when changed, and loaded as stale, never
+        fresh. `GET /v1/info` reports Library reachability and how many
+        models currently use saved profile settings.
 
         **Audio and files ride the image path (P2, 2026-09-28).** An
         `input_audio` part (WAV or MP3) and a `file` part (a PDF, inline
@@ -4869,6 +4879,24 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/ConfigTestResult'
 
+  /v1/info:
+    get:
+      tags: [meta]
+      operationId: getInfo
+      summary: The gateway's observed Library state and saved settings use.
+      description: |
+        Reports the last Library check without waiting for another one.
+        A Library outage does not stop routing or running models. Saved
+        profile defaults stay in effect under profileMaxStaleSeconds;
+        this view counts only models whose saved defaults are in effect.
+      responses:
+        '200':
+          description: Current observations, including an unknown state before the first check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayInfo'
+
   /healthz:
     get:
       tags: [meta]
@@ -4973,6 +5001,57 @@ components:
         the wrong one.
 
   schemas:
+    GatewayInfo:
+      type: object
+      description: The gateway's observed Library state and use of saved model settings.
+      required:
+        - library
+      properties:
+        library:
+          $ref: '#/components/schemas/GatewayLibraryStatus'
+
+    GatewayLibraryStatus:
+      type: object
+      description: |
+        Library reachability observed by profile and special-token reads.
+        Loading saved caches after a restart does not establish whether
+        the Library can answer. A successful Library answer clears the
+        outage time and cause, including an answer with no profile.
+      required:
+        - reachable
+        - since
+        - cause
+        - modelsOnSavedSettings
+      properties:
+        reachable:
+          type: [boolean, 'null']
+          description: |
+            True after a successful Library answer. False after a
+            transport error, a proxy 502/503/504, or a timeout. Null
+            before the first check, including after a gateway restart.
+        since:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the current outage was first observed, in UTC. Further
+            failed checks keep this time. Null while reachable or before
+            the first check.
+        cause:
+          type: [string, 'null']
+          description: |
+            The latest observed cause of the failed Library check, such
+            as connection refused, proxy HTTP 502/503/504, or a timeout.
+            Null while reachable or before the first check.
+        modelsOnSavedSettings:
+          type: integer
+          minimum: 0
+          description: |
+            Number of distinct model paths currently using saved profile
+            defaults after cache expiry, including values loaded after a restart.
+            Counts each path once. Excludes fresh profiles, saved values
+            that are not in effect, and values excluded by an explicit
+            profileMaxStaleSeconds limit.
+
     GeminiGenerateContentRequest:
       type: object
       description: |-

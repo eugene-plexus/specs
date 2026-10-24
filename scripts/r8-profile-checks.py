@@ -55,7 +55,8 @@ def main() -> None:
              'and now - previous.fetched_at < self._seconds("profileCacheSeconds", 30)',
              'and False', "tests/test_profile_defaults.py::test_cache_outage_expiry_deletion_and_recovery"),
             ("stale-bound", "gateway", module + "profiles.py",
-             "if age < fresh + stale else {}", "if True else {}",
+             "if limit is None:\n            return dict(entry.values)",
+             "if limit is None:\n            return dict(entry.values) if age < fresh + 300 else {}",
              "tests/test_profile_defaults.py::test_cache_outage_expiry_deletion_and_recovery"),
             ("retry-backoff", "gateway", module + "profiles.py",
              "_RETRY_SECONDS = 5.0", "_RETRY_SECONDS = 0.0",
@@ -73,10 +74,11 @@ def main() -> None:
         for label, repo, relative, old, new, test in cases:
             path = root / repo / relative
             saved = path.read_bytes()
-            text = saved.decode("utf-8")
+            # A Windows checkout holds CRLF; a multi-line mutation is written with LF.
+            text = saved.decode("utf-8").replace("\r\n", "\n")
             assert old in text, f"{label}: mutation no longer matches"
             try:
-                path.write_text(text.replace(old, new, 1), encoding="utf-8")
+                path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
                 run(repo, test, label, 1)
             finally:
                 path.write_bytes(saved)
