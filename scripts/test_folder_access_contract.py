@@ -214,14 +214,23 @@ class FolderAccessContractTests(unittest.TestCase):
         self.assertEqual(
             set(unknown["required"]), {"id", "path", "kind", "entry", "decision"}
         )
+        # Named enums, so a later inline enum cannot rename them.
         self.assertEqual(
-            unknown["properties"]["kind"]["enum"],
+            unknown["properties"]["kind"],
+            {"$ref": "#/components/schemas/FolderAccessUnknownKind"},
+        )
+        self.assertEqual(
+            self.schemas["FolderAccessUnknownKind"]["enum"],
             ["entry", "null_dacl", "owner", "unreadable"],
         )
-        self.assertEqual(unknown["properties"]["decision"]["enum"], ["pending", "kept"])
+        self.assertEqual(
+            self.schemas["FolderAccessUnknownDecision"]["enum"], ["pending", "kept"]
+        )
         decision = self.schemas["FolderAccessDecision"]
         self.assertEqual(decision["required"], ["action"])
-        self.assertEqual(decision["properties"]["action"]["enum"], ["remove", "keep"])
+        self.assertEqual(
+            self.schemas["FolderAccessDecisionAction"]["enum"], ["remove", "keep"]
+        )
         item = self.paths[BASE + "/{id}/unknown/{entry}"]
         self.assertEqual(
             [(p.get("name"), p.get("in")) for p in item["parameters"][1:]],

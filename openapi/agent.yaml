@@ -9607,22 +9607,28 @@ components:
           minLength: 1
           description: The file or folder that holds the entry.
         kind:
-          type: string
-          enum: [entry, null_dacl, owner, unreadable]
-          description: |
-            entry is a permission entry for the app's account. null_dacl is
-            a Windows item with no permission list, which lets everyone
-            in. owner means the app's account owns the item, so it can
-            change the item's permissions. unreadable means Eugene cannot
-            read the item's permissions.
+          $ref: "#/components/schemas/FolderAccessUnknownKind"
         entry:
           type: string
           minLength: 1
           description: The entry in words, as the console shows it.
         decision:
-          type: string
-          enum: [pending, kept]
-          description: Pending waits for the owner; kept means the owner chose to keep it.
+          $ref: "#/components/schemas/FolderAccessUnknownDecision"
+
+    FolderAccessUnknownKind:
+      type: string
+      enum: [entry, null_dacl, owner, unreadable]
+      description: |
+        entry is a permission entry for the app's account. null_dacl is
+        a Windows item with no permission list, which lets everyone
+        in. owner means the app's account owns the item, so it can
+        change the item's permissions. unreadable means Eugene cannot
+        read the item's permissions.
+
+    FolderAccessUnknownDecision:
+      type: string
+      enum: [pending, kept]
+      description: Pending waits for the owner; kept means the owner chose to keep it.
 
     FolderAccessDecision:
       type: object
@@ -9630,9 +9636,12 @@ components:
       required: [action]
       properties:
         action:
-          type: string
-          enum: [remove, keep]
-          description: Remove deletes only this entry after checking it again; keep leaves it.
+          $ref: "#/components/schemas/FolderAccessDecisionAction"
+
+    FolderAccessDecisionAction:
+      type: string
+      enum: [remove, keep]
+      description: Remove deletes only this entry after checking it again; keep leaves it.
 
     FolderAccessList:
       type: object
