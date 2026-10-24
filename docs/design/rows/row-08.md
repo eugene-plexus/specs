@@ -340,6 +340,12 @@ Also from the review: the SHA-256 answer is no longer kept between checks. A fil
 3. *An empty PATH.* An empty PATH, or one with an empty folder in it, searches the folder the engine starts in. `search_path` never returns either: when no folder passes, the engine is not started, and the message names the first folder's cause.
 4. *Revocation through another name.* A check now records the file it reached, its path and its (device, inode), even when it stops there. A refusal then drops every approval whose chain holds that file under any name: through another link, as a hard link, or as the interpreter that runs a script.
 
+**The third re-review (Codex, 2026-10-24) found one blocker and one partial fix, both fixed.** Each fix has a test that failed first and was sabotaged once and caught: 4 in the agent.
+1. *Relative words after the interpreter.* The check took a word's path from its first `/`, so `./bin/sh` was checked as `/bin/sh`. The interpreter finds `./bin/sh` from the folder it starts in, for example the runtime's `workingDirectory`.
+   - Now a word with a `/` is followed only as `/x`, `--name=/x`, or one short option right before an absolute path (`-f/x`).
+   - Any other such word is refused, naming the word: `./x`, `bin/x`, `--name=rel/x`, `-frel/x`, or combined options such as `-xf/x`.
+2. *Revocation at every depth.* A check now records the (device, inode) of every file it reaches: the program, each interpreter and each argument. A refusal drops every approval whose chain reaches any of them. For example, script A's approval goes when script B, whose interpreter is a link to A's, is refused because that interpreter changed.
+
 **Not covered, and why:**
 - Windows, as before.
 - What an app or a tool server starts, as before.
