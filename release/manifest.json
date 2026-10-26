@@ -4,7 +4,7 @@
   "uvMinimum": "0.12.18",
   "components": {
     "agent": "1f2a8ff67c52af8c283ec1543a7fb8165d26c572",
-    "control": "cde4e1152bc6af5a3362acdbfb448bbfcd72d833",
+    "control": "ec5bcda5f723773d9d1e8aad2088e18e601cda14",
     "gateway": "4cbf56cc90d49740bb9e3b624db400f97edc1bd8",
     "library": "1b015632de2dddde6139719916b77128a9019869",
     "store": "845e6803a2af6825eb1ae3fd550076cf9f3d1d0c",
