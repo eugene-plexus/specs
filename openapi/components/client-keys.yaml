@@ -175,6 +175,17 @@ components:
       properties:
         keyId: {type: string}
         keyName: {type: string}
+        lineage:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: |
+            The id of the first key of this key's rotations (row 24): a
+            replacement shares its predecessor's lineage. The store names a
+            key's objects by it, so a rotated key keeps its files (row 53).
+            Readers take it when present and use `keyId` when absent; the
+            authority starts sending it once every reader knows the field,
+            because an older reader refuses an unknown one.
         personId: {type: string, description: "Stable subject verified by the root, never caller supplied."}
         appClientId: {type: string}
         limits: {$ref: '#/components/schemas/ClientKeyLimits'}

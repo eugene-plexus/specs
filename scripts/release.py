@@ -101,6 +101,7 @@ LINE_REPOS = (
     "control",
     "gateway",
     "library",
+    "store",
     "inference-driver",
     "tool-driver",
     "site-host",
@@ -114,6 +115,7 @@ LOCK_REPOS = (
     "gateway",
     "inference-driver",
     "library",
+    "store",
     "tool-driver",
     "ui",
     "workbench",
@@ -394,7 +396,7 @@ def patch_previous(
 
 
 def tag_pins(specs: Path, agent: Path, ref: str) -> dict[str, str]:
-    """Every pin a release names: the manifest's seven, and the Workbench and
+    """Every pin a release names: the manifest's eight, and the Workbench and
     site-host pins in its agent."""
     pins = dict(
         json.loads(git(specs, "show", f"{ref}:release/manifest.json"))["components"]
@@ -1471,6 +1473,7 @@ def record_text(r: Release) -> str:
             "control",
             "gateway",
             "library",
+            "store",
             "inference-driver",
             "tool-driver",
         )
@@ -1510,7 +1513,7 @@ Feature-level acceptance since {previous}, each run against its own Edge pins:
 ## Packaged installations
 
 Both candidate installers passed `scripts/s10-acceptance.py`: a fresh prefix, all
-seven packages, the shipped browser UI, setup and sign-in, engine acquisition, a
+eight packages, the shipped browser UI, setup and sign-in, engine acquisition, a
 model launch, a visible browser reply and a separate keyed reply, with the seeded
 Gemma 4 E4B Q4_K_M on the processor (real CPU inference, not GPU compatibility).
 In both, every installed package commit equals the manifest.

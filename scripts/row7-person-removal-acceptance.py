@@ -4,7 +4,7 @@ Design: `docs/design/rows/row-07.md` section 5. Real processes on free ports (ne
 8079-8083), every `EUGENE_PLEXUS_*` variable cleared: a control root, an enrolled agent that
 supervises a gateway and a model's inference-driver, a stand-in engine, Eugene's reference
 memory server (`m-memory-server.py`, whose forget can be held open), and Workbench, installed
-by the agent as a custom catalogue entry from its archive at the commit under test.
+by the agent as the shipped catalogue entry, pointed at its archive at the commit under test.
 
 **Which Workbench.** `--workbench` (or `R7_WORKBENCH_REF`): a commit, or a branch of
 `eugene-plexus/workbench`; a branch it does not have is `main`. CI passes a candidate commit,
@@ -62,7 +62,7 @@ import yaml
 HERE = Path(__file__).resolve().parent
 MODEL = "r7-local"
 ANSWER = "R7-ANSWER: noted."
-APP = "workbench-r7"
+APP = "workbench"
 #: Marks no index or model knows, with first letters no other word here starts with.
 MARK = {"owner": "jqzvowner7mark", "ann": "kqzvannmark7", "ben": "xqzvbenmark7"}
 RESULTS: list[tuple[str, str, bool, str]] = []
@@ -189,6 +189,16 @@ def fixture_app():
     return app
 
 
+def workbench_catalogue(directory: Path, *, version: str, source: str) -> None:
+    """The shipped catalogue with Workbench's entry pointed at the candidate: only a
+    shipped entry may use the memory-server link (row 72), so not a custom entry."""
+    from eugene_plexus_agent import apps
+
+    catalogue = [m.model_dump(mode="json", exclude_none=True) for m in apps.load_catalogue()]
+    next(m for m in catalogue if m["id"] == "workbench").update(version=version, source=source)
+    (directory / "catalogue.yaml").write_text(yaml.safe_dump(catalogue), encoding="utf-8")
+
+
 def serve(kind: str, directory: Path, port: int) -> None:
     import uvicorn
 
@@ -201,10 +211,13 @@ def serve(kind: str, directory: Path, port: int) -> None:
 
         app = create_app(Settings(config_file=directory / "control.yaml", state_dir=directory / "state"))
     elif kind == "agent":
+        from eugene_plexus_agent import apps
         from eugene_plexus_agent.app import create_app
         from eugene_plexus_agent.console_logging import install_console_capture
         from eugene_plexus_agent.settings import Settings
 
+        catalogue = apps.load_catalogue((directory / "catalogue.yaml").read_text(encoding="utf-8"))
+        apps.load_catalogue = lambda: catalogue
         host = "0.0.0.0"
         install_console_capture(log_dir=directory / "logs")
         app = create_app(settings=Settings(config_file=directory / "agent.yaml", default_topology=False,
@@ -294,7 +307,6 @@ def exercise(work: Path, commit: str) -> None:
             "advertiseUrl": f"http://{lan}:{ports['agent']}",
             "securityMode": "prompt_on_startup",
             "uvBinary": c3.uv_binary(),
-            "allowCustomApps": True,
             "components": [
                 {"name": "gateway", "kind": "gateway", "url": url["gateway"],
                  "spawn": {"configFile": str(agent_dir / "gateway.yaml")}},
@@ -302,6 +314,8 @@ def exercise(work: Path, commit: str) -> None:
                  "spawn": {"configFile": str(agent_dir / "model.yaml")}},
             ],
         }), encoding="utf-8")
+        archive = f"https://github.com/eugene-plexus/workbench/archive/{commit}.tar.gz"
+        workbench_catalogue(agent_dir, version=commit, source=archive)
         start("agent")
         local = call("agent", "POST", "/v1/auth/initialize", json={"passphrase": passphrase}).json()["sessionToken"]
         join = call("control", "POST", "/v1/nodes/join-token", root,
@@ -319,11 +333,10 @@ def exercise(work: Path, commit: str) -> None:
 
         say(f"Workbench {commit[:12]}, installed by the agent from its archive")
         catalogue = call("agent", "GET", "/v1/app-catalogue", operator).json()
-        entry = next(e for e in catalogue["apps"] if e["manifest"]["id"] == "workbench")
-        manifest = {**entry["manifest"], "id": APP, "localActions": False, "version": commit,
-                    "source": f"https://github.com/eugene-plexus/workbench/archive/{commit}.tar.gz"}
-        added = call("agent", "POST", "/v1/app-catalogue/custom", operator, json=manifest)
-        must("0b", "the Workbench under test is a catalogue entry", added.status_code == 201, added.text[:300])
+        entry = next(e for e in catalogue["apps"] if e["manifest"]["id"] == APP)
+        must("0b", "the Workbench under test is a catalogue entry",
+             entry["origin"] == "catalogue" and entry["manifest"]["version"] == commit
+             and entry["manifest"]["source"] == archive, entry)
         began = call("agent", "POST", f"/v1/apps/{APP}/install", operator)
         must("0c", "its install starts", began.status_code == 202, began.text[:300])
 

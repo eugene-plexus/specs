@@ -32,6 +32,7 @@ PINS = {
     "control": "c" * 40,
     "gateway": "9" * 40,
     "library": "1" * 40,
+    "store": "b" * 40,
     "inference-driver": "2" * 40,
     "tool-driver": "3" * 40,
     "ui": "4" * 40,

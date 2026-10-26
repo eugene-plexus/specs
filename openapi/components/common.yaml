@@ -244,9 +244,12 @@ components:
         file_id:
           type: string
           description: |
-            Refused with a 400. It names a file uploaded to one
-            provider's store, which this install does not have; send
-            `file_data`.
+            A file kept in this install's store (`POST /v1/files`, row
+            53). The gateway reads it for the caller, from the caller's
+            own files only, and carries it as `file_data` (a PDF), an
+            image or text, within the limits above; it never reaches a
+            backend as an id. Another owner's id is refused as one that
+            does not exist.
     AudioOutputFormat:
       type: string
       enum: [wav, mp3, flac, opus, aac, pcm16]
@@ -486,6 +489,7 @@ components:
         - gateway
         - inference-driver
         - library
+        - store
         - tool-driver
       description: |
         Which Eugene Plexus component class a topology entry
@@ -513,6 +517,11 @@ components:
         calls a tool-driver when the model uses it. `library` scans the operator's model
         directories and holds per-model launch profiles; there is
         exactly one, and it is deliberately not in the request path.
+        `store` (row 53, 2026-10-23) keeps what the gateway's platform
+        doors keep for people -- uploaded files first, then stored
+        responses, batches and vector stores -- each object with an owner
+        and an end; there is exactly one, on the root by default, and the
+        gateway is its only caller (`openapi/store.yaml`).
 
         **The agent is not in this list**, for the same reason engine
         runtimes are not: it supervises, it is not supervised. Its
@@ -2770,6 +2779,40 @@ components:
         ciphertext:
           type: string
           description: Base64-encoded ciphertext + auth tag.
+    PeopleKnownRequest:
+      type: object
+      additionalProperties: false
+      required: [subjects]
+      description: |
+        Which of these people the root still has (row 53). A component
+        that keeps people's objects (the store) asks its agent, which asks
+        the root with its own node token. Only the ids sent are answered,
+        so it cannot list people.
+      properties:
+        subjects:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description: People's ids, as a person token's `personId` names them.
+
+    PeopleKnownResult:
+      type: object
+      additionalProperties: false
+      required: [known, unknown]
+      properties:
+        known:
+          type: array
+          description: Ids the root has a person for (on or off), or the owner's.
+          items: {type: string}
+        unknown:
+          type: array
+          description: Ids the root has no person for. Each one was deleted, or never was the root's.
+          items: {type: string}
+
     RestartResult:
       type: object
       description: |

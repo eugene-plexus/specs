@@ -157,8 +157,8 @@ run_posix() {
   # `|| echo 0` fired as well and the comparison was against "0\n0".
   local decl
   decl=$(r "grep -c '^- kind: ' $prefix/agent.yaml 2>/dev/null || true")
-  [ "${decl:-0}" = 3 ] && ok "9. the agent declared control, gateway and library" \
-                       || bad "9. agent.yaml declares ${decl:-0} components, expected 3"
+  [ "${decl:-0}" = 4 ] && ok "9. the agent declared control, gateway, library and the store" \
+                       || bad "9. agent.yaml declares ${decl:-0} components, expected 4"
 
   # **Counted by argv[0], and it took four tries to get the subject
   # right.** A bare `pgrep -f eugene_plexus_` counted a leftover from an
@@ -205,12 +205,12 @@ run_posix() {
   # `[agent]`: both arrived with the Logs page (2026-09-27), and an anchor
   # at `^[` or `^INFO` then matched nothing on a stop that was perfectly
   # graceful (found 2026-09-29, reading the log of a real stop).
-  for k in control gateway library; do
+  for k in control gateway library store; do
     c=$(r "$tailcmd | grep -cE '^([0-9TZ:.-]+ )?\[$k\] INFO: +Application shutdown complete'")
     [ "${c:-0}" -ge 1 ] && children=$((children + 1))
   done
-  [ "$children" = 3 ] && ok "12. all three children ran their ASGI lifespan shutdown" \
-                      || bad "12. only $children/3 children shut down gracefully"
+  [ "$children" = 4 ] && ok "12. all four children ran their ASGI lifespan shutdown" \
+                      || bad "12. only $children/4 children shut down gracefully"
 
   local own
   own=$(r "$tailcmd | grep -cE '^([0-9TZ:.-]+ )?(\[agent\] )?INFO: +Application shutdown complete'")
@@ -334,8 +334,8 @@ PY
 
   local decl
   decl=$(grep -c '^- kind: ' "$prefix_unix/agent.yaml" 2>/dev/null || true)
-  [ "${decl:-0}" = 3 ] && ok "24. the agent declared control, gateway and library" \
-                       || bad "24. agent.yaml declares ${decl:-0} components, expected 3"
+  [ "${decl:-0}" = 4 ] && ok "24. the agent declared control, gateway, library and the store" \
+                       || bad "24. agent.yaml declares ${decl:-0} components, expected 4"
 
   say "windows: the service module, as far as no-Administrator reaches"
   local names

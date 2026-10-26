@@ -66,6 +66,7 @@ COMPONENTS = (
     "control",
     "gateway",
     "library",
+    "store",
     "inference-driver",
     "tool-driver",
     "agent",
@@ -75,6 +76,7 @@ MANIFEST_REPOS = (
     "control",
     "gateway",
     "library",
+    "store",
     "inference-driver",
     "tool-driver",
 )
@@ -109,6 +111,7 @@ PIN_AGENT={zero}
 PIN_CONTROL={zero}
 PIN_GATEWAY={zero}
 PIN_LIBRARY={zero}
+PIN_STORE={zero}
 PIN_DRIVER={zero}
 PIN_TOOL_DRIVER={zero}
 PIN_UI={zero}
@@ -124,6 +127,7 @@ $Pins = @{{
     "control" = "{zero}"
     "gateway" = "{zero}"
     "library" = "{zero}"
+    "store" = "{zero}"
     "inference-driver" = "{zero}"
     "tool-driver" = "{zero}"
     "ui" = "{zero}"
