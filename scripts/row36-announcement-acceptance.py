@@ -339,6 +339,7 @@ def exercise(directory: Path) -> None:
         machine = {}
         if current.get("machineUrl") and current.get("tlsPins"):
             machine = {"machineUrl": current["machineUrl"], "tlsPin": current["tlsPins"][0]}
+        before_enrollment = agent_sequence()
         reenrolled = call(
             "control",
             "POST",
@@ -360,13 +361,21 @@ def exercise(directory: Path) -> None:
         assert confirmed["unverifiedAnnouncements"] is None
         ok("re-enrolling the machine at that address confirms the move and clears what was refused")
 
-        # The agent's next attempts are "unchanged": nothing is refused again
-        # and nothing is appended.
-        base_sequence = agent_sequence()
-        wait(lambda: agent_sequence() >= base_sequence + 1, "the agent announced after enrollment")
-        settled_index = applied_index(root)
-        wait(lambda: agent_sequence() >= base_sequence + 4, "the agent announced three times more")
-        assert applied_index(root) == settled_index, "an announcement changed the record"
+        # The agent's next attempt is "unchanged": nothing is refused again and
+        # nothing is appended. (An announcement the root took ends the agent's
+        # retries, so there is one attempt to wait for, then quiet.)
+        index_after_enrollment = applied_index(root)
+        wait(
+            lambda: agent_sequence() >= before_enrollment + 1,
+            "the agent announced around the enrollment",
+        )
+        # Its retries are every 3 s at most: by now it has announced since the
+        # enrollment. The root took it, so the agent stops asking.
+        time.sleep(5)
+        settled_sequence = agent_sequence()
+        time.sleep(4)
+        assert agent_sequence() == settled_sequence, "the agent is still being refused"
+        assert applied_index(root) == index_after_enrollment, "an announcement changed the record"
         final = node(root)
         assert final["announcementRefused"] is None, final["announcementRefused"]
         assert final["url"].rstrip("/") == public_address
