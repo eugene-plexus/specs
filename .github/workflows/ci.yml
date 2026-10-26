@@ -771,6 +771,58 @@ jobs:
     with:
       agent_ref: ${{ needs.plan.outputs.agent_ref }}
 
+  folder-access:
+    needs: plan
+    name: Row 23 folder access (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+          path: specs
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/agent
+          ref: ${{ needs.plan.outputs.agent_ref }}
+          path: agent
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/workbench
+          ref: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          path: workbench
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install acceptance dependencies
+        run: python -m pip install -e 'agent[dev,service]' -e 'workbench[dev]'
+      - name: Install Linux ACL tools for the real root broker
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y acl
+      # The root helper's and the acceptance's own unit tests; no other job runs them.
+      - name: Root helper and acceptance unit tests
+        run: python -m pytest specs/scripts/test_row23_folder_access.py -q -p no:cacheprovider
+      # Unbuffered, so a stalled run shows the step it stalled in.
+      - name: Installed root broker or real service SID, app I/O and authenticated routes
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python -u specs/scripts/row23-folder-access-acceptance.py --report row23-report.json
+      - name: Keep folder access evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: row23-${{ matrix.os }}
+          path: row23-report.json
+          if-no-files-found: warn
+
   r7-launch-boundary:
     needs: plan
     if: needs.plan.outputs.launch == 'true'
@@ -974,6 +1026,9 @@ jobs:
 
       - name: Check Ollama Keep and worker report contracts
         run: python scripts/test_ollama_contract.py
+
+      - name: Check folder access contract and credential boundaries (row 23)
+        run: python scripts/test_folder_access_contract.py
 
       - name: Check Hindsight catalogue and memory server link contract
         run: python scripts/test_hindsight_contract.py

@@ -105,6 +105,17 @@ def can_run_on_windows(job: dict) -> bool:
 
 
 class WiringTests(unittest.TestCase):
+    def test_row23_folder_access_uses_real_operating_systems(self) -> None:
+        job = workflow("ci.yml")["jobs"]["folder-access"]
+        self.assertEqual(
+            set(job["strategy"]["matrix"]["os"]), {"windows-latest", "ubuntu-24.04"}
+        )
+        self.assertEqual(job["defaults"]["run"]["shell"], "bash")
+        self.assertTrue(any(
+            "row23-folder-access-acceptance.py" in step.get("run", "")
+            for step in job["steps"]
+        ))
+
     def test_app_units_load_private_memory_link_credentials(self) -> None:
         installer = (WORKFLOWS.parents[1] / "scripts/install.sh").read_text(encoding="utf-8")
         for credential in ("memory_server_token",):
