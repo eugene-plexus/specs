@@ -604,6 +604,49 @@ a container root, one adversarial review, and `ship.py`.
   key in its join token; only a node upgraded in place fetches its first
   list in plain HTTP.
 
+**agent#38 (2026-10-26): a token in clear to a machine that had just joined.**
+- **What was seen.** The Docker pair's `automatic` run on `main` (run
+  40333680315) captured two plain connections from the root to the new
+  worker's 8079, each with `Bearer` and a JWT. Five earlier runs passed: a race.
+- **The cause.** The root records a worker's machine key at the join and
+  control's own table has it at once. The root's agent writes the table for
+  its children a moment later, in the background, and the gateway reads it at
+  most once a second. In that gap the gateway's refresh read the worker's
+  components and runtimes with its token, and `automatic` let an address
+  missing from the table go plain. Two smaller gaps let the root take a new
+  machine for an older version: an announcement or a join sent while the
+  machine port was still binding carried no door, and `join` on the command
+  line never sent one.
+- **The rule now (`_http`, every copy).** No token of this install goes to
+  another machine in plain HTTP unless the table says that machine has no
+  machine port (its route is null) and the install is not `required`. A
+  machine the table does not name yet is refused with nothing sent, and the
+  caller's next try goes over TLS. A machine on an older version is still
+  reached in plain HTTP, its drivers too: the null route marks its host. A
+  request with no token of this install (a model server on the LAN), loopback
+  and this machine's own address are not the rule's business. A process with
+  no table at all (no agent of an LT1 version started it) behaves as before.
+- **The intent, not the listener.** A node announces its machine port, and
+  registers it at the join, whenever it has one, listening or still binding.
+  The address is the one being registered, not the record's (it has none
+  before the first join). `join` sends the door the agent will open. So the
+  root never records such a node as an older version. A port another program
+  holds for good leaves the node unreachable from the other machines until it
+  is freed, where before it was reached in clear; its agent logs the holder.
+- **The check of record.** The pair's `automatic` run holds the window open
+  for 20 s: the worker joins with its 8083 held by another process, and the
+  root's agent cannot write its children's table. The worker must register its
+  door, the gateway must hold back its reads, and the capture of that window
+  must hold no token. Before the fix this fails every run. On Linux and
+  Windows, `row3-per-node-keys-acceptance.py --lan` holds a real gateway's
+  table from before a worker joined, then names the worker as an older
+  machine: no read reaches it while held, and it answers 200 after.
+- **Not changed.** A worker that joined before LT1 and has no list yet
+  treats the root as an older machine until its first pull, as its agent
+  starts, brings the list. The copies in library, inference-driver,
+  tool-driver, site-host and store are not re-vendored: none sends a token of
+  this install to another machine's plain address.
+
 **Not built, or not measured.**
 - **Key rotation** (two pins over an overlap): built in row 3
   ([`rows/row-03.md`](rows/row-03.md)), `POST /v1/node/machine-key` on any
