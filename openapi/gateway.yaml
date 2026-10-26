@@ -193,6 +193,79 @@ info:
     made is told to the model, which answers without it, and its item is
     `failed`.
 
+    ### Remote MCP (row 59b, 2026-10-26)
+
+    A Responses request may carry `{"type": "mcp", "server_label",
+    "server_url", "headers", "authorization", "allowed_tools",
+    "require_approval", "server_description"}`, as on OpenAI. The gateway
+    runs the loop; a **tool-driver** connects to the server
+    (`/v1/tools/mcp/list_tools` and `/v1/tools/mcp/call` in
+    `tool-driver.yaml`), so egress, its address rules and the caller's
+    credential stay with the other server-run tools. `connector_id`
+    (OpenAI's own connectors) is refused: there is no such connector here.
+
+    **It runs only when all five hold:** the gateway's `remoteMcp` setting
+    is not `off`; the install has a tool-driver that lists `mcp` (every
+    search account's process does); the client key's `allowedTools`
+    permits `mcp` (null permits); the key is not `localOnly`, since the
+    model's arguments leave the machine; and the model has a backend that
+    calls tools. Otherwise the request is a 400 naming which, never a
+    silent removal.
+
+    **Where it may connect** is the owner's setting `remoteMcp` (*Remote
+    MCP from API clients*, call R59-MCP): `internet` (the default) reaches
+    globally routable addresses over https only; `network`, an expert
+    choice, also reaches the owner's own network (and plain http there);
+    `off` refuses the tool. This machine's loopback, link-local and cloud
+    metadata addresses are never reached. A server URL the rule refuses is
+    a 400 naming the rule and the address.
+
+    **The tools.** Each server's tools are listed once per request -- or
+    taken from an `mcp_list_tools` item for that `server_label` already in
+    `input` -- and the list comes back as an `mcp_list_tools` output item.
+    A list that cannot be read is a 424 naming the cause. Each tool is
+    offered to the model as a function: its own name when one MCP server
+    is offered and the name is free, else `<server_label>__<name>`; a name
+    a function may not carry is made safe with a short hash. `allowed_tools`
+    (a list of names, or `{"tool_names"}`) narrows the list.
+
+    **Approval.** `require_approval` is `always` (the default, as on
+    OpenAI), `never`, or `{"always": {"tool_names"}, "never":
+    {"tool_names"}}`; a tool neither names needs approval unless only
+    `always` was given. A call that needs approval is not run: the
+    response ends with an `mcp_approval_request` item (`id`,
+    `server_label`, `name`, `arguments`). The caller answers with an
+    `mcp_approval_response` item (`approval_request_id`, `approve`,
+    `reason`) in the next request, whose `input` carries the request item
+    too. **An approval for an id no `mcp_approval_request` in the
+    conversation carries is refused** with a 400, as is one for a server
+    the request's tools do not name, and two for one id. An approved call
+    runs before the model is called and comes back as an `mcp_call` item
+    carrying `approval_request_id`; a declined one is told to the model.
+    A call already answered by an `mcp_call` in `input` is never run
+    again.
+
+    **What the caller gets back:** `mcp_call` items (`id`, `server_label`,
+    `name`, `arguments`, `output`, `error`, `approval_request_id`),
+    streamed as `response.mcp_call.in_progress` then `.completed` or
+    `.failed`, and `mcp_list_tools` items streamed as
+    `response.mcp_list_tools.in_progress` then `.completed`. A call that
+    fails is told to the model, which answers without it. Handed back in
+    `input`, the items become the history the model reads.
+
+    **Limits:** 20 MCP calls per response (`max_tool_calls` lowers it),
+    after which the model is told none are left; 30 s per call, 8 MiB per
+    answer and 64 tools per server, each enforced by the tool-driver and
+    named when hit. Failover ends at the first call, as for a search.
+
+    **The caller's credential** (`headers`, `authorization`) goes to the
+    tool-driver for one call and from there to that server only. It is
+    never logged, never in metrics, never in an error's words, and never
+    echoed: the response's `tools` carry an `mcp` tool without `headers`
+    or `authorization`. A metrics row per call records the tool, the
+    outcome and the time, not the server, the tool's name or its
+    arguments.
+
     ## Where the routing table comes from
 
     The gateway does not store backend URLs. It reads the agent
@@ -2571,6 +2644,12 @@ paths:
         `image_generation` runs
         through this install's image models (P8e, "Server-run tools"
         above) or is refused with a 400 naming why.
+        `mcp` (remote MCP, row 59b) runs on a tool-driver under the
+        owner's `remoteMcp` setting, with approvals, as "Remote MCP" above
+        describes; when it cannot run, the 400 names why. Its items --
+        `mcp_list_tools`, `mcp_call`, `mcp_approval_request` -- come back
+        in `output`, and `mcp_approval_response` answers a request in the
+        next `input`.
 
         ### Client-run tools (row 57)
 
@@ -2607,8 +2686,7 @@ paths:
         Tools still refused return a 400 naming their observed cause:
         `computer_use_preview` (no local model is trained for it),
         `code_interpreter` (Eugene has no sandbox; use a function tool and
-        run it yourself), `mcp` (remote MCP execution needs row 59), and
-        `file_search` (file search needs row 56).
+        run it yourself), and `file_search` (file search needs row 56).
 
         A `compaction` input item from `/v1/responses/compact` is
         decrypted and authenticated by this gateway and expanded into a
@@ -10268,6 +10346,15 @@ components:
         `image_generation_call` handed back (P8e), which becomes a line
         naming the prompt the image was made for -- its base64 is not
         sent to the model.
+        Remote MCP's items (row 59b): `mcp_list_tools` (`server_label`,
+        `tools`) is the server's tool list, used instead of listing again;
+        `mcp_call` (`server_label`, `name`, `arguments`, `output`, `error`,
+        `approval_request_id`) becomes the call and its result in the
+        history; `mcp_approval_request` (`id`, `server_label`, `name`,
+        `arguments`) becomes the call the model asked for, and
+        `mcp_approval_response` (`approval_request_id`, `approve`,
+        `reason`) answers it -- an approval whose id no request in `input`
+        carries is a 400.
         Codex drops `id` and `status` when it sends items back
         (measured), so neither is required. Refused: `item_reference` and
         any other type.
@@ -10327,6 +10414,32 @@ components:
             Reasoning's existing carrier, or a compaction item's encrypted
             and authenticated summary. A compaction requires a nonempty
             string that this gateway can authenticate before using it.
+        server_label:
+          type: string
+          description: The MCP server an `mcp_*` item belongs to (row 59b).
+        approval_request_id:
+          type:
+            - string
+            - 'null'
+          description: |
+            On `mcp_approval_response`, the `mcp_approval_request` it
+            answers; on `mcp_call`, the approval it ran under.
+        approve:
+          type: boolean
+          description: An `mcp_approval_response`'s answer.
+        reason:
+          type:
+            - string
+            - 'null'
+          description: Why an approval was given or refused; told to the model when refused.
+        error:
+          description: An `mcp_call`'s or `mcp_list_tools`' failure, as words.
+        tools:
+          type: array
+          description: An `mcp_list_tools` item's tools (`name`, `description`, `input_schema`, `annotations`).
+          items:
+            type: object
+            additionalProperties: true
 
     ResponsesToolAction:
       type: object
@@ -10395,7 +10508,10 @@ components:
         endpoint). `web_search` runs on this install's search account, or
         is removed and named when it cannot (see the endpoint);
         `image_generation` runs on this install's image models, or is
-        refused naming why (P8e).
+        refused naming why (P8e). `mcp` (`server_label`, `server_url`,
+        `headers`, `authorization`, `allowed_tools`, `require_approval`,
+        `server_description`) is a remote MCP server the gateway lists
+        and calls through a tool-driver (row 59b, "Remote MCP" above).
 
         `custom` (`name`, `description`, `format`) maps to a function with
         one string parameter `input`; `local_shell` maps to a function
@@ -10459,6 +10575,40 @@ components:
           properties:
             type:
               type: string
+        server_label:
+          type: string
+          description: An `mcp` tool's name for its server, unique in the request.
+        server_url:
+          type: string
+          description: |
+            An `mcp` tool's Streamable HTTP endpoint. `https` on the
+            internet under the default `remoteMcp`; see "Remote MCP".
+        server_description:
+          type: string
+          description: An `mcp` tool's words about its server, added to each of its tools' descriptions.
+        headers:
+          type:
+            - object
+            - 'null'
+          additionalProperties:
+            type: string
+          description: |
+            An `mcp` tool's headers for its server, sent for this request
+            only and never echoed, logged or kept. Headers that frame the
+            request (`Host`, `Content-Type`, `Accept`, ...) are refused.
+        authorization:
+          type:
+            - string
+            - 'null'
+          description: |
+            An `mcp` tool's OAuth access token, sent as `Authorization:
+            Bearer`, under the same rules as `headers`.
+        allowed_tools:
+          description: An `mcp` tool's tool names to offer, as a list or `{"tool_names"}`.
+        require_approval:
+          description: |
+            `always` (the default), `never`, or `{"always": {"tool_names"},
+            "never": {"tool_names"}}`.
 
     ResponsesResponse:
       type: object
@@ -10531,6 +10681,12 @@ components:
         "status", "result", "revised_prompt", "size", "quality",
         "background", "output_format", "action": "generate"}` -- `result`
         the base64 image, null and `status: failed` when none was made.
+        Remote MCP (row 59b) adds `{"type": "mcp_list_tools", "id",
+        "server_label", "tools": [{"name", "description", "input_schema",
+        "annotations"}]}`, `{"type": "mcp_call", "id", "status",
+        "server_label", "name", "arguments", "output", "error",
+        "approval_request_id"}` and `{"type": "mcp_approval_request", "id",
+        "server_label", "name", "arguments"}`.
 
         Client-run calls are `custom_tool_call` (`id`, `call_id`, `name`,
         `input`), `local_shell_call` and `shell_call` (`id`, `call_id`,
@@ -10550,6 +10706,9 @@ components:
             - function_call
             - web_search_call
             - image_generation_call
+            - mcp_list_tools
+            - mcp_call
+            - mcp_approval_request
             - custom_tool_call
             - local_shell_call
             - shell_call
@@ -11409,7 +11568,10 @@ components:
       properties:
         tool:
           type: string
-          description: The tool that ran -- `web_search` or `image_generation`.
+          description: |
+            The tool that ran -- `web_search`, `image_generation`, or `mcp`
+            (a remote MCP call, row 59b; the row names neither the server
+            nor the tool, which are the caller's words).
         driver:
           type:
             - string

@@ -108,7 +108,8 @@ components:
           items: {type: string, minLength: 1, maxLength: 64}
           description: |
             The tools the hub runs itself (P8) that this key may have run
-            on its behalf -- `web_search` today. **Null permits every tool
+            on its behalf -- `web_search`, `image_generation`, and `mcp`
+            (remote MCP servers the key's caller names, row 59b). **Null permits every tool
             the install runs** (design call #5: a key is allowed search once
             a search account exists, and can be denied it here). Empty
             permits none. An entry is a tool name or a pattern with `*`,
