@@ -462,6 +462,12 @@ jobs:
       - name: Files kept for their owners only, ended, removed and sabotaged (row 53)
         if: matrix.shard == 'L3' || matrix.shard == 'W3'
         run: python specs/scripts/row53-store-acceptance.py --sabotage
+      # Row 54: stored responses and conversations, chained and continued for their
+      # owner only on two replicas; with the chain read's owner check sabotaged,
+      # the isolation check must fail.
+      - name: Stored responses and conversations for their owners only, sabotaged (row 54)
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
+        run: python specs/scripts/row54-stored-responses-acceptance.py --sabotage
       - name: Rotate the root's token key across two live agents
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
