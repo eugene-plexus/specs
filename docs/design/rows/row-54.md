@@ -170,6 +170,15 @@ on by default, as part of full OpenAI API compatibility.
   it, or the conversation's items before it, then its own input.
 - **`store: false` in a conversation** keeps no response and still adds the
   request's input and output to the conversation.
+- **A chat's own id is its affinity key only where it opens.** OpenAI's
+  `store` defaults to true, and many clients resend their whole history
+  instead of chaining: keyed by each response's own id, every one of their
+  turns was a new conversation and could land on another replica. So a
+  kept response's own id keys it only when its input opens a conversation
+  (messages from the user and the instructions, nothing of an earlier
+  turn); a chained request keys by its chain's first response, a
+  conversation by its id, and a client resending its history by the key
+  that history gives it, after its opening turn.
 - **Not built: `affinityKey` in the metrics row.** The request row's schema
   moves to v14 with row 11 (branch `ld1`), and two rows bumping one schema
   in parallel would collide; the chain key itself is built and tested
