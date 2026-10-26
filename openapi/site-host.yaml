@@ -64,9 +64,12 @@ info:
     a person may use only the tools the owner named for them there. The
     file server's tools read and search (`list_directory`, `read_text` of any
     part of a file, `glob`, `grep`) and change files (`write_text`,
-    `edit_text`); every answer stays under the 70,000 bytes the site carries
-    and says when it stopped short (2b.3a, `job-sites-own-enrollment.md`
-    §3.3). A server marked `system` cannot be turned on without an
+    `edit_text`); answers say when they stopped short (2b.3a,
+    `job-sites-own-enrollment.md` §3.3). A `tools/call` JSON-RPC answer is
+    at most 8 MiB (8,388,608 bytes), enough for one 5 MiB picture in base64
+    with its JSON; other answers keep the 70,000-byte limit. An oversized
+    tool answer fails with "The answer is larger than 8 MiB. Ask for less."
+    A server marked `system` cannot be turned on without an
     administrator's consent recorded at the machine (J9).
 
     **Workspaces and rules** (2b.3b, J67-J72, J76-J80). A workspace is a

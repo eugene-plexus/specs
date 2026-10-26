@@ -59,21 +59,21 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=ee95fc9e35cf4f51f29f9363deb1f862d78b04ca
-PIN_CONTROL=34f655e461455e8b38c468f2fb5dab77c0e442b5
-PIN_GATEWAY=a6da8f6924395abd453c976b92887968ce54efc7
+PIN_AGENT=1f2a8ff67c52af8c283ec1543a7fb8165d26c572
+PIN_CONTROL=cde4e1152bc6af5a3362acdbfb448bbfcd72d833
+PIN_GATEWAY=4cbf56cc90d49740bb9e3b624db400f97edc1bd8
 PIN_DRIVER=7fb4c875ef86ae65b601249818212b2934d8b506
 PIN_LIBRARY=1b015632de2dddde6139719916b77128a9019869
 PIN_STORE=845e6803a2af6825eb1ae3fd550076cf9f3d1d0c
 PIN_TOOL_DRIVER=a9c8b03439b60d2ba24275bf9f17da02c245190e
-PIN_UI=aa58e2fdc071206630197b5282ad0cbcefb9f9d8   # branch `dist`, not `main`
+PIN_UI=658ccfbe4b6d25e27b266ae8f5090d26c641a6fd   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
 # block above: it is not one of the eight packages in the agent's prefix. It
 # must equal SITE_HOST_COMMIT in agent/src/eugene_plexus_agent/site_host.py,
 # and it moves at landing, with the agent's pin.
-PIN_SITE_HOST=5ac27d6f840ed58cc0ab45a09133c8bca46a4d91
+PIN_SITE_HOST=a7442935379284401c170cbd257bf3ccdc56f134
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
@@ -515,7 +515,1307 @@ APPS_CTL_SERVICE=/etc/systemd/system/eugene-plexus-apps-ctl.service
 APPS_CTL_PATH=/etc/systemd/system/eugene-plexus-apps-ctl.path
 
 write_app_units() {
+    if ! command -v setfacl >/dev/null 2>&1; then
+        if command -v apt-get >/dev/null 2>&1; then as_root apt-get install -y acl
+        elif command -v dnf >/dev/null 2>&1; then as_root dnf install -y acl
+        elif command -v yum >/dev/null 2>&1; then as_root yum install -y acl
+        elif command -v zypper >/dev/null 2>&1; then as_root zypper --non-interactive install acl
+        elif command -v pacman >/dev/null 2>&1; then as_root pacman -S --needed --noconfirm acl
+        else warn "Folder access needs the acl package; this package manager is not supported."
+        fi || warn "Could not install acl. Folder access needs the acl package; the update will continue."
+    fi
     as_root install -d -m 0755 "$(dirname "$APPS_HELPER")"
+    # ROW23_FOLDER_HELPER: installed root-owned, never loaded from the agent's prefix.
+    as_root tee "$(dirname "$APPS_HELPER")/folder-access.py" >/dev/null <<'FOLDER_HELPER'
+"""Root-owned Linux folder broker. Installed verbatim by write_app_units().
+
+No imports from the agent or files it owns. All filesystem changes use held
+file descriptors. The command line accepts identifiers, never paths or ACLs.
+"""
+
+import contextlib
+import ctypes
+import hashlib
+import json
+import os
+import re
+import stat
+import struct
+import subprocess
+import sys
+from pathlib import Path
+
+SYSTEM = tuple(
+    "/" + n
+    for n in "bin boot dev etc lib lib32 lib64 libx32 opt proc root run sbin snap sys tmp usr var".split()
+)
+
+
+def run(*args, **kwargs):
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, check=False, **kwargs
+        )
+    except FileNotFoundError:
+        if args[0] in ("getfacl", "setfacl"):
+            raise ValueError(
+                "The acl package is missing. Folder access needs getfacl and setfacl."
+            ) from None
+        raise
+    if result.returncode:
+        raise ValueError(
+            result.stderr.strip()
+            or result.stdout.strip()
+            or f"{args[0]} failed ({result.returncode})"
+        )
+    return result.stdout
+
+
+def identity(fd):
+    data = ctypes.create_string_buffer(256)
+    libc = ctypes.CDLL(None, use_errno=True)
+    if (
+        libc.statx(fd, b"", 0x1000, 0x800, data)
+        or struct.unpack_from("=I", data)[0] & 0x800 != 0x800
+    ):
+        raise ValueError(
+            "The kernel or filesystem does not expose folder creation time."
+        )
+    info = os.fstat(fd)
+    seconds, nanos = struct.unpack_from("=qI", data, 80)
+    return [
+        info.st_ino,
+        seconds,
+        nanos,
+    ]
+
+
+def same_identity(observed, expected):
+    return observed == (expected[1:4] if len(expected) == 5 else expected)
+
+
+def mount_id(fd):
+    # Mount IDs belong to this operation's namespace, never the saved identity.
+    for line in Path(f"/proc/self/fdinfo/{fd}").read_text().splitlines():
+        if line.startswith("mnt_id:"):
+            return int(line.split()[1])
+    raise ValueError("The kernel does not expose this item's mount id.")
+
+
+def acl(fd):
+    text = run("getfacl", "-cpnE", "--", f"/proc/self/fd/{fd}", pass_fds=(fd,))
+    return parse_acl(text)
+
+
+def parse_acl(text):
+    return dict(
+        (line.rsplit(":", 1)[0], line.rsplit(":", 1)[1].split()[0])
+        for line in text.splitlines()
+        if line and not line.startswith("#")
+    )
+
+
+def acls(fds):
+    text = run(
+        "getfacl",
+        "-cpnE",
+        "--",
+        *("/proc/self/fd/" + str(fd) for fd in fds),
+        pass_fds=tuple(fds),
+    )
+    blocks = text.strip().split("\n\n")
+    if len(blocks) != len(fds):
+        raise ValueError("getfacl returned an incomplete folder permission plan.")
+    return [parse_acl(block) for block in blocks]
+
+
+def bits(value):
+    return sum(bit for letter, bit in (("r", 4), ("w", 2), ("x", 1)) if letter in value)
+
+
+def words(value):
+    return "".join(
+        letter if value & bit else "-" for letter, bit in (("r", 4), ("w", 2), ("x", 1))
+    )
+
+
+def plan(before, group, write, directory):
+    """Preserve every existing entry; widening a masked entry is refused."""
+    after = before.copy()
+    for prefix in ("", "default:") if directory else ("",):
+        mask = bits(before.get(prefix + "mask:", "rwx"))
+        desired = 6 if write else 4
+        if directory or any(
+            bits(rights)
+            & (mask if key.startswith(("group:", "user:")) and key != "user:" else 7)
+            & 1
+            for key, rights in before.items()
+            if not key.startswith("default:") and key != "mask:"
+        ):
+            desired |= 1
+        new_mask = (
+            mask | desired
+            if prefix + "mask:" in before
+            else desired | bits(before.get(prefix + "group:", before["group:"]))
+        )
+        for key, rights in before.items():
+            if (
+                key.startswith(prefix)
+                and (
+                    key.startswith(prefix + "group:")
+                    or (key.startswith(prefix + "user:") and key != prefix + "user:")
+                )
+                and bits(rights) & (new_mask & ~mask)
+            ):
+                raise ValueError(
+                    "A named or group ACL entry is masked out; changing the mask would widen its access."
+                )
+        if prefix and not any(key.startswith(prefix) for key in before):
+            for key in ("user:", "group:", "other:"):
+                after[prefix + key] = before[key]
+        key = prefix + f"group:{group}"
+        after[key] = words(bits(before.get(key, "---")) | desired)
+        # An explicit mask preserves the effective rights of every older entry.
+        after[prefix + "mask:"] = words(new_mask)
+    return after
+
+
+def set_acl(fd, entries):
+    run(
+        "setfacl",
+        "--no-mask",
+        "--set-file=-",
+        "--",
+        f"/proc/self/fd/{fd}",
+        input="\n".join(k + ":" + v for k, v in entries.items()) + "\n",
+        pass_fds=(fd,),
+    )
+    if stat.S_ISDIR(os.fstat(fd).st_mode) and not any(
+        k.startswith("default:") for k in entries
+    ):
+        run("setfacl", "--remove-default", "--", f"/proc/self/fd/{fd}", pass_fds=(fd,))
+
+
+def write_record(path, data):
+    temp = path.with_suffix(".new")
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(data, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def related(path, root):
+    return (
+        path == root
+        or path.startswith(root.rstrip("/") + "/")
+        or root.startswith(path.rstrip("/") + "/")
+    )
+
+
+def mount_table():
+    return Path("/proc/self/mountinfo").read_text()
+
+
+def unescape(field):
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), field)
+
+
+def inside(path, root):
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def names_of(path):
+    """Every name a folder has through the mounts that show its filesystem.
+
+    `mount --bind /etc /srv/etc-alias` makes /srv/etc-alias/ssh the same
+    folder as /etc/ssh, and realpath keeps the alias. A filesystem mounted
+    twice, or a home's disk bound elsewhere, does the same. The deepest
+    mount holding the path gives its place on that filesystem (the mount's
+    root field); each mount of the same filesystem that shows that place
+    gives another name. An unreadable table fails the request.
+    """
+    mounts = []
+    for line in mount_table().splitlines():
+        fields = line.split()
+        mounts.append((unescape(fields[4]), unescape(fields[3]), fields[2]))
+    holding = [m for m in mounts if inside(path, m[0])]
+    if not holding:
+        return [path]
+    deepest = max(len(m[0]) for m in holding)
+    point, root, device = [m for m in holding if len(m[0]) == deepest][-1]
+    place = "/" + "/".join(
+        p for p in (root + "/" + path[len(point) :]).split("/") if p
+    )
+    names = {path}
+    for other_point, other_root, other_device in mounts:
+        if other_device == device and inside(place, other_root):
+            rest = place[len(other_root.rstrip("/")) :]
+            names.add("/" + "/".join(p for p in (other_point + rest).split("/") if p))
+    return sorted(names)
+
+
+def refuse(path, prefix):
+    """Match the agent: own prefix, system, home, then other install ancestors."""
+    if any(ord(c) < 32 or ord(c) == 127 for c in path) or not path.startswith("/"):
+        raise ValueError(
+            "not_a_folder: Use an absolute path without control characters."
+        )
+    if path.startswith("//"):
+        raise ValueError("network: Network folders are not supported.")
+    if os.path.realpath(path, strict=True) != path:
+        raise ValueError("link: Choose an existing folder, not a link or a path alias.")
+    if not os.path.isdir(path):
+        raise ValueError("not_a_folder: Choose an existing folder.")
+    if os.path.ismount(path):
+        raise ValueError("drive_root: Choose a folder inside the drive.")
+    import pwd
+
+    homes = ["/home"] + [
+        p.pw_dir
+        for p in pwd.getpwall()
+        if p.pw_dir.startswith("/") and p.pw_dir not in ("/", "/nonexistent")
+    ]
+    policy(path, prefix, homes)
+    for name in names_of(path):
+        if name == path:
+            continue
+        try:
+            policy(name, prefix, homes)
+        except ValueError as exc:
+            cause, words = str(exc).split(":", 1)
+            raise ValueError(f"{cause}: {path} is {name} through a mount.{words}") from None
+
+
+def policy(path, prefix, homes):
+    if path == prefix or path.startswith(prefix.rstrip("/") + "/"):
+        raise ValueError("eugene: This is Eugene's own folder.")
+    parts = Path(path).parts
+    if any(related(path, system) for system in SYSTEM) or (
+        len(parts) > 1 and parts[1].startswith("lib")
+    ):
+        raise ValueError("system: Eugene does not give apps system folders.")
+    if any(related(path, home) for home in homes):
+        raise ValueError("home: Use a Job Site to work in your own folders.")
+    if related(path, prefix):
+        raise ValueError("eugene: This is Eugene's own folder.")
+
+
+class UnsafeParent(ValueError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(path + " can be changed by other accounts.")
+
+
+@contextlib.contextmanager
+def opened(path, *, parents_safe=True, allow_mount_root=False):
+    held = [os.open("/", os.O_RDONLY | os.O_DIRECTORY)]
+    try:
+        parts = Path(path).parts[1:]
+        for index, name in enumerate(parts):
+            parent = held[-1]
+            info = os.fstat(parent)
+            if parents_safe:
+                permissions = acl(parent)
+                mask = bits(permissions.get("mask:", "rwx"))
+                foreign_write = any(
+                    bits(rights)
+                    & (mask if key.startswith(("group:", "user:")) else 7)
+                    & 2
+                    for key, rights in permissions.items()
+                    if key not in ("user:", "user:0", "mask:")
+                    and not key.startswith("default:")
+                )
+                if info.st_uid != 0 or foreign_write:
+                    raise UnsafeParent(str(Path(path).parents[len(parts) - index - 1]))
+            held.append(
+                os.open(
+                    name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
+                )
+            )
+            if (
+                not allow_mount_root
+                and index == len(parts) - 1
+                and mount_id(held[-1]) != mount_id(parent)
+            ):
+                raise ValueError(
+                    "drive_root: Choose a folder inside the mounted drive."
+                )
+        yield held[-1]
+    finally:
+        for fd in reversed(held):
+            os.close(fd)
+
+
+def inspect_folder(path, prefix):
+    """Inspect as root; the agent may not traverse any part of this path."""
+    facts = dict(path=path)
+    try:
+        refuse(path, prefix)
+    except (FileNotFoundError, NotADirectoryError):
+        facts["is_dir"] = False
+    except ValueError as exc:
+        cause = str(exc).split(":", 1)[0]
+        refused = {
+            "not_a_folder": dict(is_dir=False),
+            "link": dict(link=True),
+            "network": dict(network=True),
+            "drive_root": dict(mount_root=True),
+            "system": dict(system=[path]),
+            "eugene": dict(eugene=[path]),
+            "home": dict(homes=[path]),
+        }
+        if cause not in refused:
+            raise
+        facts.update(refused[cause])
+    if not (facts.get("link") or facts.get("network") or facts.get("is_dir") is False):
+        try:
+            # Grant policy is separate from identity. Only inspect through safe
+            # parents; revoke uses its private ledger if a parent is now unsafe.
+            with opened(path, allow_mount_root=True) as fd:
+                return dict(facts=facts, identity=identity(fd))
+        except UnsafeParent as exc:
+            facts["unsafe_parent"] = exc.path
+        except FileNotFoundError:
+            facts["is_dir"] = False
+        except NotADirectoryError:
+            facts["link"] = True
+    return dict(facts=facts, identity=[])
+
+
+def tree(fd, mount, names=(), *, revoke=False, skipped=None):
+    info = os.fstat(fd)
+    if stat.S_ISLNK(info.st_mode):
+        return
+    if mount_id(fd) != mount:
+        cause = "drive_root: A mounted descendant is not supported."
+        if not revoke:
+            raise ValueError(cause)
+        skipped.append("/".join(names) + ": " + cause)
+        return
+    if not revoke and not stat.S_ISDIR(info.st_mode):
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("A special file is inside this folder.")
+        if info.st_nlink != 1:
+            raise ValueError(
+                "link: A file inside this folder has more than one hard link."
+            )
+    ident = (
+        identity(fd) if stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) else []
+    )
+    yield names, fd, ident
+    if stat.S_ISDIR(os.fstat(fd).st_mode):
+        for name in os.listdir(fd):
+            try:
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode):
+                    continue
+                special = not stat.S_ISDIR(info.st_mode) and not stat.S_ISREG(
+                    info.st_mode
+                )
+                if special and not revoke:
+                    raise ValueError("A special file is inside this folder.")
+                # O_PATH avoids opening devices, blocking FIFOs, or connecting
+                # sockets. ACL tools reach the held object through procfs.
+                flags = os.O_PATH if special else os.O_RDONLY | os.O_NONBLOCK
+                child = os.open(name, flags | os.O_NOFOLLOW, dir_fd=fd)
+            except FileNotFoundError:
+                if not revoke:
+                    raise
+                continue
+            except OSError as exc:
+                if not revoke:
+                    raise
+                skipped.append("/".join((*names, name)) + ": " + str(exc))
+                continue
+            try:
+                yield from tree(
+                    child, mount, (*names, name), revoke=revoke, skipped=skipped
+                )
+            finally:
+                os.close(child)
+
+
+def batches(fd, size=128, *, revoke=False, skipped=None):
+    """Bound retained descriptors and subprocess argument size."""
+    pending = []
+    try:
+        for names, child, ident in tree(
+            fd, mount_id(fd), revoke=revoke, skipped=skipped
+        ):
+            pending.append((names, os.dup(child), ident))
+            if len(pending) == size:
+                yield pending
+                for _, held, _ in pending:
+                    os.close(held)
+                pending = []
+        if pending:
+            yield pending
+    finally:
+        for _, held, _ in pending:
+            os.close(held)
+
+
+def grant(fd, group, write, ledger, save, check=None):
+    """Preflight and save a complete plan before the first ACL change.
+
+    `check` runs after the preflight and before the plan is saved: the last
+    look at the folder's names before anything changes.
+    """
+    ledger["group"] = group
+    ledger["items"] = []
+    # Entries for the group that a grant leaves as they are: removal keeps them.
+    ledger["kept"] = []
+    keys = ("group:" + group, "default:group:" + group)
+    for batch in batches(fd):
+        for (names, child, ident), before in zip(batch, acls([c for _, c, _ in batch])):
+            after = plan(before, group, write, stat.S_ISDIR(os.fstat(child).st_mode))
+            if before != after:
+                ledger["items"].append(
+                    dict(names=names, identity=ident, before=before, after=after)
+                )
+            elif any(key in before for key in keys):
+                ledger["kept"].append(dict(names=names, identity=ident))
+    if check is not None:
+        check()
+    save(ledger)
+    plans = {tuple(item["names"]): item for item in ledger["items"]}
+    for batch in batches(fd):
+        content, held = [], []
+        for names, child, ident in batch:
+            item = plans.get(names)
+            if item is None:
+                continue
+            if not same_identity(ident, item["identity"]):
+                raise ValueError(
+                    "A folder item was replaced before its permission change."
+                )
+            held.append(child)
+            content.append(
+                "# file: /proc/self/fd/"
+                + str(child)
+                + "\n"
+                + "\n".join(k + ":" + v for k, v in item["after"].items())
+                + "\n\n"
+            )
+        if held:
+            run("setfacl", "--restore=-", input="".join(content), pass_fds=tuple(held))
+    return bool(plans)
+
+
+def fingerprint_key(fingerprint):
+    """What an owner's answer is about: the item and the entry, never its name.
+
+    A rename keeps the inode, so it keeps the answer; the name is only shown. The
+    link count is the item's state, checked when Remove is applied, not part of it."""
+    return json.dumps(
+        {k: v for k, v in fingerprint.items() if k not in ("names", "links")},
+        sort_keys=True,
+    )
+
+
+def own_identity(fd, ident):
+    """The item's identity; a special file has none from statx, so its device and inode.
+
+    Each special file is its own decision: two pipes never share one answer."""
+    if ident:
+        return list(ident)
+    info = os.fstat(fd)
+    return [info.st_dev, info.st_ino]
+
+
+def report(fingerprint, found):
+    """List one entry the owner decides, or note the owner already kept it."""
+    unknown, retained, accepted = found
+    key = fingerprint_key(fingerprint)
+    target = retained if key in accepted else unknown
+    if all(fingerprint_key(other) != key for other in target):
+        target.append(fingerprint)
+
+
+# What an item with another name, and an entry Eugene did not add, are in words.
+HARDLINK = (
+    "it has another name outside the folder, so changing it here changes it there too"
+)
+SPECIAL = (
+    "it is a pipe, socket or device, which Eugene never changes on its own"
+)
+
+
+def held_back(fd, ident, allowed):
+    """Why removal leaves this item for the owner: None, "hardlink" or "special".
+
+    One rule on both systems: removal never changes a file with another name, nor a
+    file that is not a regular file or a folder, unless the owner chose Remove for
+    it at no more names than it has now. Read on the held descriptor every time."""
+    info = os.fstat(fd)
+    if stat.S_ISDIR(info.st_mode):
+        return None
+    special = not stat.S_ISREG(info.st_mode)
+    if not special and info.st_nlink == 1:
+        return None
+    limit = allowed.get(identity_key(own_identity(fd, ident)))
+    if limit is not None and info.st_nlink <= limit:
+        return None
+    return "special" if special else "hardlink"
+
+
+def revoke(fd, ledger):
+    # Revoke the group's entries throughout the current tree, including
+    # children created since the grant, and every other principal's ACL
+    # (including later chmod changes). An item nobody changed since the grant
+    # gets its recorded ACL back; an entry the group held before stays.
+    if not ledger["items"]:
+        return True
+    group = ledger["group"]
+    skipped = []
+    plans = index(item for item in ledger["items"] if "names" in item)
+    kept = index(ledger.get("kept", []))
+    # An entry for the group changed after the grant is not Eugene's to
+    # take: it stays, and the owner decides (R23-UNKNOWN).
+    ledger["unknown"] = []
+    # What the owner chose to keep, from this record: the truth, whatever the
+    # agent saved. Only entries met again below are reported as retained.
+    ledger["retained"] = []
+    accepted = {fingerprint_key(f) for f in ledger.get("accepted", [])}
+    found = (ledger["unknown"], ledger["retained"], accepted)
+    # What Eugene's own default gives what is made in each folder: a new item is
+    # compared with its own folder's value only, never another folder's.
+    expect = {}
+    allowed = {identity_key(a["identity"]): a["links"] for a in ledger.get("allowed", [])}
+    keys = ("group:" + group, "default:group:" + group)
+    for batch in batches(fd, revoke=True, skipped=skipped):
+        waiting, specials, normal = [], [], []
+        for item in batch:
+            reason = held_back(item[1], item[2], allowed)
+            if reason is not None:
+                waiting.append((item, reason))
+            elif not item[2]:
+                specials.append(item)  # the owner chose Remove for this one
+            else:
+                normal.append(item)
+        # Left for the owner: listed only when it holds an entry for the app.
+        for (names, child, ident), reason in waiting:
+            try:
+                current = acl(child)
+            except (OSError, ValueError) as exc:
+                skipped.append("/".join(names) + ": " + str(exc))
+                continue
+            if any(key in current for key in keys):
+                report(
+                    dict(
+                        kind=reason,
+                        names=list(names),
+                        identity=own_identity(child, ident),
+                        links=os.fstat(child).st_nlink,
+                    ),
+                    found,
+                )
+        for names, child, _ in specials:
+            try:
+                if "group:" + group in acl(child):
+                    run(
+                        "setfacl",
+                        "-n",
+                        "-x",
+                        "g:" + group,
+                        "--",
+                        f"/proc/self/fd/{child}",
+                        pass_fds=(child,),
+                    )
+            except (OSError, ValueError) as exc:
+                skipped.append("/".join(names) + ": " + str(exc))
+        entries = list(zip(normal, acls([c for _, c, _ in normal]))) if normal else []
+        remove_entries(entries, group, plans, kept, found, expect)
+    ledger["refusal"] = "; ".join(skipped)
+    return not skipped
+
+
+def index(items):
+    """Records by identity, which a rename keeps, and by path for the rest."""
+    found = {}
+    for item in items:
+        found[tuple(item["names"])] = item
+        if item.get("identity"):
+            found[("identity", *identity_key(item["identity"]))] = item
+    return found
+
+
+def identity_key(value):
+    return tuple(value[1:4] if len(value) == 5 else value)
+
+
+def recorded(records, names, ident):
+    """The record for this item: by identity first, then by path."""
+    if ident and ("identity", *identity_key(ident)) in records:
+        return records[("identity", *identity_key(ident))]
+    return records.get(tuple(names))
+
+
+def remove_entries(entries, group, plans, kept=None, found=None, expect=None):
+    kept = kept or {}
+    found = found if found is not None else ([], [], set())
+    keys = ("group:" + group, "default:group:" + group)
+    default_key = "default:group:" + group
+    restore, removable = [], []
+    spare = {}  # fd -> keys that stay for the owner to decide
+    left = set()  # items whose default entry for the group stays
+    for (names, child, ident), current in entries:
+        item = recorded(plans, names, ident)
+        planned = item is not None and same_identity(ident, item["identity"])
+        prior = recorded(kept, names, ident)
+        # What Eugene's default gives this item, from its own folder alone.
+        given = expect.get(tuple(names[:-1])) if expect is not None and names else None
+        if expect is not None and stat.S_ISDIR(os.fstat(child).st_mode):
+            value = current.get(default_key)
+            if planned and value is not None and value == item["after"].get(default_key):
+                expect[tuple(names)] = value  # what Eugene's grant left on this folder
+            elif not planned and value is not None and value == given:
+                expect[tuple(names)] = value  # a new folder inherits its folder's
+        if planned and current == item["after"]:
+            if current != item["before"]:
+                restore.append((child, item["before"]))
+            continue
+        if prior is not None and same_identity(ident, prior["identity"]):
+            continue  # The group's own entries from before the grant.
+        changed = []
+        if planned:
+            for key in keys:
+                if key in current and current[key] not in (
+                    item["before"].get(key),
+                    item["after"].get(key),
+                ):
+                    changed.append(key)
+                    report(
+                        dict(
+                            kind="entry",
+                            names=list(names),
+                            identity=list(ident),
+                            key=key,
+                            value=current[key],
+                        ),
+                        found,
+                    )
+            if "default:group:" + group in changed:
+                left.add(child)
+        if planned and (changed or any(key in item["before"] for key in keys)):
+            # Changed since: put back what the grant widened, leave what was
+            # changed by someone else, and keep everything else.
+            wanted = {k: v for k, v in current.items() if k not in keys or k in changed}
+            wanted.update(
+                {k: item["before"][k] for k in keys if k in item["before"] and k not in changed}
+            )
+            if wanted != current:
+                restore.append((child, wanted))
+            continue
+        if not planned and expect is not None:
+            # Made, or replaced, after the grant: only what Eugene's default
+            # puts on a new item in this folder is Eugene's. Any other value,
+            # or any value under a default Eugene did not add, is the owner's.
+            for key in keys:
+                if key in current and (given is None or current[key] != given):
+                    spare.setdefault(child, set()).add(key)
+                    report(
+                        dict(
+                            kind="entry",
+                            names=list(names),
+                            identity=list(ident),
+                            key=key,
+                            value=current[key],
+                        ),
+                        found,
+                    )
+        removable.append(((names, child, ident), current))
+    if restore:
+        run(
+            "setfacl",
+            "--restore=-",
+            input="".join(
+                "# file: /proc/self/fd/"
+                + str(child)
+                + "\n"
+                + "\n".join(k + ":" + v for k, v in wanted.items())
+                + "\n\n"
+                for child, wanted in restore
+            ),
+            pass_fds=tuple(child for child, _ in restore),
+        )
+    everything, entries = entries, removable
+    for default in (False, True):
+        key = ("default:" if default else "") + "group:" + group
+        held = [
+            child
+            for (_, child, _), current in entries
+            if key in current and key not in spare.get(child, ())
+        ]
+        if held:
+            run(
+                "setfacl",
+                "-n",
+                "-x",
+                ("d:" if default else "") + "g:" + group,
+                "--",
+                *("/proc/self/fd/" + str(child) for child in held),
+                pass_fds=tuple(held),
+            )
+    clear = []
+    base = {"default:user:", "default:group:", "default:other:", "default:mask:"}
+    # Default ACLs the grant created go; setfacl --restore leaves them.
+    for (names, child, ident), current in everything:
+        item = recorded(plans, names, ident)
+        defaults = {k for k in current if k.startswith("default:")}
+        defaults.discard("default:group:" + group)
+        if (
+            item is not None
+            and child not in left
+            and same_identity(ident, item["identity"])
+            and not any(k.startswith("default:") for k in item["before"])
+            and defaults == base
+            and all(current[k] == item["after"].get(k) for k in base)
+        ):
+            clear.append(child)
+    if clear:
+        run(
+            "setfacl",
+            "-k",
+            "--",
+            *(f"/proc/self/fd/{c}" for c in clear),
+            pass_fds=tuple(clear),
+        )
+
+
+def reapply(fd, record, records):
+    """Restore remaining overlapping grants before completing this revoke."""
+    active = []
+    skipped = []
+    reapplied = set()
+    for target, other in records.items():
+        if (
+            other.get("removed")
+            or other == record
+            or not related(other["path"], record["path"])
+        ):
+            continue
+        try:
+            # These are existing root-owned grants too. Validate identity
+            # without applying policy for a new grant during removal.
+            with opened(
+                other["path"], parents_safe=False, allow_mount_root=True
+            ) as held:
+                if same_identity(identity(held), other["identity"]):
+                    active.append((target, other))
+        except (FileNotFoundError, NotADirectoryError):
+            continue  # A missing related folder covers no items.
+        except (OSError, ValueError) as exc:
+            skipped.append(other["path"] + ": " + str(exc))
+    if not active:
+        record["refusal"] = "; ".join(filter(None, [record.get("refusal"), *skipped]))
+        return not skipped, []
+    plans = {
+        target: {tuple(item["names"]): item for item in other["items"]}
+        for target, other in active
+    }
+    for batch in batches(fd, revoke=True, skipped=skipped):
+        changes = {}
+        for names, child, ident in batch:
+            path = record["path"].rstrip("/") + ("/" + "/".join(names) if names else "")
+            covering = [
+                (target, r)
+                for target, r in active
+                if path == r["path"] or path.startswith(r["path"].rstrip("/") + "/")
+            ]
+            if not covering:
+                continue
+            try:
+                info = os.fstat(child)
+                directory = stat.S_ISDIR(info.st_mode)
+                if not directory:
+                    if not stat.S_ISREG(info.st_mode):
+                        raise ValueError("A special file is inside this folder.")
+                    if info.st_nlink != 1:
+                        raise ValueError("A file has more than one hard link.")
+                before = acl(child)
+                target, owner = max(
+                    covering, key=lambda pair: bool(pair[1].get("write"))
+                )
+                after = plan(
+                    before,
+                    record["group"],
+                    owner.get("write", False),
+                    directory,
+                )
+                if before != after:
+                    relative = path[len(owner["path"]) :].strip("/")
+                    owned_names = tuple(relative.split("/")) if relative else ()
+                    item = plans[target].get(owned_names)
+                    if item is None or not same_identity(ident, item["identity"]):
+                        if item is not None:
+                            owner["items"].remove(item)
+                        item = dict(
+                            names=owned_names,
+                            identity=ident,
+                            before=before,
+                            after=after,
+                        )
+                        owner["items"].append(item)
+                        plans[target][owned_names] = item
+                    changes.setdefault(target, []).append((path, child, after))
+            except (OSError, ValueError) as exc:
+                skipped.append(path + ": " + str(exc))
+        for target, additions in changes.items():
+            try:
+                # Save each covering grant once per batch, before its additions.
+                # Keep an existing item's original before/after values so an
+                # owner's later default-ACL edits remain detectable on revoke.
+                write_record(target, records[target])
+                reapplied.add(target.stem)
+            except (OSError, ValueError) as exc:
+                skipped.extend(path + ": " + str(exc) for path, _, _ in additions)
+                continue
+            for path, child, after in additions:
+                try:
+                    set_acl(child, after)
+                except (OSError, ValueError) as exc:
+                    skipped.append(path + ": " + str(exc))
+    if skipped:
+        record["refusal"] = "; ".join(filter(None, [record.get("refusal"), *skipped]))
+    return not skipped, sorted(reapplied)
+
+
+def dropin(app, group, records):
+    directory = Path(f"/etc/systemd/system/eugene-plexus-app@{app}.service.d")
+    directory.mkdir(mode=0o755, exist_ok=True)
+    paths = [
+        record["path"]
+        for record in records
+        if record.get("write") and not record.get("removed")
+    ]
+    # systemd's quoted string syntax, including literal percent specifiers.
+    quoted = ["-" + json.dumps(p.replace("%", "%%"), ensure_ascii=False) for p in paths]
+    (directory / "20-folders.conf").write_text(
+        "[Service]\nSupplementaryGroups="
+        + group
+        + "\n"
+        + ("ReadWritePaths=" + " ".join(quoted) + "\n" if paths else ""),
+        encoding="utf-8",
+    )
+    run("systemctl", "daemon-reload")
+
+
+def write_mount(path, mountinfo):
+    """Read the effective namespace, not a reloaded unit's future settings."""
+    matches = []
+    for line in mountinfo.splitlines():
+        fields = line.split()
+        point = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), fields[4])
+        if path == point or path.startswith(point.rstrip("/") + "/"):
+            matches.append((len(point), "rw" in fields[5].split(",")))
+    if not matches:
+        return False
+    longest = max(length for length, _ in matches)
+    current = [writable for length, writable in matches if length == longest]
+    if len(current) != 1:
+        raise ValueError(
+            "More than one mount describes this folder; its effective write access cannot be proved."
+        )
+    return current[0]
+
+
+def running_access(app, group, path, write):
+    pid = int(
+        run(
+            "systemctl",
+            "show",
+            f"eugene-plexus-app@{app}.service",
+            "--property=MainPID",
+            "--value",
+        ).strip()
+        or "0"
+    )
+    if not pid:
+        return pid, write
+    status = Path(f"/proc/{pid}/status").read_text()
+    groups = next(
+        (
+            line.split()[1:]
+            for line in status.splitlines()
+            if line.startswith("Groups:")
+        ),
+        [],
+    )
+    if group not in groups:
+        raise ValueError(
+            "Workbench's running process does not have its file group. Restart Workbench in Eugene, then give access."
+        )
+    mounts = Path(f"/proc/{pid}/mountinfo").read_text()
+    return pid, write and not write_mount(path, mounts)
+
+
+def main():
+    if sys.version_info < (3, 10):
+        raise ValueError(
+            "Folder access needs Python 3.10 or newer at /usr/bin/python3."
+        )
+    import grp
+
+    prefix, account, verb, app, mode, ident = sys.argv[1:]
+    if (
+        not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", app)
+        or not re.fullmatch(r"[0-9a-f]{32}", ident)
+        or mode not in (("remove", "keep") if verb == "folder-decide" else ("read", "write"))
+        or verb not in ("folder-inspect", "folder-grant", "folder-revoke", "folder-decide")
+    ):
+        raise ValueError("Invalid folder permission request identifiers.")
+    if verb in ("folder-inspect", "folder-grant"):
+        path = run(
+            "runuser",
+            "-u",
+            account,
+            "--",
+            "head",
+            "-c",
+            "4097",
+            "--",
+            str(Path(prefix) / "apps/ctl" / (ident + ".path")),
+        )
+        if not 0 < len(path) <= 4096:
+            raise ValueError("Invalid folder path length.")
+        if verb == "folder-inspect":
+            print(json.dumps(inspect_folder(path, prefix)))
+            return
+    root = Path("/etc/eugene-plexus/folder-access")
+    root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    directory = root / app
+    directory.mkdir(mode=0o700, exist_ok=True)
+    target = directory / (ident + ".json")
+    group_name = "eapp-" + hashlib.sha256(app.encode()).hexdigest()[:12] + "-files"
+    group = str(grp.getgrnam(group_name).gr_gid)
+    if verb == "folder-grant":
+        if target.exists():
+            raise ValueError("This access record already exists.")
+        refuse(path, prefix)
+        process, restart_needed = running_access(app, group, path, mode == "write")
+        with opened(path) as fd:
+            expected = json.loads(
+                run(
+                    "runuser",
+                    "-u",
+                    account,
+                    "--",
+                    "head",
+                    "-c",
+                    "1024",
+                    "--",
+                    str(Path(prefix) / "apps/ctl" / (ident + ".identity")),
+                )
+            )
+            if not same_identity(identity(fd), expected):
+                raise ValueError(
+                    "The folder was replaced before the permission change."
+                )
+            # Mount IDs are transient; use the longest containing mount
+            # only to reject remote filesystems, never as persistent identity.
+            mounts = []
+            for line in mount_table().splitlines():
+                point = re.sub(
+                    r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), line.split()[4]
+                )
+                if path == point or path.startswith(point.rstrip("/") + "/"):
+                    mounts.append((len(point), line.split(" - ")[1].split()[0]))
+            fs = max(mounts)[1]
+            if fs.startswith(("nfs", "cifs", "smb", "9p", "fuse.ssh")):
+                raise ValueError("network: Network folders are not supported.")
+            record = dict(
+                path=path,
+                identity=identity(fd),
+                write=mode == "write",
+                removed=False,
+                items=[],
+            )
+            # A mount made since the first check can give the folder a
+            # forbidden name without changing its identity: look again.
+            added = grant(
+                fd,
+                group,
+                mode == "write",
+                record,
+                lambda r: write_record(target, r),
+                check=lambda: refuse(path, prefix),
+            )
+            write_record(target, record)
+            dropin(
+                app,
+                group_name,
+                [json.loads(p.read_text()) for p in directory.glob("*.json")],
+            )
+            print(
+                json.dumps(
+                    dict(added=added, process=process, restartNeeded=restart_needed)
+                )
+            )
+    else:
+        if verb == "folder-decide":
+            decide(prefix, account, group, ident, mode, target)
+            return
+        if not target.is_file():
+            print(json.dumps(dict(removed=True, kept=[], unknown=[])))
+            return
+        record = json.loads(target.read_text())
+        if record.get("removed"):
+            # Finished before; the agent may not have heard, so say what stays,
+            # as it is now: a kept file since deleted, or its entry since taken
+            # away, is no longer access the app has.
+            retained = still_there(record, group)
+            if retained != record.get("retained", []):
+                record["retained"] = retained
+                write_record(target, record)
+            print(
+                json.dumps(
+                    dict(
+                        removed=True,
+                        kept=[listing(f, group_name, record) for f in retained],
+                        unknown=[],
+                    )
+                )
+            )
+            return
+        reapplied = []
+        with contextlib.ExitStack() as held:
+            try:
+                # This path and identity come only from the root-owned ledger.
+                # Hold every component without following links, then compare the
+                # saved identity before changing ACLs. New-grant policy cannot
+                # prevent releasing an unchanged grant.
+                fd = held.enter_context(
+                    opened(record["path"], parents_safe=False, allow_mount_root=True)
+                )
+            except FileNotFoundError:
+                removed = True  # Also remove a deleted folder's namespace allowance.
+            except NotADirectoryError:
+                removed = False  # A replacement link must never reach its target.
+            else:
+                removed = same_identity(identity(fd), record["identity"])
+                if removed:
+                    complete = revoke(fd, record)
+                    records = {
+                        p: json.loads(p.read_text())
+                        for p in directory.glob("*.json")
+                        if p != target
+                    }
+                    restored, reapplied = reapply(fd, record, records)
+                    removed = complete and restored
+        unknown = record.get("unknown") or []
+        if removed and not unknown:
+            record["removed"] = True
+            write_record(target, record)
+            dropin(
+                app,
+                group_name,
+                [json.loads(p.read_text()) for p in directory.glob("*.json")],
+            )
+        elif unknown:
+            write_record(target, record)  # The ledger lists what waits for the owner.
+        print(
+            json.dumps(
+                dict(
+                    removed=removed and not unknown,
+                    message=record.get("refusal") or "",
+                    reapplied=reapplied,
+                    unknown=[listing(found, group_name, record) for found in unknown],
+                    kept=[listing(found, group_name, record) for found in record.get("retained", [])],
+                )
+            )
+        )
+
+
+def still_there(record, group):
+    """The owner's kept entries still in the folder, under their names now."""
+    retained = record.get("retained") or []
+    if not retained:
+        return []
+    wanted = {identity_key(f["identity"]): f for f in retained}
+    present = []
+    try:
+        with opened(record["path"], parents_safe=False, allow_mount_root=True) as fd:
+            if not same_identity(identity(fd), record["identity"]):
+                return []
+            for names, child, ident in tree(fd, mount_id(fd), revoke=True, skipped=[]):
+                found = wanted.get(identity_key(own_identity(child, ident)))
+                if found is None:
+                    continue
+                if found["kind"] == "entry":
+                    try:
+                        if acl(child).get(found["key"]) is None:
+                            continue
+                    except (OSError, ValueError):
+                        pass  # cannot read it: it stays shown
+                present.append(dict(found, names=list(names)))
+    except (FileNotFoundError, NotADirectoryError):
+        return []
+    return present
+
+
+def listing(found, group_name, record=None):
+    """One entry for the agent: where it is, in words, and the ledger's fingerprint."""
+    root = (record or {}).get("path", "")
+    if found["kind"] == "hardlink":
+        words_for = HARDLINK
+    elif found["kind"] == "special":
+        words_for = SPECIAL
+    else:
+        words_for = (
+            f"group {group_name} has {found['value']}"
+            + (" for new items" if found["key"].startswith("default:") else "")
+            + " on this item, set outside Eugene"
+        )
+    return dict(
+        path="/".join([root.rstrip("/"), *found["names"]]) if root else "/".join(found["names"]),
+        entry=words_for,
+        fingerprint=found,
+    )
+
+
+@contextlib.contextmanager
+def entry_fd(fd, names, *, path_only=False):
+    """Hold an item below `fd` by name, never following a link.
+
+    `path_only` holds the last item without opening it, as a special file must be."""
+    held = []
+    try:
+        current = fd
+        for index, name in enumerate(names):
+            flags = (
+                os.O_PATH
+                if path_only and index == len(names) - 1
+                else os.O_RDONLY | os.O_NONBLOCK
+            )
+            current = os.open(name, flags | os.O_NOFOLLOW, dir_fd=current)
+            held.append(current)
+        yield current
+    finally:
+        for item in reversed(held):
+            os.close(item)
+
+
+def decide(prefix, account, group, ident, mode, target):
+    """The owner's decision about one entry this ledger lists (R23-UNKNOWN).
+
+    The agent names the entry; only an entry this root-owned ledger lists is
+    acted on, so the agent can never point this at anything else. Remove
+    checks the same item and the same value first, then deletes that entry.
+    """
+    if not target.is_file():
+        raise ValueError("No such access record.")
+    record = json.loads(target.read_text())
+    wanted = json.loads(
+        run(
+            "runuser",
+            "-u",
+            account,
+            "--",
+            "head",
+            "-c",
+            "4097",
+            "--",
+            str(Path(prefix) / "apps/ctl" / (ident + ".entry")),
+        )
+    )
+    key = fingerprint_key(wanted)
+    if (
+        mode == "keep"
+        and key in {fingerprint_key(f) for f in record.get("accepted", [])}
+        and wanted not in (record.get("unknown") or [])
+    ):
+        # Committed already, and the agent asks again after a crash.
+        print(json.dumps(dict(decided=True)))
+        return
+    if wanted not in (record.get("unknown") or []):
+        raise ValueError(
+            "This entry is not waiting for a decision. "
+            "Choose Remove access again to check the folder."
+        )
+    if mode == "keep":
+        record.setdefault("accepted", []).append(wanted)
+    else:
+        with opened(record["path"], parents_safe=False, allow_mount_root=True) as fd:
+            if not same_identity(identity(fd), record["identity"]):
+                raise ValueError("The folder was replaced, so the entry was left as it is.")
+            with entry_fd(fd, wanted["names"], path_only=wanted["kind"] == "special") as child:
+                info = os.fstat(child)
+                regular = stat.S_ISREG(info.st_mode)
+                now = (
+                    identity(child)
+                    if regular or stat.S_ISDIR(info.st_mode)
+                    else [info.st_dev, info.st_ino]
+                )
+                if not same_identity(now, wanted["identity"]):
+                    return stale(
+                        "The item changed since Eugene found it, so the entry was left as it is."
+                    )
+                if wanted["kind"] in ("hardlink", "special"):
+                    if info.st_nlink > wanted.get("links", 1):
+                        return stale(
+                            "The file has more names than when Eugene asked, so it was "
+                            "left as it is."
+                        )
+                    # Only allows: the removal that follows changes the item.
+                    record.setdefault("allowed", []).append(
+                        dict(identity=wanted["identity"], links=info.st_nlink)
+                    )
+                else:
+                    allowed = {
+                        identity_key(a["identity"]): a["links"]
+                        for a in record.get("allowed", [])
+                    }
+                    limit = allowed.get(identity_key(now))
+                    if (
+                        not stat.S_ISDIR(info.st_mode)
+                        and (not regular or info.st_nlink > 1)
+                        and not (limit is not None and info.st_nlink <= limit)
+                    ):
+                        # Checked on the held file: an entry removed here would
+                        # be removed through every other name too.
+                        return stale(
+                            "The file has another name outside the folder now, so "
+                            "the entry was left as it is."
+                        )
+                    if acl(child).get(wanted["key"]) != wanted["value"]:
+                        return stale(
+                            "The entry changed since Eugene found it, so it was left as it is."
+                        )
+                    default = wanted["key"].startswith("default:")
+                    run(
+                        "setfacl",
+                        "-n",
+                        "-x",
+                        ("d:" if default else "") + "g:" + group,
+                        "--",
+                        f"/proc/self/fd/{child}",
+                        pass_fds=(child,),
+                    )
+    record["unknown"] = [f for f in record["unknown"] if f != wanted]
+    write_record(target, record)
+    print(json.dumps(dict(decided=True)))
+
+
+def stale(message):
+    """Nothing applied: what the owner saw has changed. The agent asks again."""
+    print(json.dumps(dict(decided=False, stale=True, message=message)))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:
+        print(str(exc) or type(exc).__name__, file=sys.stderr)
+        sys.exit(1)
+FOLDER_HELPER
+    as_root chown root:root "$(dirname "$APPS_HELPER")/folder-access.py"
+    as_root chmod 0755 "$(dirname "$APPS_HELPER")/folder-access.py"
     in_prefix mkdir -p "$PREFIX/apps/ctl"
     {
         printf '#!/bin/sh\n'
@@ -524,7 +1824,7 @@ write_app_units() {
         cat <<'HELPER'
 # Installed by Eugene Plexus's install.sh; see "apps in accounts of their
 # own" there. Run as root by eugene-plexus-apps-ctl.service.
-set -u
+set -uf
 as_account() { (cd / && runuser -u "$ACCOUNT" -- "$@"); }
 esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037'; }
 # Listed, read and removed as Eugene's account: a path it controls could
@@ -540,11 +1840,31 @@ for NAME in $NAMES; do
     as_account rm -f "$DIR/$NAME"
     VERB=${LINE%% *}
     APP=${LINE#* }
-    case "$VERB" in start|stop|restart|clean) ;; *) VERB= ;; esac
+    MODE=read
+    GRANT=
+    case "$VERB" in
+        folder-inspect|folder-grant|folder-revoke|folder-decide)
+            set -- $APP
+            if [ "$#" = 3 ]; then APP=$1; MODE=$2; GRANT=$3; else VERB=; fi
+            # folder-decide carries the owner's answer (R23-UNKNOWN).
+            case "$VERB:$MODE" in
+                folder-decide:remove|folder-decide:keep) ;;
+                folder-decide:*) VERB= ;;
+                *:read|*:write) ;;
+                *) VERB= ;;
+            esac
+            printf '%s' "$GRANT" | grep -Eq '^[0-9a-f]{32}$' || VERB=
+            ;;
+        start|stop|restart|clean) ;;
+        *) VERB= ;;
+    esac
     printf '%s' "$APP" | grep -Eq '^[a-z][a-z0-9-]{1,39}$' || VERB=
     if [ -z "$VERB" ]; then
         CODE=2
         OUT="refused: this helper starts, stops, restarts or cleans one eugene-plexus-app@ unit"
+    elif [ "$VERB" = folder-inspect ] || [ "$VERB" = folder-grant ] || [ "$VERB" = folder-revoke ] || [ "$VERB" = folder-decide ]; then
+        OUT=$(/usr/bin/python3 -I /usr/local/lib/eugene-plexus/folder-access.py "${DIR%/apps/ctl}" "$ACCOUNT" "$VERB" "$APP" "$MODE" "$GRANT" 2>&1)
+        CODE=$?
     elif [ "$VERB" = clean ]; then
         OUT=$(systemctl clean --what=state "eugene-plexus-app@$APP.service" 2>&1)
         CODE=$?
@@ -555,6 +1875,15 @@ for NAME in $NAMES; do
         # systemd takes names of 31 characters at most and an id may be 40,
         # so the name is a hash of the id.
         DROPIN=/etc/systemd/system/eugene-plexus-app@$APP.service.d
+        FILES_GROUP=eapp-$(printf '%s' "$APP" | sha256sum | cut -c1-12)-files
+        if ! getent group "$FILES_GROUP" >/dev/null; then
+            groupadd --system "$FILES_GROUP" || exit 1
+        fi
+        mkdir -p "$DROPIN"
+        if [ ! -f "$DROPIN/20-folders.conf" ]; then
+            printf '[Service]\nSupplementaryGroups=%s\n' "$FILES_GROUP" >"$DROPIN/20-folders.conf"
+            systemctl daemon-reload
+        fi
         WANT="[Service]
 User=eapp-$(printf '%s' "$APP" | sha256sum | cut -c1-12)"
         if [ "$(cat "$DROPIN/10-user.conf" 2>/dev/null)" != "$WANT" ]; then
