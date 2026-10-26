@@ -446,6 +446,10 @@ tags:
     description: |
       Files and uploads kept for their owner by the install's store (row
       53), in OpenAI's shapes, and in Anthropic's for its Files API.
+  - name: stored
+    description: |
+      Stored responses and conversations kept for their owner by the
+      install's store (row 54), in OpenAI's shapes.
   - name: admin
     description: Inspect and manage the running gateway.
   - name: config
@@ -2529,17 +2533,52 @@ paths:
         the row 57 client-run tools and compaction, whose wire shapes
         follow OpenAI's documented API.
 
-        ### Stateless: the conversation lives in the client
+        ### Stored responses and conversations (row 54)
 
         Codex sends `store: false` and **resends the whole conversation
-        on every turn**, with no `previous_response_id`. This gateway
-        keeps no response store either, so `previous_response_id`,
-        `conversation`, `prompt` (a stored prompt template),
+        on every turn**, with no `previous_response_id`; nothing of it is
+        kept. **A request with `store: true`, OpenAI's default when
+        `store` is absent, is kept** in the install's store (row 53)
+        for its owner -- the person the root verified, else the client
+        key -- for `responseDays` (30, OpenAI's retention), then deleted
+        for good. It is kept after it ends and before its last event or
+        its body is sent, so the next request can name it at once; the
+        response says `store: true` only when it was kept. A stream the
+        client left is kept with what was sent, `incomplete`. Not kept,
+        and `store` named on the ignored-settings header when it was
+        sent `true`: a request of the owner's console session, a request
+        while the owner has turned responses off (Settings -> Store,
+        "Keep responses when apps ask"), and one while the store cannot
+        be reached.
+
+        **`previous_response_id`** continues a stored response: the
+        gateway reads its chain from the store (each link the owner's
+        own, oldest first), and the model is given that conversation
+        followed by this request's `input`, as for a client that sends it
+        all; context limits apply as they do to such a client.
+        `instructions` are not carried along a chain (OpenAI's rule):
+        when the previous response had some and this request sends none,
+        `previous_response_id.instructions` is named on the
+        ignored-settings header. A missing, ended or other owner's id is
+        the one 400 `previous_response_not_found` (OpenAI's), and a chain
+        whose earlier response was deleted is a 400 naming it.
+        **`conversation`** (an id, or `{"id": ...}`) continues a
+        conversation made at `/v1/conversations`: its items come first,
+        and this request's input and output items are added to it when
+        it ends (even with `store: false`). A request may send one of the
+        two, not both. Either one while responses are off is a 400 that
+        names the setting; while the store cannot be reached, a 503
+        naming the cause.
+
+        A request in a chain or a conversation is kept on one replica:
+        conversation affinity keys it by the conversation's id or the
+        chain's first response before any other key.
+
+        `prompt` (a reusable prompt made in OpenAI's dashboard),
         `background: true` and an `item_reference` input item are each
-        refused with a 400 naming the field: each points at state that
-        exists only on OpenAI's servers. `store: true` is accepted and
-        named on the ignored-settings header, because nothing is kept;
-        every response reports `store: false`.
+        refused with a 400 naming the field: Eugene has no prompt
+        dashboard, makes no background responses and does not resolve
+        item references.
 
         ### What the input becomes
 
@@ -2760,7 +2799,7 @@ paths:
         (`web_search_call.action.sources` is always included on a search
         that ran). `max_tool_calls` bounds the searches one response may
         run (P8). Refused with a 400 naming the
-        field: every stateful field above, `top_logprobs` above 0 and the
+        field: `prompt`, `background: true`, `top_logprobs` above 0 and the
         `message.output_text.logprobs` include, an `input_file` with a
         `file_url`, `tool_choice` forcing an undeclared or
         refused tool, and any top-level field not listed in
@@ -2789,13 +2828,23 @@ paths:
             image it cannot carry or no ready backend can see, a backend
             refused it -- **or it names a model nothing serves**, which is
             a 400 here and not a 404 because Codex retries a 404 five
-            times before showing it.
+            times before showing it. A `previous_response_id` this caller
+            has no stored response for is the 400
+            `previous_response_not_found`, as on OpenAI.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
         '401':
           description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: |
+            `conversation` names no conversation of this caller's (missing,
+            ended or another's: one answer).
           content:
             application/json:
               schema:
@@ -2819,7 +2868,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
         '503':
-          description: A backend serves the model but is not ready, or the gateway is starting.
+          description: |
+            A backend serves the model but is not ready, or the gateway is
+            starting; or `previous_response_id` or `conversation` was sent
+            while the install's store cannot be reached (the cause named).
           content:
             application/json:
               schema:
@@ -2858,8 +2910,9 @@ paths:
         Admission, model routing, client-key scope, `localOnly`, the
         16 MiB JSON body limit, timeouts and metrics use the same path as
         `/v1/responses`. No client tool is executed while summarising.
-        This endpoint returns JSON only. It does not add chain loading:
-        `previous_response_id` remains refused until row 54 supplies it.
+        This endpoint returns JSON only. `previous_response_id` reads
+        that stored response's chain first, as on `/v1/responses` (row
+        54); nothing compacted is kept.
       requestBody:
         required: true
         content:
@@ -2939,6 +2992,8 @@ paths:
         cannot be checked right now is the same 400 (fail-closed), never a
         5xx. It is admitted as `/v1/responses` is: the same key scope and
         `localOnly` rule, and the same body limit (2026-10-12).
+        `previous_response_id` and `conversation` are read from the store
+        first and counted with the input (row 54).
       requestBody:
         required: true
         content:
@@ -2967,23 +3022,389 @@ paths:
 
   /v1/responses/{responseId}:
     parameters:
-      - name: responseId
+      - $ref: '#/components/parameters/StoredResponseId'
+    get:
+      tags: [stored]
+      operationId: retrieveResponse
+      summary: A stored response, as it was returned (row 54).
+      description: |
+        The caller's own stored response, `output` included. A missing,
+        ended or other owner's id is the same 404 (`Response with id
+        '...' not found.`). `stream=true`, which replays a background
+        response, is a 400: none is made here. Admitted as the files
+        doors are (row 53): a check of the key or person, no lease.
+      parameters:
+        - name: include
+          in: query
+          required: false
+          schema:
+            type: array
+            items: {type: string}
+          description: Accepted; a stored response is returned as it was made.
+      responses:
+        '200':
+          description: The response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponsesResponse'
+        '400':
+          description: '`stream=true`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '403':
+          description: The owner turned responses off (Settings -> Store).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No stored response with this id for this caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The install's store cannot be reached; the cause is named.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+    delete:
+      tags: [stored]
+      operationId: deleteResponse
+      summary: Delete a stored response, for good.
+      description: |
+        A later response chained from it can no longer be continued (a
+        400 naming the deleted one).
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponsesDeleted'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No stored response with this id for this caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The install's store cannot be reached; the cause is named.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/responses/{responseId}/input_items:
+    parameters:
+      - $ref: '#/components/parameters/StoredResponseId'
+    get:
+      tags: [stored]
+      operationId: listResponseInputItems
+      summary: The items the model was given for a stored response.
+      description: |
+        The conversation as the model received it, each item with its
+        `id`: for a chained response, every earlier response's input and
+        output items, then its own input; for one in a conversation, the
+        conversation's items before it, then its own input. Paged as
+        OpenAI pages it (`limit` 1-100, default 20; `order`, default
+        `desc`; `after` an item id).
+      parameters:
+        - $ref: '#/components/parameters/StoredItemLimit'
+        - $ref: '#/components/parameters/StoredItemOrder'
+        - $ref: '#/components/parameters/StoredItemAfter'
+        - name: include
+          in: query
+          required: false
+          schema:
+            type: array
+            items: {type: string}
+          description: Accepted; items are returned as they were kept.
+      responses:
+        '200':
+          description: One page of items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponsesItemList'
+        '400':
+          description: A bad page parameter, or a chain whose earlier response was deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No stored response with this id for this caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The install's store cannot be reached; the cause is named.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/responses/{responseId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/StoredResponseId'
+    post:
+      tags: [stored]
+      operationId: cancelResponse
+      summary: Always a 400 -- only a background response can be cancelled, and none is made here.
+      responses:
+        '400':
+          description: No background response exists to cancel.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/conversations:
+    post:
+      tags: [stored]
+      operationId: createConversation
+      summary: Start a conversation (row 54), with up to 20 items.
+      description: |
+        OpenAI's Conversations API over the install's store. A
+        conversation belongs to its caller (the person, else the key),
+        is seen by no one else, and is deleted `responseDays` (30) after
+        its last use, or on `DELETE`. A Responses request with
+        `conversation` reads its items first and adds its own input and
+        output when it ends. The owner's console session keeps none
+        (403). While the owner has turned responses off, every
+        conversation door is a 403 naming the setting. Each item is
+        given an `id` when it has none; message content sent as a string
+        is kept as one `input_text` (or, for the assistant,
+        `output_text`) part. Body limit 16 MiB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationCreateRequest'
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '400':
+          description: A bad item or metadata, named.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '403':
+          description: Responses are off, or the caller is the owner's console session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '413':
+          description: The body passes 16 MiB, or the caller's quota would be passed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The install's store cannot be reached; the cause is named.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/conversations/{conversationId}:
+    parameters:
+      - $ref: '#/components/parameters/StoredConversationId'
+    get:
+      tags: [stored]
+      operationId: retrieveConversation
+      summary: One of the caller's conversations.
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '404':
+          description: No conversation with this id for this caller (missing, ended or another's).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+    post:
+      tags: [stored]
+      operationId: updateConversation
+      summary: Replace a conversation's metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationUpdateRequest'
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '400':
+          description: Bad metadata, named.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No conversation with this id for this caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+    delete:
+      tags: [stored]
+      operationId: deleteConversation
+      summary: Delete a conversation and its items, for good.
+      description: The responses kept in it stay until their own end, as on OpenAI.
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationDeleted'
+        '404':
+          description: No conversation with this id for this caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/conversations/{conversationId}/items:
+    parameters:
+      - $ref: '#/components/parameters/StoredConversationId'
+    get:
+      tags: [stored]
+      operationId: listConversationItems
+      summary: One page of a conversation's items.
+      parameters:
+        - $ref: '#/components/parameters/StoredItemLimit'
+        - $ref: '#/components/parameters/StoredItemOrder'
+        - $ref: '#/components/parameters/StoredItemAfter'
+        - name: include
+          in: query
+          required: false
+          schema:
+            type: array
+            items: {type: string}
+          description: Accepted; items are returned as they were kept.
+      responses:
+        '200':
+          description: One page of items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationItemList'
+        '404':
+          description: No conversation with this id for this caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+    post:
+      tags: [stored]
+      operationId: createConversationItems
+      summary: Add up to 20 items to the end of a conversation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationItemsCreateRequest'
+      responses:
+        '200':
+          description: The items added, in order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationItemList'
+        '400':
+          description: A bad item, named.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No conversation with this id for this caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/conversations/{conversationId}/items/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/StoredConversationId'
+      - name: itemId
         in: path
         required: true
         schema:
           type: string
     get:
-      tags: [inference]
-      operationId: retrieveResponse
-      summary: Always 404 -- this gateway keeps no response store.
-      description: |
-        Answered so that a client asking for a stored response is told
-        why there is none, in OpenAI's envelope, rather than receiving a
-        framework's bare 404. `DELETE`, and the `cancel` and
-        `input_items` sub-resources, answer the same way.
+      tags: [stored]
+      operationId: retrieveConversationItem
+      summary: One item of a conversation.
       responses:
+        '200':
+          description: The item, as it was kept.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponsesInputItem'
         '404':
-          description: No response is ever stored here.
+          description: No such item in a conversation of this caller's.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+    delete:
+      tags: [stored]
+      operationId: deleteConversationItem
+      summary: Delete one item of a conversation, for good.
+      responses:
+        '200':
+          description: The conversation, as OpenAI answers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '404':
+          description: No such item in a conversation of this caller's.
           content:
             application/json:
               schema:
@@ -5362,6 +5783,36 @@ components:
       schema:
         type: string
         enum: ['off', observe, stop]
+    StoredResponseId:
+      name: responseId
+      in: path
+      required: true
+      schema:
+        type: string
+    StoredConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema:
+        type: string
+    StoredItemLimit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+    StoredItemOrder:
+      name: order
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/StoredItemOrder'
+    StoredItemAfter:
+      name: after
+      in: query
+      required: false
+      schema:
+        type: string
+      description: An item id; the page starts after it, in `order`.
 
   securitySchemes:
     geminiApiKeyAuth:
@@ -10109,12 +10560,19 @@ components:
           type:
             - boolean
             - 'null'
-          description: Nothing is ever stored; `true` is named on the ignored-settings header.
+          description: |
+            Absent or `true` (OpenAI's default), the response is kept for
+            its owner for `responseDays` (row 54); `false` keeps nothing
+            (Codex sends `false`). The response's own `store` says whether
+            it was kept; a `true` that is not kept is named on the
+            ignored-settings header.
         previous_response_id:
           type:
             - string
             - 'null'
-          description: Refused when set. This gateway keeps no response store.
+          description: |
+            A stored response of this caller's to continue: its chain is
+            the conversation so far. Not with `conversation`.
         truncation:
           type:
             - string
@@ -10170,16 +10628,30 @@ components:
             - string
             - 'null'
         conversation:
-          description: Refused when set. Conversations are stored objects.
+          description: |
+            A conversation of this caller's (`conv_...`, or `{"id":
+            "conv_..."}`) to continue: its items come first, and this
+            request's input and output are added to it. Not with
+            `previous_response_id`.
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+              required: [id]
+              properties:
+                id:
+                  type: string
+            - type: 'null'
         prompt:
-          description: Refused when set. A stored prompt template exists only at OpenAI.
+          description: |
+            Refused when set: a reusable prompt is made in OpenAI's
+            dashboard, and Eugene has no prompt dashboard.
 
     ResponsesCompactRequest:
       type: object
       description: |
-        Request for standalone compaction. The model and conversation are
-        required while no response store exists. Unknown top-level fields
-        are refused with a 400 naming the field.
+        Request for standalone compaction. Unknown top-level fields are
+        refused with a 400 naming the field.
       additionalProperties: true
       required:
         - model
@@ -10206,7 +10678,7 @@ components:
           type:
             - string
             - 'null'
-          description: Refused when set until row 54 supplies chain loading; send input instead.
+          description: A stored response of this caller's whose chain is compacted with `input` (row 54).
 
     ResponsesCompactResponse:
       type: object
@@ -10468,7 +10940,9 @@ components:
         then one call item per tool call, using the declared tool's type
         (`function_call`, `custom_tool_call`, `local_shell_call`,
         `shell_call` or `apply_patch_call`). The request's settings
-        are echoed as OpenAI echoes them; `store` is always false.
+        are echoed as OpenAI echoes them; `store` says whether the
+        response was kept (row 54), and `previous_response_id` and
+        `conversation` are echoed when sent.
       additionalProperties: true
       required:
         - id
@@ -10788,6 +11262,150 @@ components:
           $ref: '#/components/schemas/SystemOneUsage'
         x_eugene_plexus:
           $ref: '#/components/schemas/CompletionRoutingInfo'
+
+    StoredItemOrder:
+      type: string
+      enum: [asc, desc]
+      default: desc
+      description: The order items are listed in, by their place in the conversation.
+
+    ResponsesDeleted:
+      type: object
+      description: '`DELETE /v1/responses/{responseId}` (row 54).'
+      required: [id, object, deleted]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: response.deleted
+        deleted:
+          type: boolean
+          const: true
+
+    ResponsesItemList:
+      type: object
+      description: |
+        One page of a stored response's input items (row 54), OpenAI's
+        list: `first_id` and `last_id` name the page's ends (null when it
+        is empty).
+      required: [object, data, first_id, last_id, has_more]
+      properties:
+        object:
+          type: string
+          const: list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResponsesInputItem'
+        first_id:
+          type:
+            - string
+            - 'null'
+        last_id:
+          type:
+            - string
+            - 'null'
+        has_more:
+          type: boolean
+
+    ConversationMetadata:
+      type: object
+      maxProperties: 16
+      propertyNames: {maxLength: 64}
+      additionalProperties:
+        type: string
+        maxLength: 512
+      description: OpenAI's metadata, 16 pairs at most.
+
+    Conversation:
+      type: object
+      description: A conversation (row 54), OpenAI's shape.
+      required: [id, object, created_at, metadata]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: conversation
+        created_at:
+          type: integer
+        metadata:
+          $ref: '#/components/schemas/ConversationMetadata'
+
+    ConversationDeleted:
+      type: object
+      required: [id, object, deleted]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: conversation.deleted
+        deleted:
+          type: boolean
+          const: true
+
+    ConversationCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type:
+            - array
+            - 'null'
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ResponsesInputItem'
+        metadata:
+          oneOf:
+            - $ref: '#/components/schemas/ConversationMetadata'
+            - type: 'null'
+
+    ConversationUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [metadata]
+      properties:
+        metadata:
+          oneOf:
+            - $ref: '#/components/schemas/ConversationMetadata'
+            - type: 'null'
+
+    ConversationItemsCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ResponsesInputItem'
+
+    ConversationItemList:
+      type: object
+      description: One page of a conversation's items, OpenAI's list.
+      required: [object, data, first_id, last_id, has_more]
+      properties:
+        object:
+          type: string
+          const: list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResponsesInputItem'
+        first_id:
+          type:
+            - string
+            - 'null'
+        last_id:
+          type:
+            - string
+            - 'null'
+        has_more:
+          type: boolean
 
     OpenAIErrorResponse:
       type: object
