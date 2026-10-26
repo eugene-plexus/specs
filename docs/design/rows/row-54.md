@@ -130,3 +130,53 @@ review. Risks:
 
 **Calls:** R54-DEFAULT answered (Troy, 2026-10-23): kept when apps ask,
 on by default, as part of full OpenAI API compatibility.
+
+## 8. What building found (2026-10-26)
+
+- **OpenAI answers a missing `previous_response_id` with a 400, not a 404**
+  (`previous_response_not_found`, param `previous_response_id`), and Codex
+  shows a 400 at once where it retries a 404 five times. Built as OpenAI's
+  400 (full compatibility, the standing rule), with one message for a
+  missing, ended or other owner's id. `GET` and `DELETE` of such an id are
+  OpenAI's 404 ("Response with id '...' not found."). A conversation that
+  is not the caller's is a 404 on the Responses door too (OpenAI's shape
+  here is not documented; chosen to match `GET /v1/conversations/{id}`).
+- **The owner is row 53's, by `files_door.owner_for`.** It is one more
+  check of the key or person with the admission authority, made only when
+  the answer may be kept or a chain is read (never for Codex, which sends
+  `store: false`).
+- **Whether the store keeps responses is asked before the answer**, so a
+  stream's head can name `store` as ignored when it is off; the store's
+  word is believed 15 seconds (`GET /v1/store/status`, `parts.responses`).
+  A store that cannot be asked keeps nothing for that while and never
+  delays an answer more than the status read's 3 seconds once.
+- **Kept before the last event.** The answer is kept after it ends and
+  before `response.completed` (or the JSON body) is sent, so the Agents
+  SDK's next request, sent the moment it reads the last event, finds it.
+  The response's `store` says whether it was kept.
+- **A chain lives as long as its newest response.** Each link ends 30 days
+  after it is kept, and keeping one moves every earlier link's end to its
+  own; otherwise a chain in daily use would lose its first answers after
+  30 days and could not be rebuilt. A conversation ends 30 days after its
+  last use. OpenAI keeps conversations without an end; Eugene keeps the
+  design's 30 days (a privacy default) -- a call for Troy if it should
+  match OpenAI.
+- **Deleting a response in the middle of a chain breaks the chain**, and
+  the next request from a later link is a 400 naming the deleted one,
+  rather than a conversation with a hole in it the model cannot know about.
+- **Only a request's own input is kept with its answer**; the chain's
+  earlier items are its earlier links. `input_items` lists what the model
+  was given (OpenAI: conversation items "are prepended"): the chain before
+  it, or the conversation's items before it, then its own input.
+- **`store: false` in a conversation** keeps no response and still adds the
+  request's input and output to the conversation.
+- **Not built: `affinityKey` in the metrics row.** The request row's schema
+  moves to v14 with row 11 (branch `ld1`), and two rows bumping one schema
+  in parallel would collide; the chain key itself is built and tested
+  (`affinity.key_for(..., chain=...)`, the acceptance's two lookalike
+  chats). A follow-up adds the column after row 11 merges.
+- **The console shows the new counts only through the existing owner
+  list**: `/v1/owners` gains `responses` and `conversations` per owner, and
+  their bytes count in `bytes`; Settings -> Store shows the two new
+  settings through the generic config page. The UI does not yet name the
+  two counts.
