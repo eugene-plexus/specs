@@ -14,16 +14,24 @@ info:
     result back (§3 of that design).
 
     **One instance per tool provider account**, as an inference-driver is
-    one per backend: a SearXNG instance, a Brave Search subscription.
+    one per backend: a SearXNG instance, a Brave Search subscription, a
+    Gemini key for Google Search, a Tavily key (row 59a).
     The account's secret (Brave's subscription token) lives here, sealed
     as an inference-driver's `apiKey` is; the gateway never holds a
     search key. The operator's name for the account lives in the agent
     topology, not here.
 
-    **What it runs today: `web_search`.** Tools that act on the user's
-    machine — files, shell, code execution, the user's own MCP servers —
-    are not run in the hub at all; they stay in apps or in the client,
-    which is where the files are (`apps-and-spokes.md`).
+    **What it runs today: `web_search`, and remote MCP (row 59b).** A
+    remote MCP server is one an API client names on a Responses request
+    (`{"type": "mcp", "server_url", ...}`): the gateway runs the loop and
+    calls this component to list the server's tools and to call one,
+    passing the caller's headers for that one call. Egress, its address
+    rules, its time and size limits, and the caller's credential stay here
+    with the other server-run tools; the credential is never logged,
+    stored or echoed. Tools that act on the user's machine — files,
+    shell, code execution, the user's own local MCP servers — are not run
+    in the hub at all; they stay in apps or in the client, which is where
+    the files are (`apps-and-spokes.md`).
 
     **Egress is always `internet`.** Every search provider sends the
     query to the public web, a SearXNG on the LAN included (it forwards
@@ -129,6 +137,124 @@ paths:
         '502':
           $ref: 'components/common.yaml#/components/responses/Problem'
         '503':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '504':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/tools/mcp/list_tools:
+    post:
+      tags: [tools]
+      operationId: mcpListTools
+      summary: List a remote MCP server's tools, for one Responses request.
+      description: |
+        Row 59b. Opens one session with the MCP server at `serverUrl`
+        (Streamable HTTP: `initialize`, `notifications/initialized`, then
+        `tools/list` page by page), and answers its tools. Only the
+        install's gateway may call it (a `gateway` service token); a
+        person's session is refused, because `reach` is the owner's
+        setting and only the gateway reads it.
+
+        **Where it may connect.** The host is resolved once per
+        connection, **every** address it resolves to is checked against
+        `reach`, and the connection goes to an address that was checked,
+        so a second lookup (DNS rebinding) cannot switch it. A redirect is
+        followed only to the same origin and only as a 307 or 308, through
+        the same check. The user's proxy is not used: through a proxy the
+        proxy would resolve the name, and the check would mean nothing.
+
+        * `internet` (the default): only globally reachable addresses,
+          over `https`. Loopback, private (RFC 1918, unique-local IPv6),
+          the carrier range 100.64.0.0/10, link-local, multicast,
+          reserved, the unspecified address and IPv6 forms that carry one
+          of those IPv4 addresses (IPv4-mapped, 6to4, Teredo, NAT64) are
+          refused.
+        * `network`: the owner's expert choice. Addresses on the owner's
+          network (private ranges, unique-local IPv6, 100.64.0.0/10) are
+          also allowed, and plain `http` is allowed to them only. This
+          machine's loopback stays refused: its services are this
+          install's own.
+        * Under every reach: link-local (cloud metadata services listen
+          at 169.254.169.254), known metadata addresses (100.100.100.200,
+          fd00:ec2::254), multicast, reserved and unspecified addresses
+          are refused.
+
+        A refusal is 403 `address_refused` naming the rule and the address
+        it found; a scheme the reach does not allow is 400
+        `scheme_refused`.
+
+        **Limits** (each names itself when hit): 30 s for the whole call;
+        8 MiB for each answer the server sends; at most 64 tools after
+        `allowedTools` (413 `too_many_tools`), and at most 32 pages.
+
+        **The caller's headers** go only to this server, and only for
+        this call. They are never logged, never stored and never part of
+        an error's words. The words of a failure name the server by its
+        origin (`https://host:port`) only, never its path or query, which
+        can carry a key too. The server refusing the caller's credential
+        (401 or 403) is 424 `server_refused_credentials`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpListToolsRequest'
+      responses:
+        '200':
+          description: The server's tools, filtered by `allowedTools`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpListToolsResponse'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '413':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '424':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '502':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '504':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/tools/mcp/call:
+    post:
+      tags: [tools]
+      operationId: mcpCallTool
+      summary: Call one tool on a remote MCP server, for one Responses request.
+      description: |
+        Row 59b. One session (`initialize`, `notifications/initialized`,
+        `tools/call`), under the same address rules, limits and handling
+        of the caller's headers as `/v1/tools/mcp/list_tools`. A tool that
+        ran and reported a failure (`isError`) is a 200 with `error`: the
+        model is told the tool failed. A server that could not be reached,
+        refused the credential, or did not answer in time is a problem
+        response, and the gateway tells the model the call failed and why.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpCallRequest'
+      responses:
+        '200':
+          description: What the tool answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpCallResponse'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '424':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '502':
           $ref: 'components/common.yaml#/components/responses/Problem'
         '504':
           $ref: 'components/common.yaml#/components/responses/Problem'
@@ -275,11 +401,13 @@ components:
 
     ToolName:
       type: string
-      enum: [web_search]
+      enum: [web_search, mcp]
       description: |
-        A tool the hub runs itself. `web_search` only today; the gateway's
-        `image_generation` (P8e) runs through the install's own images door
-        and needs no tool-driver.
+        A tool the hub runs itself. `web_search` runs on the account's
+        search provider; `mcp` is remote MCP (row 59b), which needs no
+        account settings and so is listed whether or not the search is
+        set up. The gateway's `image_generation` (P8e) runs through the
+        install's own images door and needs no tool-driver.
 
     ToolDriverInfo:
       type: object
@@ -287,7 +415,7 @@ components:
       properties:
         provider:
           type: string
-          description: The provider key, `searxng`, `brave` or `google`.
+          description: The provider key, `searxng`, `brave`, `google` or `tavily`.
         label:
           type: string
           description: The provider's display name.
@@ -295,7 +423,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ToolName'
-          description: The tools this process runs. Empty until it is configured.
+          description: |
+            The tools this process runs. `web_search` only once the account
+            is configured; `mcp` always (row 59b).
         egress:
           type: string
           enum: [internet]
@@ -314,8 +444,8 @@ components:
       type: string
       enum: [free, per_search]
       description: |
-        Whether the provider bills each search (`per_search`: Brave) or not
-        (`free`: SearXNG). The gateway tries a free account before one that
+        Whether the provider bills each search (`per_search`: Brave,
+        Google, Tavily) or not (`free`: SearXNG). The gateway tries a free account before one that
         bills, so an install with both pays only when the free one could not
         answer. Absent is read as `per_search`: an account that does not say
         is not assumed to cost nothing.
@@ -371,8 +501,9 @@ components:
           type: [string, 'null']
           description: |
             Text the provider itself wrote in answer to the query (SearXNG's
-            instant answers), or null. A provider that searches by asking a
-            hosted model answers here, with its citations in `results`.
+            instant answers, Tavily's `answer`), or null. A provider that
+            searches by asking a hosted model answers here, with its
+            citations in `results`.
         provider:
           type: string
         latencyMs:
@@ -405,3 +536,125 @@ components:
         publishedAt:
           type: [string, 'null']
           description: When the page was published, as the provider reported it (ISO 8601 where it gave one).
+
+    McpReach:
+      type: string
+      enum: [internet, network]
+      description: |
+        Which addresses a remote MCP call may connect to: the gateway's
+        `remoteMcp` setting, which the owner sets (call R59-MCP).
+        `internet`, the default: globally reachable addresses only, over
+        `https`. `network`: also the owner's own network (private ranges,
+        unique-local IPv6, 100.64.0.0/10), where plain `http` is allowed
+        too. Loopback, link-local, metadata, multicast, reserved and
+        unspecified addresses are refused under both. The setting's third
+        value, `off`, never reaches this component: the gateway refuses
+        the request itself.
+
+    McpListToolsRequest:
+      type: object
+      additionalProperties: false
+      required: [serverUrl, reach]
+      properties:
+        serverUrl:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: The MCP server's Streamable HTTP endpoint, as the caller named it.
+        headers:
+          type: object
+          maxProperties: 32
+          additionalProperties:
+            type: string
+            maxLength: 8192
+          description: |
+            The caller's headers for this server, its `authorization` already
+            turned into `Authorization: Bearer ...` by the gateway. Sent to
+            this server only, for this call only. Headers that frame the
+            request (`Host`, `Content-Length`, `Content-Type`, `Accept`,
+            `Connection`, `Transfer-Encoding`, `Mcp-Session-Id`,
+            `MCP-Protocol-Version` and the like) are refused with a 400
+            naming the header, never its value.
+        reach:
+          $ref: '#/components/schemas/McpReach'
+        allowedTools:
+          type: [array, 'null']
+          maxItems: 256
+          items: {type: string, minLength: 1, maxLength: 128}
+          description: |
+            Only these tools, by name. Null or absent keeps every tool the
+            server lists (up to the limit of 64).
+
+    McpListToolsResponse:
+      type: object
+      required: [tools]
+      properties:
+        tools:
+          type: array
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/McpTool'
+        latencyMs:
+          type: number
+
+    McpTool:
+      type: object
+      required: [name, inputSchema]
+      properties:
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        inputSchema:
+          type: object
+          additionalProperties: true
+          description: The tool's JSON Schema for its arguments, as the server gave it.
+        annotations:
+          type: [object, 'null']
+          additionalProperties: true
+          description: The server's hints about the tool (`readOnlyHint` and others), as given.
+
+    McpCallRequest:
+      type: object
+      additionalProperties: false
+      required: [serverUrl, reach, name]
+      properties:
+        serverUrl:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        headers:
+          type: object
+          maxProperties: 32
+          additionalProperties:
+            type: string
+            maxLength: 8192
+          description: As on `McpListToolsRequest`.
+        reach:
+          $ref: '#/components/schemas/McpReach'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        arguments:
+          type: object
+          additionalProperties: true
+          description: The arguments the model gave, as a JSON object. Absent is `{}`.
+
+    McpCallResponse:
+      type: object
+      properties:
+        output:
+          type: [string, 'null']
+          description: |
+            The tool's text content, joined. A part that is not text (an
+            image, audio) is named in a line of its own and not carried; a
+            tool with only structured content answers it as JSON. Null when
+            `error` is set.
+        error:
+          type: [string, 'null']
+          description: |
+            The tool's own words when it ran and reported a failure
+            (`isError`), or null.
+        latencyMs:
+          type: number
