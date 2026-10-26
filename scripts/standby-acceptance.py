@@ -36,7 +36,16 @@ Checks, in order:
     standby grant. B's agent takes the new root's bundle and keeps the
     promoted copy running, as this machine's root (row 4: it reports
     `hostsControl` and no standby).
+5b. Row 5: Eugene's passphrase changes, through A's console door. The root
+    re-seals everything and compacts; A (on the root's machine, which keeps
+    its own passphrase in a file, as the Linux system install does, and
+    the root unlocks from the same file) and B take the new passphrase.
+    Sign-in through A works with the new passphrase and fails with the
+    old; nothing in the root's or the standby's state opens with the old
+    master key; A and the root, restarted, unlock from the rewritten file.
 8.  The old root, started again, is fenced: its bundle is refused by B.
+
+Step 7 then promotes with the new passphrase only: the old one is refused.
 """
 
 from __future__ import annotations
@@ -70,7 +79,15 @@ for _key in [k for k in os.environ if k.upper().startswith("EUGENE_PLEXUS_")]:
     del os.environ[_key]
 
 
-def serve(kind: str, directory: Path, port: int, standby_port: int | None) -> None:
+def serve(
+    kind: str,
+    directory: Path,
+    port: int,
+    standby_port: int | None,
+    passphrase_file: Path | None = None,
+    node_name: str | None = None,
+    agent_url: str | None = None,
+) -> None:
     """One control root or one agent, until `directory/stop` appears."""
     import uvicorn
 
@@ -78,9 +95,16 @@ def serve(kind: str, directory: Path, port: int, standby_port: int | None) -> No
         from eugene_plexus_control.app import create_app
         from eugene_plexus_control.settings import Settings
 
+        # Row 5: as the agent that supervises the root starts it, with its
+        # node name and that agent's own address (the passphrase change
+        # reaches that agent on loopback), and the passphrase file they share.
         app = create_app(
             Settings(
-                config_file=directory / "control.yaml", state_dir=directory / "state"
+                config_file=directory / "control.yaml",
+                state_dir=directory / "state",
+                passphrase_file=passphrase_file,
+                node_name=node_name,
+                agent_url=agent_url,
             )
         )
     else:
@@ -97,6 +121,7 @@ def serve(kind: str, directory: Path, port: int, standby_port: int | None) -> No
                 config_file=directory / "agent.yaml",
                 bind_port=port,
                 default_topology=False,
+                passphrase_file=passphrase_file,
             )
         )
     server = uvicorn.Server(
@@ -175,6 +200,50 @@ def held_epoch(node_dir: Path) -> int:
     ).epoch
 
 
+def old_key_openings(paths: list[Path], key: bytes) -> list[str]:
+    """Every string in these JSON files (a snapshot, a log) that opens with
+    `key`, by file and place: empty once a passphrase change re-sealed them."""
+    import json
+
+    from eugene_plexus_control import security
+
+    def places(value: object, where: str):
+        if isinstance(value, dict):
+            if security.is_envelope(value):
+                yield where, value
+            for k, item in value.items():
+                yield from places(item, f"{where}.{k}")
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                yield from places(item, f"{where}[{i}]")
+        elif isinstance(value, str):
+            yield where, value
+
+    def opens(value: object) -> bool:
+        try:
+            if isinstance(value, dict):
+                security.open_envelope(security.Envelope.from_dict(value), key)
+            else:
+                security.open_b64(str(value), key)
+        except (ValueError, TypeError):
+            return False
+        return True
+
+    found: list[str] = []
+    for path in paths:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        documents = (
+            [json.loads(line) for line in text.splitlines() if line.strip()]
+            if path.suffix == ".jsonl"
+            else [json.loads(text)]
+        )
+        for document in documents:
+            found += [f"{path.name}:{w}" for w, v in places(document, "") if opens(v)]
+    return found
+
+
 def exercise(root: Path) -> int:
     from eugene_plexus_agent import tokens
     from eugene_plexus_agent.app import TRUST_PULL_INTERVAL_SECONDS
@@ -192,13 +261,16 @@ def exercise(root: Path) -> int:
     def base(name: str) -> str:
         return f"http://127.0.0.1:{ports[name]}"
 
+    # Row 5: A keeps its own passphrase in a file, and the root on its
+    # machine unlocks from the same file (the Linux system install).
+    secret_a = dir_a / "passphrase"
     (dir_a / "agent.yaml").write_text(
         yaml.safe_dump(
             {
                 "firstRunComplete": True,
                 "updateChecks": False,
                 "advertiseUrl": base("agent-a"),
-                "securityMode": "prompt_on_startup",
+                "securityMode": "passphrase_file",
                 # The root runs on A's machine: A's topology lists it.
                 "components": [
                     {"name": "control", "kind": "control", "url": base("control")}
@@ -242,6 +314,10 @@ def exercise(root: Path) -> int:
         ]
         if name == "agent-b":
             argv += ["--standby-port", str(ports["standby"])]
+        if name in ("agent-a", "control"):
+            argv += ["--passphrase-file", str(secret_a)]
+        if name == "control":
+            argv += ["--node-name", NODE_A, "--agent-url", base("agent-a")]
         processes[name] = subprocess.Popen(
             argv,
             cwd=directory,
@@ -384,11 +460,12 @@ def exercise(root: Path) -> int:
                 "PATCH",
                 "/v1/config",
                 session_root,
-                json={"nodePollIntervalSeconds": 2},
+                json={"nodePollIntervalSeconds": 2, "securityMode": "passphrase_file"},
             )
-            assert patched.json().get("applied") == ["nodePollIntervalSeconds"], (
-                patched.text
-            )
+            assert sorted(patched.json().get("applied") or []) == [
+                "nodePollIntervalSeconds",
+                "securityMode",
+            ], patched.text
             joins = {}
             for name, grants in (("agent-a", ["gateway"]), ("agent-b", None)):
                 response = call(
@@ -537,6 +614,72 @@ def exercise(root: Path) -> int:
                 f"a change on the root reached the standby, which reports index {root_index}"
             )
 
+            # ---- 5b. Eugene's passphrase changes (row 5) --------------------------
+            import base64
+
+            from eugene_plexus_control import security as control_security
+
+            salt = call("control", "GET", "/v1/control/snapshot", session_root).json()["salt"]
+            old_key = control_security.derive_master_key(passphrase, base64.b64decode(salt))
+            assert secret_a.read_text(encoding="utf-8") == passphrase, "A keeps its file"
+            new_passphrase = secrets.token_urlsafe(24)
+            session_a = login("agent-a")
+            changed = call(
+                "agent-a",
+                "POST",
+                "/v1/auth/passphrase",
+                session_a,
+                json={"current": passphrase, "new": new_passphrase},
+                timeout=120,
+            )
+            assert changed.status_code == 200, changed.text
+            result = changed.json()
+            states = {m["node"]: m["state"] for m in result["machines"]}
+            assert states == {NODE_A: "changed", NODE_B: "changed"}, result
+            assert result["passphraseFile"] == "matches", result
+            assert passphrase not in changed.text and new_passphrase not in changed.text
+            assert secret_a.read_text(encoding="utf-8") == new_passphrase
+            old_passphrase, passphrase = passphrase, new_passphrase
+            for name in ("agent-a", "agent-b"):
+                refused = call(name, "POST", "/v1/auth/login", json={"passphrase": old_passphrase})
+                assert refused.status_code == 401, f"{name}: {refused.status_code} {refused.text}"
+                login(name)
+            root_index = call(
+                "control", "GET", "/v1/control/status", session_root
+            ).json()["appliedIndex"]
+            wait_for(standby_at_root, "the passphrase change to reach the standby")
+            copy = dir_b / "standby-state"
+            on_disk = [
+                dirs["control"] / "state" / "snapshot.json",
+                dirs["control"] / "state" / "log.jsonl",
+                copy / "snapshot.json",
+                copy / "log.jsonl",
+            ]
+            assert (copy / "snapshot.json").exists(), sorted(p.name for p in copy.iterdir())
+            left_open = old_key_openings(on_disk, old_key)
+            assert left_open == [], f"still open with the old key: {left_open[:5]}"
+            new_key = control_security.derive_master_key(
+                passphrase,
+                base64.b64decode(
+                    call("control", "GET", "/v1/control/snapshot", session_root).json()["salt"]
+                ),
+            )
+            assert old_key_openings(on_disk, new_key), "the walk finds the re-sealed values"
+            for name in ("agent-a", "control"):
+                stop(name)
+                start(name)
+                healthy(name)
+                status_after = call(name, "GET", "/v1/auth/status").json()
+                assert status_after.get("unlocked") is True, f"{name} after a restart: {status_after}"
+            assert call("control", "GET", "/v1/auth/status").json().get("passphraseFile") == "matches"
+            wait_for(probed, "the restarted root to probe both nodes")
+            ok(
+                "the passphrase changed through A's console: the root re-sealed and compacted, "
+                "A and B took the new one (the old is refused at both), nothing in the root's "
+                "or the standby's state opens with the old key, and A and the root, restarted, "
+                "unlocked from the rewritten file"
+            )
+
             # ---- 6. the grant is removed ----------------------------------------
             copy = dir_b / "standby-state"
             assert copy.is_dir(), "the standby keeps its copy beside B's agent.yaml"
@@ -573,6 +716,14 @@ def exercise(root: Path) -> int:
             ]
             stop("control")
             session_standby = login("standby")
+            stale = call(
+                "standby",
+                "POST",
+                "/v1/control/promote",
+                session_standby,
+                json={"passphrase": old_passphrase},
+            )
+            assert stale.status_code != 200, "promotion took the old passphrase"
             promoted = call(
                 "standby",
                 "POST",
@@ -644,10 +795,21 @@ def main() -> None:
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--port", type=int)
     parser.add_argument("--standby-port", type=int)
+    parser.add_argument("--passphrase-file", type=Path)
+    parser.add_argument("--node-name")
+    parser.add_argument("--agent-url")
     args = parser.parse_args()
     if args.serve:
         assert args.directory is not None and args.port is not None
-        serve(args.serve, args.directory, args.port, args.standby_port)
+        serve(
+            args.serve,
+            args.directory,
+            args.port,
+            args.standby_port,
+            args.passphrase_file,
+            args.node_name,
+            args.agent_url,
+        )
         return
     with tempfile.TemporaryDirectory(prefix="ep-standby-") as directory:
         count = exercise(Path(directory))
