@@ -157,10 +157,19 @@ on by default, as part of full OpenAI API compatibility.
 - **A chain lives as long as its newest response.** Each link ends 30 days
   after it is kept, and keeping one moves every earlier link's end to its
   own; otherwise a chain in daily use would lose its first answers after
-  30 days and could not be rebuilt. A conversation ends 30 days after its
-  last use. OpenAI keeps conversations without an end; Eugene keeps the
-  design's 30 days (a privacy default) -- a call for Troy if it should
-  match OpenAI.
+  30 days and could not be rebuilt.
+- **A conversation is kept until it is deleted, as OpenAI keeps one**
+  (settled 2026-10-26 by Troy's standing rule, full OpenAI compatibility by
+  default, as row 53's files were; this replaces the 30 days after last use
+  in section 2, built first). An expert may set "Delete a conversation
+  after (days)" (`conversationDays`, 0 = never, the default) in Settings ->
+  Store: each conversation then ends that many days after its last use (an
+  item added, a response kept in it, its metadata changed), counted with
+  the setting in effect now, the ones kept before the setting too. Lookups
+  read the end from the last use and the setting; the sweep writes it
+  before row 53's clauses delete what ended. Stored responses keep 30 days
+  (OpenAI's), and a removed person's conversations still follow
+  R53-REMOVE.
 - **Deleting a response in the middle of a chain breaks the chain**, and
   the next request from a later link is a 400 naming the deleted one,
   rather than a conversation with a hole in it the model cannot know about.
