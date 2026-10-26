@@ -202,3 +202,49 @@ on by default, as part of full OpenAI API compatibility.
   their bytes count in `bytes`; Settings -> Store shows the two new
   settings through the generic config page. The UI does not yet name the
   two counts.
+
+### The review (2026-10-26)
+
+A second model (Codex) reviewed the branch (store `ac2719e`, gateway
+`cf26d28`, specs `7aab62b`) and found owner isolation, chains, `store:
+false`, removal, expiry, DELETE, the 1-to-2 migration and the 400
+`previous_response_not_found` clean. It found, and building fixed, each
+with a test that fails without the fix:
+
+- **Blocker: reading could exhaust the store.** A page of a conversation
+  near the quota read and decoded every item under the shared lock, and a
+  continuation checked its 32 MiB only after loading it all. A page is now
+  a page in SQL, and a chain or a conversation is summed (`item_bytes`,
+  `bytes`) before a row of it is read, the chain's first link included
+  (sabotaged once).
+- **Every byte written takes room under the quota**: a response kept in a
+  conversation counts its copy there too, and metadata that grows counts.
+- **Keeping an answer is one operation, started once**: by the last event,
+  which waits for it (shielded), or by the client leaving, which does not.
+  A client that leaves after the store has the answer finds it as kept; no
+  second save races it with a 409 (sabotaged once).
+- **Item ids have OpenAI's shape** (a prefix and hex digits): the gateway
+  gives a new id to an item whose id has another shape, the store refuses
+  one, and no error repeats an id or a cursor.
+- **Turning responses off stops a conversation's metadata update** too.
+- **`input` is optional** with `conversation` or `previous_response_id`,
+  as on OpenAI.
+- **Continuing a response kept in a conversation keeps the conversation's
+  items before it** (a deleted conversation is a broken history, a 400).
+- **A turn is given the conversation as it read it**: its context says the
+  position it was read at, and the response kept sends it back
+  (`conversationPosition`), so a turn that finished second lists only what
+  it was given. A `store: false` turn's items go in one call, one
+  transaction.
+- **Checked, no change (8): older readers of the new count fields.** No
+  component parses the store's status, owner counts or sweep reports with
+  a generated model: the console reads them as TypeScript types (no check
+  at run time), the agent passes them through its proxy, and the gateway
+  reads `parts.responses` from raw JSON. A gateway on another machine that
+  is older than the store reads none of them.
+- **Not in this row (1):** a rotated key loses what its old key kept until
+  the authority sends `lineage` (row 53's finding); the orchestrator files
+  it.
+- **CI, not this row:** `folder-tools / C6 on windows-latest` failed once
+  ("Client-key authority unavailable" at Workbench install, before any
+  row 54 code runs), specs#116.
