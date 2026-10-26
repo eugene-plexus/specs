@@ -800,10 +800,24 @@ jobs:
           repository: eugene-plexus/agent
           ref: ${{ needs.plan.outputs.agent_ref }}
           path: agent
+      # A row branch Workbench has no branch for tests Workbench's main, as the
+      # acceptance scripts do (row 7's `--workbench`); the checkout itself would fail.
+      - name: Which Workbench
+        id: workbench
+        env:
+          WANTED: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: |
+          ref="$WANTED"
+          if [ "$ref" != main ] && ! [[ "$ref" =~ ^[0-9a-f]{40}$ ]] \
+            && ! git ls-remote --exit-code https://github.com/eugene-plexus/workbench "refs/heads/$ref" >/dev/null; then
+            echo "workbench has no branch $ref: testing main"
+            ref=main
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/workbench
-          ref: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          ref: ${{ steps.workbench.outputs.ref }}
           path: workbench
       - uses: actions/setup-python@v6
         with:
