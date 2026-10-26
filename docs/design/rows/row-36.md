@@ -169,3 +169,44 @@ M, about 1.5 days, cross. Risks:
   the held announcement body, `NodeAnnouncementRefusal.acceptable`, the
   accept tests in section 4 and acceptance step 4 (the agent's next attempt
   after re-enrollment is "unchanged" instead).
+
+## What building found
+
+Built on branch `r36-announcement-refusals` (specs, control, agent, ui) with
+R36-ACCEPT as Choice 2: no Accept button, no accept route, no held body.
+
+- **Deploy the root first.** No field is added to any request a machine sends.
+  `announcementRefused` and `unverifiedAnnouncements` live only on the root's
+  `Node` answer, optional and nullable. The agent change is a retry, not a new
+  field, so an older root answers a newer agent as it did.
+- **The refusal is kept in `announcement_refusals.py`** (a new control module,
+  `app.state.announcement_refusals`), not in `machine_list.py`: nothing there
+  needed to change. Memory only; the log index does not move (a control test
+  and acceptance step 5 check it).
+- **The design's TEST-NET-3 example is not "the open internet".**
+  `203.0.113.x` is not global, so `node_address` classes it private and the
+  root accepts the move. Control tests use `8.8.8.8`. The acceptance script
+  uses a name that never resolves (`agent-a.invalid`), which the root classes
+  as public, so no packet leaves the runner.
+- **A 409 was already retried.** The agent retried 408, 409, 429 and 5xx with
+  a backoff to 5 minutes; only 400 and 401 were "definite" and never repeated.
+  So `open_internet`, `anothers_address` and `stale_sequence` already reached a
+  restarted root within 5 minutes; `not_a_node`, `machine_port` and
+  `no_signing_key` now do within 15 (`REFUSED_RETRY_SECONDS`). Each refusal is
+  logged once per address, status and reason; the repeats log at debug.
+- **A body that fails FastAPI's own validation is a 422 before the route
+  runs**, so it is not counted. The route counts what it can see: a body whose
+  `url` or machine fields are not strings, and a signature that does not verify.
+- **`no_signing_key` is recorded without a signature**, as the design says: it
+  is a fact of the record. Anyone who can reach the root can therefore make
+  that line appear for a machine enrolled before signing identities. It names
+  no address (`announcedUrl` is null).
+- **Re-pins.** control and ui are pinned to the contract commit. The agent does
+  not read the new schemas: regenerating changed only header lines, so its pin
+  stays where it was.
+- **UI.** Machines shows the refusal above the probe error, with **Re-enroll
+  this machine** linking to `/nodes#add-machine` (the join-token panel, which
+  now says to give the machine's name) for `open_internet`, `stale_sequence` and
+  `no_signing_key`. Home gives the refusal as the detail of an unreachable
+  machine's `node-down`, and a warning, `announcement-refused`, for a machine
+  that still answers.
