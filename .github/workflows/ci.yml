@@ -1122,10 +1122,33 @@ jobs:
           repository: eugene-plexus/agent
           ref: ${{ needs.plan.outputs.agent_ref || 'main' }}
           path: agent
+      - name: Choose the Workbench candidate
+        id: workbench
+        env:
+          GIVEN: ${{ inputs.workbench_ref }}
+          BRANCH: ${{ github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name || '' }}
+        run: |
+          # A given candidate wins; on a branch push, Workbench's branch of the
+          # same name when it has one; otherwise main. A specs-only branch has
+          # no Workbench branch, and a checkout of a missing ref fails the job.
+          # A failed lookup fails too, so a run never quietly tests main.
+          ref="$GIVEN"
+          if [ -z "$ref" ] && [ -n "$BRANCH" ]; then
+            set +e
+            git ls-remote --exit-code --heads https://github.com/eugene-plexus/workbench "refs/heads/$BRANCH" > /dev/null
+            found=$?
+            set -e
+            case "$found" in
+              0) ref="$BRANCH" ;;
+              2) ;;
+              *) echo "::error::Could not look up Workbench branch $BRANCH (git ls-remote exited $found)"; exit 1 ;;
+            esac
+          fi
+          echo "ref=${ref:-main}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/workbench
-          ref: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          ref: ${{ steps.workbench.outputs.ref }}
           path: workbench
       - uses: astral-sh/setup-uv@v7
         with:
