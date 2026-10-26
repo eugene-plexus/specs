@@ -1,0 +1,45 @@
+# TEMPORARY (eugene-plexus/agent#34, branch fix-34-go-back only): C4 on Windows
+# six times over, with the fixed agent, for evidence that Go back no longer
+# leaves Open WebUI's old version stopped (it failed in about one run in
+# seven). Removed from the branch before it is reported; never on main.
+
+name: C4 Windows repeat (temporary, agent#34)
+
+on:
+  push:
+    branches: [fix-34-go-back]
+    paths: [.github/workflows/tmp-c4-windows-repeat.yml]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  repeat:
+    name: C4 on windows-latest, run ${{ matrix.run }}
+    runs-on: windows-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        run: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Open WebUI from the registry
+        env:
+          EP_PIN_AGENT: 29a2e6baa26149733ff8ac1538ed0912f14e0b40
+        run: python scripts/c4-open-webui-acceptance.py --report c4-report.json
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c4-windows-repeat-${{ matrix.run }}
+          path: c4-report.json
+          if-no-files-found: warn
