@@ -724,8 +724,11 @@ def exercise(work: Path, package: Path, commit: str, *, sabotage: bool):
         install.control(retain_limit=None, retain_delay=0.02)
 
         def finished_or_duplicate():
-            counts = Counter(r["document_id"] for r in install.state()["retained"])
+            # "done" first: Workbench marks a document sent only after the server kept it,
+            # so arrivals read afterwards hold every document. Read the other way round, the
+            # last document can land between the two reads and look missing.
             done = owner.get(BACKFILL).json()["backfill"]["state"] == "done"
+            counts = Counter(r["document_id"] for r in install.state()["retained"])
             return (
                 (counts, done) if done or any(n > 1 for n in counts.values()) else None
             )
