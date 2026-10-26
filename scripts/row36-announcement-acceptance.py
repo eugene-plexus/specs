@@ -171,6 +171,7 @@ def exercise(directory: Path) -> None:
         return token[0]
 
     def write_agent_config(advertise: str) -> None:
+        (directory / "agent-a").mkdir(exist_ok=True)
         (directory / "agent-a" / "agent.yaml").write_text(
             yaml.safe_dump(
                 {
