@@ -29,7 +29,16 @@ CHECKS = (
     "macos",
     "container",
 )
-COMPONENTS = {"agent", "control", "gateway", "library", "inference-driver", "tool-driver", "ui"}
+COMPONENTS = {
+    "agent",
+    "control",
+    "gateway",
+    "library",
+    "store",
+    "inference-driver",
+    "tool-driver",
+    "ui",
+}
 # CI's `<input>_ref` inputs and the repository each names. ui and workbench
 # keep their own candidate jobs (inputs.ui_ref, inputs.workbench_ref).
 REF_INPUTS = {
@@ -38,6 +47,7 @@ REF_INPUTS = {
     "gateway": "gateway",
     "inference_driver": "inference-driver",
     "library": "library",
+    "store": "store",
     "tool_driver": "tool-driver",
     "site_host": "site-host",
 }
@@ -53,12 +63,13 @@ def git(root: Path, *arguments: str) -> str:
 
 def installer_body(text: str) -> str:
     text = re.sub(
-        r"(?m)^(PIN_(?:AGENT|CONTROL|GATEWAY|LIBRARY|DRIVER|TOOL_DRIVER|UI)=)[a-f0-9]{40}",
+        r"(?m)^(PIN_(?:AGENT|CONTROL|GATEWAY|LIBRARY|STORE|DRIVER|TOOL_DRIVER|UI)=)[a-f0-9]{40}",
         r"\1<PIN>",
         text,
     )
     return re.sub(
-        r'(?m)^(\s*"(?:agent|control|gateway|library|inference-driver|tool-driver|ui)"\s*=\s*")[a-f0-9]{40}',
+        r'(?m)^(\s*"(?:agent|control|gateway|library|store|inference-driver|tool-driver|ui)"'
+        r'\s*=\s*")[a-f0-9]{40}',
         r"\1<PIN>",
         text,
     )

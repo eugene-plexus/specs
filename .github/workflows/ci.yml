@@ -42,6 +42,10 @@ on:
         description: "Optional library candidate commit; defaults to the release pin"
         required: false
         type: string
+      store_ref:
+        description: "Optional store candidate commit; defaults to the release pin"
+        required: false
+        type: string
       tool_driver_ref:
         description: "Optional tool_driver candidate commit; defaults to the release pin"
         required: false
@@ -87,6 +91,10 @@ on:
         type: string
       library_ref:
         description: "Optional library candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      store_ref:
+        description: "Optional store candidate commit; defaults to the release pin"
         required: false
         type: string
       tool_driver_ref:
@@ -149,6 +157,7 @@ jobs:
       gateway_ref: ${{ steps.select.outputs.gateway_ref }}
       inference_driver_ref: ${{ steps.select.outputs.inference_driver_ref }}
       library_ref: ${{ steps.select.outputs.library_ref }}
+      store_ref: ${{ steps.select.outputs.store_ref }}
       tool_driver_ref: ${{ steps.select.outputs.tool_driver_ref }}
       site_host_ref: ${{ steps.select.outputs.site_host_ref }}
     steps:
@@ -183,6 +192,7 @@ jobs:
           GATEWAY_REF: ${{ inputs.gateway_ref }}
           INFERENCE_DRIVER_REF: ${{ inputs.inference_driver_ref }}
           LIBRARY_REF: ${{ inputs.library_ref }}
+          STORE_REF: ${{ inputs.store_ref }}
           TOOL_DRIVER_REF: ${{ inputs.tool_driver_ref }}
           SITE_HOST_REF: ${{ inputs.site_host_ref }}
         shell: python {0}
@@ -194,7 +204,7 @@ jobs:
           if os.environ.get('CI_BRANCH'):
               # One argument, so a branch named like an option stays a value.
               command.append(f"--branch={os.environ['CI_BRANCH']}")
-          for name in ('agent', 'control', 'gateway', 'inference_driver', 'library', 'tool_driver', 'site_host'):
+          for name in ('agent', 'control', 'gateway', 'inference_driver', 'library', 'store', 'tool_driver', 'site_host'):
               if os.environ.get(f'{name.upper()}_REF'):
                   command += ['--ref', f"{name}={os.environ[f'{name.upper()}_REF']}"]
           subprocess.run(command, check=True)
@@ -322,7 +332,7 @@ jobs:
           from pathlib import Path
           text = Path("specs/scripts/install.sh").read_text(encoding="utf-8")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
-              for name in ("AGENT", "CONTROL", "GATEWAY", "LIBRARY", "DRIVER", "TOOL_DRIVER"):
+              for name in ("AGENT", "CONTROL", "GATEWAY", "LIBRARY", "STORE", "DRIVER", "TOOL_DRIVER"):
                   pin = re.search(rf"^PIN_{name}=([0-9a-f]{{40}})$", text, re.M)
                   assert pin, name
                   out.write(f"{name.lower()}={pin.group(1)}\n")
@@ -356,6 +366,11 @@ jobs:
           repository: eugene-plexus/tool-driver
           ref: ${{ needs.plan.outputs.tool_driver_ref || steps.pins.outputs.tool_driver }}
           path: tool-driver
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/store
+          ref: ${{ needs.plan.outputs.store_ref || steps.pins.outputs.store }}
+          path: store
       # The site host the agent installs, at the commit the agent pins: the
       # Job Sites acceptance installs it from this checkout (J6, 2026-10-05).
       - name: Read the agent's site host pin
@@ -382,9 +397,18 @@ jobs:
       - name: Install the acceptance runner and editable build support
         run: python -m pip install -c specs/release/constraints.txt -r specs/scripts/requirements-acceptance.txt
       - name: Install runtime consumers without dependency resolution
-        run: python -m pip install --no-deps --no-build-isolation -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver -e ./tool-driver
+        run: python -m pip install --no-deps --no-build-isolation -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver -e ./tool-driver -e ./store
       - name: Check installed dependency consistency
         run: python -m pip check
+      - name: Repeat fixed-seed answers under load with the acquired CPU engine (row 20)
+        if: matrix.shard == 'L2'
+        run: python specs/scripts/di7-same-answer-acceptance.py --output .codex-tmp/di7
+      - name: Keep row 20 CPU evidence
+        if: always() && matrix.shard == 'L2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: di7-cpu-evidence
+          path: .codex-tmp/di7
       - name: Keep Ollama files through the real machine proxy
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         shell: python {0}
@@ -426,6 +450,18 @@ jobs:
       - name: The shared acceptance harness is the real server - console log copy, machine port, client doors, stop file (row 2)
         if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/harness-acceptance.py
+      - name: Measure people served through the shared harness and a two-slot fixture (row 10)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/serving-sweep-acceptance.py
+      - name: Responses client tools and compact through the OpenAI SDK and fixture backend (row 57)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/row57-responses-tools-acceptance.py
+      # Row 53: files kept for one owner each, through a real root, its agent,
+      # the store it starts and the gateway; with the owner filter sabotaged,
+      # the isolation check must fail.
+      - name: Files kept for their owners only, ended, removed and sabotaged (row 53)
+        if: matrix.shard == 'L3' || matrix.shard == 'W3'
+        run: python specs/scripts/row53-store-acceptance.py --sabotage
       - name: Rotate the root's token key across two live agents
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
@@ -440,9 +476,22 @@ jobs:
         env:
           R29_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
         run: python specs/scripts/row29-tool-pictures-acceptance.py
+
+      # Row 4: four agents on this runner's routable address, each behind its
+      # own machine port; a standby whose copy differs takes a fresh one, and
+      # after a promotion every machine follows the new root's address.
+      - name: Agents follow a promoted root's address, and a standby that differs takes a fresh copy (row 4)
+        if: matrix.shard == 'L1' || matrix.shard == 'W3'
+        run: python specs/scripts/root-moved-acceptance.py
+      - name: Rotate a client key under a running stream, and record last use across a root restart (row 24)
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
+        run: python specs/scripts/ck-rotate-acceptance.py
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/r8-profile-acceptance.py
+      - name: Keep working when the Library and its share stop answering (row 48b)
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
+        run: python specs/scripts/row48b-library-down-acceptance.py
       - name: Verify engines declare what they accept and the Library judges (LS1)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/ls1-eligibility-acceptance.py
@@ -464,6 +513,9 @@ jobs:
       - name: Verify runtime Stop waits for descendants and refuses stale Strata listeners
         if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/runtime-stop-acceptance.py
+      - name: Verify hardware readout and restart on the cards left with stub NVIDIA devices (row 43)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/row43-cards-left-acceptance.py
       - name: Verify each engine owns its fit model, from declaration to judge to admission (LS6)
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls6-fit-acceptance.py
@@ -515,6 +567,9 @@ jobs:
       - name: Verify a Gemini account (native API, thought signatures, every surface) through signed processes and the unchanged OpenAI SDK
         if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/gemini-acceptance.py
+      - name: Verify row 58 Gemini door through the Python SDK and recorded Gemini CLI requests
+        if: matrix.shard == 'L3' && needs.plan.outputs.full == 'true'
+        run: python specs/scripts/row58-gemini-door-acceptance.py
       - name: Verify the gateway and driver pair on stand-in providers (tools are assumed - header agreement, slots, counts, stream heads)
         if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/tools-assumed-acceptance.py
@@ -546,6 +601,17 @@ jobs:
         env:
           R7_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
         run: python specs/scripts/row7-person-removal-acceptance.py
+      - name: Verify past chats migrate, resume once after a crash, yield to live answers and stop (row 27a)
+        if: matrix.shard == 'L3' || matrix.shard == 'W2'
+        env:
+          R27A_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row27a-backfill-acceptance.py
+      # Row 70c: Workbench at the candidate, as row 7's.
+      - name: Verify Workbench reads people's groups and a group's memory server is every member's (row 70c)
+        if: matrix.shard == 'L2' || matrix.shard == 'W3'
+        env:
+          R70C_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row70c-workbench-groups-acceptance.py
       - name: Verify Update all survives an agent restart across enrolled machines and apps
         if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/update-all-acceptance.py
@@ -918,6 +984,18 @@ jobs:
       - name: Check tool picture contracts (row 29)
         run: python scripts/test_tool_pictures_contract.py
 
+      - name: Check Hindsight catalogue and memory server link contract
+        run: python scripts/test_hindsight_contract.py
+
+      - name: Check gateway routing node contract
+        run: python scripts/test_gateway_routing_node_contract.py
+
+      - name: Check Strata preparation and effective launch contracts
+        run: python scripts/test_strata_settings_contract.py
+
+      - name: Check DeepSeek Flash template contracts
+        run: python scripts/test_deepseek_flash_contract.py
+
       - name: Validate every OpenAPI document
         shell: bash
         run: |
@@ -970,6 +1048,7 @@ jobs:
             openapi/gateway.yaml \
             openapi/inference-driver.yaml \
             openapi/library.yaml \
+            openapi/store.yaml \
             openapi/agent.yaml \
             openapi/control.yaml \
             openapi/tool-driver.yaml \
@@ -1034,6 +1113,47 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test -- --run
+
+  mv5b-hindsight:
+    needs: plan
+    if: needs.plan.outputs.runtime == 'true'
+    name: Hindsight slim memory server (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+          path: specs
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/agent
+          ref: ${{ needs.plan.outputs.agent_ref || 'main' }}
+          path: agent
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/workbench
+          ref: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          path: workbench
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: 0.12.18
+      - name: Prepare the candidate packages and syscall tracing
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y strace postgresql-client
+          uv venv .codex-tmp/acceptance-venv --python 3.12
+          uv pip install --python .codex-tmp/acceptance-venv/bin/python './agent[dev]' ./workbench
+      - name: Verify Hindsight with local stub models and private banks
+        run: |
+          sudo install -d -o "$(id -un)" /var/lib/eugene-plexus-mv5b/.codex-tmp
+          .codex-tmp/acceptance-venv/bin/python specs/scripts/mv5b-hindsight-acceptance.py --output /var/lib/eugene-plexus-mv5b/.codex-tmp/acceptance
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mv5b-hindsight-linux
+          path: /var/lib/eugene-plexus-mv5b/.codex-tmp/acceptance/result.json
 
   candidate-workbench:
     if: inputs.workbench_ref != ''

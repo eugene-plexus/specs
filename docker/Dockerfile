@@ -31,7 +31,7 @@
 # AMD or Intel passthrough yet. And machines with their own GPUs still
 # run `install.sh` and `join` this — that topology is unchanged.
 #
-# The image is Path B's install run by Path B's own script. The seven
+# The image is Path B's install run by Path B's own script. The eight
 # source pins and hashed Python dependencies come from `release/manifest.json`
 # and `release/requirements.lock`, embedded into both generated installers.
 #
@@ -173,6 +173,7 @@ ENV EUGENE_PLEXUS_AGENT_CONFIG_FILE=/data/agent.yaml \
     EUGENE_PLEXUS_CONTROL_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_GATEWAY_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_LIBRARY_BIND_HOST=0.0.0.0 \
+    EUGENE_PLEXUS_STORE_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_DRIVER_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_TOOL_DRIVER_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS=/models \
@@ -212,7 +213,7 @@ VOLUME ["/data"]
 EXPOSE 8079 8080 8083 8443
 
 # `start-period` is generous because a first boot seeds the topology and
-# starts three children before any of this is true.
+# starts four children before any of this is true.
 # The entry point is checked only when its file exists -- the variable's, or
 # /data/entrypoint.json, which Settings writes -- because a missing file means
 # the direct ports (agent `entrypoint.resolve`), and that must not read as

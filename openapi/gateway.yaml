@@ -383,7 +383,7 @@ info:
     `anthropic-dangerous-direct-browser-access: true`, and Claude Code
     sends it too, so a browser client of this door is a shape its
     authors expect. The default allowed request headers therefore
-    include `x-api-key`, `anthropic-version` and `anthropic-beta`
+    include `x-goog-api-key`, `x-api-key`, `anthropic-version` and `anthropic-beta`
     alongside `authorization` and `content-type` -- **as a fallback
     that agrees with the surface, not as the mechanism.** The reply
     ECHOES `access-control-request-headers` whenever a preflight sends
@@ -399,7 +399,10 @@ info:
     any header not named, so a page could not read what served its
     request), and **no other path does**: `/v1/config`, `/v1/admin/*` and
     `/v1/metrics` stay same-origin, because a browser client needs the
-    front door and nothing else.
+    front door and nothing else. The Gemini front-door routes under
+    `/v1beta/models` and `/v1/models` are in this same CORS set; the
+    x-goog-api-key header and x-eugene-plexus-* response headers work
+    under the same policy.
 
     Any origin by default, no credentials. CORS exists to stop a page
     spending credentials the browser attaches on its own -- cookies,
@@ -439,6 +442,10 @@ tags:
       The OpenAI-compatible front door. snake_case field names and
       OpenAI's error envelope, unlike everything else here — see the
       note above `/v1/models` in `paths`.
+  - name: files
+    description: |
+      Files and uploads kept for their owner by the install's store (row
+      53), in OpenAI's shapes, and in Anthropic's for its Files API.
   - name: admin
     description: Inspect and manage the running gateway.
   - name: config
@@ -579,7 +586,8 @@ paths:
 
   /v1/models:
     get:
-      tags: [inference]
+      tags:
+      - inference
       operationId: listModels
       summary: List every model the gateway can currently route to.
       description: |
@@ -598,6 +606,14 @@ paths:
         with `x_eugene_plexus.role` giving its role and label. A role with
         no models is omitted. These names use the same slot routing and
         fallback as other `modelSlots` entries.
+
+        Gemini SDK compatibility (row 58): the response also carries Gemini model fields; /v1/models
+        includes models and nextPageToken alongside the existing OpenAI object/data. Both
+        projections describe the same caller-visible page. Unknown limits are omitted. Requests with
+        x-goog-api-key or ?key= receive GeminiErrorResponse errors; existing bearer-only catalogue
+        errors retain their OpenAI shape. A query key is redacted from every log, error and metrics
+        record. The v1beta catalogue always uses Gemini shapes. Model-name mapping never widens key
+        scope.
       responses:
         '200':
           description: Available models.
@@ -605,14 +621,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ModelList'
-
+      security:
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
+      parameters:
+      - name: pageSize
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        description: Page size. Omitted returns all visible models, preserving the OpenAI catalogue default.
+      - name: pageToken
+        in: query
+        schema:
+          type: string
+        description: Opaque nextPageToken from the preceding response.
   /v1/models/{model}:
     get:
-      tags: [inference]
+      tags:
+      - inference
       operationId: retrieveModel
       summary: One model, as the list shows it.
       security:
-        - bearerAuth: []
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
       description: |
         OpenAI's `GET /v1/models/{model}` (P6): the same object
         `GET /v1/models` lists for this caller, `x_eugene_plexus`
@@ -621,13 +656,24 @@ paths:
         rest of the URL as the id. A model this key may not use is a 404,
         as one that does not exist is, so a scoped key learns nothing of
         what it cannot reach.
+
+        Gemini SDK compatibility (row 58): the response also carries Gemini model fields; /v1/models
+        includes models and nextPageToken alongside the existing OpenAI object/data. Both
+        projections describe the same caller-visible page. Unknown limits are omitted. Requests with
+        x-goog-api-key or ?key= receive GeminiErrorResponse errors; existing bearer-only catalogue
+        errors retain their OpenAI shape. A query key is redacted from every log, error and metrics
+        record. The v1beta catalogue always uses Gemini shapes. Model-name mapping never widens key
+        scope.
+        Known Eugene ids resolve directly, configured Gemini aliases next, then role:chat. The
+        response name describes the requested resource; modelVersion on generation names the actual
+        serving model.
       parameters:
-        - name: model
-          in: path
-          required: true
-          schema:
-            type: string
-          description: The model's id, slashes included.
+      - name: model
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The model's id, slashes included.
       responses:
         '200':
           description: The model.
@@ -640,14 +686,916 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpenAIErrorResponse'
+                anyOf:
+                - $ref: '#/components/schemas/OpenAIErrorResponse'
+                - $ref: '#/components/schemas/GeminiErrorResponse'
         '404':
-          description: No model by that id that this caller may use (`code`
-            `model_not_found`, as OpenAI's).
+          description: No model by that id that this caller may use (`code` `model_not_found`, as OpenAI's).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpenAIErrorResponse'
+                anyOf:
+                - $ref: '#/components/schemas/OpenAIErrorResponse'
+                - $ref: '#/components/schemas/GeminiErrorResponse'
+
+  /v1beta/models/{model}:generateContent:
+    parameters:
+    - name: model
+      in: path
+      required: true
+      schema:
+        type: string
+      description: |-
+        Requested model name, slashes included. Remove only the leading models/ resource prefix.
+        Known Eugene ids resolve directly, then explicit geminiModelNames, then role:chat
+        (R58-NAMES). Resolved targets retain key scope and localOnly checks.
+    post:
+      tags:
+      - inference
+      operationId: generateGeminiContentBeta
+      summary: Generate a Gemini content response.
+      security:
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
+      description: |-
+        Gemini API door on the same shared path as Chat Completions, Messages and Responses: the
+        same keys, routing, role resolution, failover, metrics and server-run web search. Unknown
+        model names resolve to role:chat by default; geminiModelNames overrides them, and a known
+        Eugene model id is used directly. Key model scope is checked after resolution, never
+        bypassed by an alias. Slashes in Eugene ids are part of {model}.
+
+        contents text and inlineData images/audio/PDF become shared messages and attachments under
+        the existing limits. functionCall and functionResponse become tool calls and results;
+        systemInstruction becomes the system message. functionDeclarations takes parameters or
+        parametersJsonSchema; toolConfig.functionCallingConfig maps AUTO, ANY, NONE and
+        allowedFunctionNames to tools and tool_choice. googleSearch uses the hub's
+        web_search_options and the same tool and locality permissions.
+
+        generationConfig temperature, topP, topK, maxOutputTokens, stopSequences and seed map to
+        their shared settings. application/json with responseSchema or responseJsonSchema becomes
+        structured output, including the CLI routing classifier. thinkingConfig maps thinkingLevel
+        or thinkingBudget to reasoning effort; includeThoughts controls returning thought parts.
+        candidateCount greater than one is a 400 naming candidateCount. safetySettings is accepted
+        and named in x-eugene-plexus-ignored-settings because no local safety filter runs. Any other
+        known setting that cannot be carried is refused naming its field and observed cause; unknown
+        or untested model capability never blocks an attempt.
+
+        The answer reports the actual serving model in modelVersion and the x-eugene-plexus-*
+        envelope headers. SAFETY is returned only for an observed content_filter. Query key values
+        are redacted from every log, trace, error and metric, including access logs and failures
+        before routing. Gemini errors use error.code, message and status. All these front-door
+        routes participate in CORS; x-goog-api-key is accepted and envelope headers are exposed, as
+        on the other doors.
+      responses:
+        '200':
+          description: Gemini response. The x-eugene-plexus-* envelope headers identify the actual serving
+            path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiGenerateContentResponse'
+        '400':
+          description: Invalid or unsupported request; names the field and observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '401':
+          description: Missing or invalid caller key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '403':
+          description: Key scope, tool permission or localOnly refusal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '404':
+          description: The resolved model or role has no assignment visible to this key; names it and where
+            to configure it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '429':
+          description: Client rate or concurrency limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '499':
+          description: The caller disconnected; the backend request was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '502':
+          description: |-
+            All eligible backends failed, or the backend's own credential was refused; the message
+            identifies the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '503':
+          description: Gateway starting, safe mode, or no eligible backend ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '504':
+          description: Backend request timed out; names the observed timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeminiGenerateContentRequest'
+  /v1beta/models/{model}:streamGenerateContent:
+    parameters:
+    - name: model
+      in: path
+      required: true
+      schema:
+        type: string
+      description: |-
+        Requested model name, slashes included. Remove only the leading models/ resource prefix.
+        Known Eugene ids resolve directly, then explicit geminiModelNames, then role:chat
+        (R58-NAMES). Resolved targets retain key scope and localOnly checks.
+    post:
+      tags:
+      - inference
+      operationId: streamGeminiContentBeta
+      summary: Stream Gemini content as SSE.
+      security:
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
+      description: |-
+        Gemini API door on the same shared path as Chat Completions, Messages and Responses: the
+        same keys, routing, role resolution, failover, metrics and server-run web search. Unknown
+        model names resolve to role:chat by default; geminiModelNames overrides them, and a known
+        Eugene model id is used directly. Key model scope is checked after resolution, never
+        bypassed by an alias. Slashes in Eugene ids are part of {model}.
+
+        contents text and inlineData images/audio/PDF become shared messages and attachments under
+        the existing limits. functionCall and functionResponse become tool calls and results;
+        systemInstruction becomes the system message. functionDeclarations takes parameters or
+        parametersJsonSchema; toolConfig.functionCallingConfig maps AUTO, ANY, NONE and
+        allowedFunctionNames to tools and tool_choice. googleSearch uses the hub's
+        web_search_options and the same tool and locality permissions.
+
+        generationConfig temperature, topP, topK, maxOutputTokens, stopSequences and seed map to
+        their shared settings. application/json with responseSchema or responseJsonSchema becomes
+        structured output, including the CLI routing classifier. thinkingConfig maps thinkingLevel
+        or thinkingBudget to reasoning effort; includeThoughts controls returning thought parts.
+        candidateCount greater than one is a 400 naming candidateCount. safetySettings is accepted
+        and named in x-eugene-plexus-ignored-settings because no local safety filter runs. Any other
+        known setting that cannot be carried is refused naming its field and observed cause; unknown
+        or untested model capability never blocks an attempt.
+
+        The answer reports the actual serving model in modelVersion and the x-eugene-plexus-*
+        envelope headers. SAFETY is returned only for an observed content_filter. Query key values
+        are redacted from every log, trace, error and metric, including access logs and failures
+        before routing. Gemini errors use error.code, message and status. All these front-door
+        routes participate in CORS; x-goog-api-key is accepted and envelope headers are exposed, as
+        on the other doors.
+
+        With alt=sse, each data: JSON frame has GeminiGenerateContentResponse fields (partial during
+        streaming); no event: name and no [DONE] sentinel. The final frame carries finishReason and
+        available usageMetadata. A tool call is emitted with complete JSON args, buffering shared
+        argument fragments as needed. Before the first frame, errors use the HTTP Google error
+        shape. After streaming begins, an error frame carries GeminiErrorResponse and the stream
+        closes; no STOP is invented. The x-eugene-plexus-* headers report the selected backend, as
+        on the Anthropic door.
+      responses:
+        '200':
+          description: Gemini response. The x-eugene-plexus-* envelope headers identify the actual serving
+            path.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/GeminiStreamGenerateContentResponse'
+        '400':
+          description: Invalid or unsupported request; names the field and observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '401':
+          description: Missing or invalid caller key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '403':
+          description: Key scope, tool permission or localOnly refusal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '404':
+          description: The resolved model or role has no assignment visible to this key; names it and where
+            to configure it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '429':
+          description: Client rate or concurrency limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '499':
+          description: The caller disconnected; the backend request was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '502':
+          description: |-
+            All eligible backends failed, or the backend's own credential was refused; the message
+            identifies the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '503':
+          description: Gateway starting, safe mode, or no eligible backend ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '504':
+          description: Backend request timed out; names the observed timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeminiGenerateContentRequest'
+      parameters:
+      - name: alt
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - sse
+          default: sse
+        description: SSE transport used by the Python SDK and Gemini CLI. Omitted also selects SSE.
+  /v1beta/models/{model}:countTokens:
+    parameters:
+    - name: model
+      in: path
+      required: true
+      schema:
+        type: string
+      description: |-
+        Requested model name, slashes included. Remove only the leading models/ resource prefix.
+        Known Eugene ids resolve directly, then explicit geminiModelNames, then role:chat
+        (R58-NAMES). Resolved targets retain key scope and localOnly checks.
+    post:
+      tags:
+      - inference
+      operationId: countGeminiTokensBeta
+      summary: Count Gemini prompt tokens without generation.
+      security:
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
+      description: |-
+        Translate contents or generateContentRequest exactly as generateContent translates the
+        prompt, then use /v1/generate/count. Gemini providers use their native countTokens,
+        including system instructions, tools and supported attachments. Nothing is generated, woken
+        or recorded as inference. The same ready-backend, key scope and localOnly checks as the
+        other counting doors apply; no rate or concurrency reservation is taken. A count unavailable
+        right now is a 400 naming the observed cause. Model-name mapping and credential redaction
+        are the same as generateContent.
+      responses:
+        '200':
+          description: Gemini response. The x-eugene-plexus-* envelope headers identify the actual serving
+            path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiCountTokensResponse'
+        '400':
+          description: Invalid or unsupported request; names the field and observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '401':
+          description: Missing or invalid caller key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '403':
+          description: Key scope, tool permission or localOnly refusal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '404':
+          description: The resolved model or role has no assignment visible to this key; names it and where
+            to configure it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '429':
+          description: Client rate or concurrency limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '499':
+          description: The caller disconnected; the backend request was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '502':
+          description: |-
+            All eligible backends failed, or the backend's own credential was refused; the message
+            identifies the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '503':
+          description: Gateway starting, safe mode, or no eligible backend ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '504':
+          description: Backend request timed out; names the observed timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeminiCountTokensRequest'
+  /v1beta/models:
+    get:
+      tags:
+      - inference
+      operationId: listGeminiModelsBeta
+      summary: List routable models in Gemini form.
+      security:
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
+      description: |-
+        The same caller-filtered routing catalogue as /v1/models, plus configured Gemini aliases.
+        Lists truthful methods and limits; unknown capability does not prevent an attempted request.
+        A page token is scoped to this caller and current query, never widens its model scope.
+        Invalid or stale tokens return 400 naming pageToken. nextPageToken is omitted on the last
+        page.
+      responses:
+        '200':
+          description: Gemini response. The x-eugene-plexus-* envelope headers identify the actual serving
+            path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiListModelsResponse'
+        '400':
+          description: Invalid or unsupported request; names the field and observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '401':
+          description: Missing or invalid caller key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '403':
+          description: Key scope, tool permission or localOnly refusal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '404':
+          description: The resolved model or role has no assignment visible to this key; names it and where
+            to configure it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '429':
+          description: Client rate or concurrency limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '499':
+          description: The caller disconnected; the backend request was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '502':
+          description: |-
+            All eligible backends failed, or the backend's own credential was refused; the message
+            identifies the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '503':
+          description: Gateway starting, safe mode, or no eligible backend ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '504':
+          description: Backend request timed out; names the observed timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+      parameters:
+      - name: pageSize
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        description: Page size. Omitted returns all visible models, preserving the OpenAI catalogue default.
+      - name: pageToken
+        in: query
+        schema:
+          type: string
+        description: Opaque nextPageToken from the preceding response.
+  /v1beta/models/{model}:
+    parameters:
+    - name: model
+      in: path
+      required: true
+      schema:
+        type: string
+      description: |-
+        Requested model name, slashes included. Remove only the leading models/ resource prefix.
+        Known Eugene ids resolve directly, then explicit geminiModelNames, then role:chat
+        (R58-NAMES). Resolved targets retain key scope and localOnly checks.
+    get:
+      tags:
+      - inference
+      operationId: retrieveGeminiModelBeta
+      summary: Read one model in Gemini form.
+      security:
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
+      description: |-
+        Uses the same name resolution as generateContent and the same key-filtered catalogue. Known
+        Eugene ids retain their slashes. An unassigned role is 404 naming the role and where to
+        assign it. Limits and methods are reported only when known; an untested capability never
+        blocks an attempt.
+      responses:
+        '200':
+          description: Gemini response. The x-eugene-plexus-* envelope headers identify the actual serving
+            path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiModel'
+        '400':
+          description: Invalid or unsupported request; names the field and observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '401':
+          description: Missing or invalid caller key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '403':
+          description: Key scope, tool permission or localOnly refusal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '404':
+          description: The resolved model or role has no assignment visible to this key; names it and where
+            to configure it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '429':
+          description: Client rate or concurrency limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '499':
+          description: The caller disconnected; the backend request was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '502':
+          description: |-
+            All eligible backends failed, or the backend's own credential was refused; the message
+            identifies the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '503':
+          description: Gateway starting, safe mode, or no eligible backend ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '504':
+          description: Backend request timed out; names the observed timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+  /v1/models/{model}:generateContent:
+    parameters:
+    - name: model
+      in: path
+      required: true
+      schema:
+        type: string
+      description: |-
+        Requested model name, slashes included. Remove only the leading models/ resource prefix.
+        Known Eugene ids resolve directly, then explicit geminiModelNames, then role:chat
+        (R58-NAMES). Resolved targets retain key scope and localOnly checks.
+    post:
+      tags:
+      - inference
+      operationId: generateGeminiContentV1
+      summary: Generate a Gemini content response.
+      security:
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
+      description: |-
+        Gemini API door on the same shared path as Chat Completions, Messages and Responses: the
+        same keys, routing, role resolution, failover, metrics and server-run web search. Unknown
+        model names resolve to role:chat by default; geminiModelNames overrides them, and a known
+        Eugene model id is used directly. Key model scope is checked after resolution, never
+        bypassed by an alias. Slashes in Eugene ids are part of {model}.
+
+        contents text and inlineData images/audio/PDF become shared messages and attachments under
+        the existing limits. functionCall and functionResponse become tool calls and results;
+        systemInstruction becomes the system message. functionDeclarations takes parameters or
+        parametersJsonSchema; toolConfig.functionCallingConfig maps AUTO, ANY, NONE and
+        allowedFunctionNames to tools and tool_choice. googleSearch uses the hub's
+        web_search_options and the same tool and locality permissions.
+
+        generationConfig temperature, topP, topK, maxOutputTokens, stopSequences and seed map to
+        their shared settings. application/json with responseSchema or responseJsonSchema becomes
+        structured output, including the CLI routing classifier. thinkingConfig maps thinkingLevel
+        or thinkingBudget to reasoning effort; includeThoughts controls returning thought parts.
+        candidateCount greater than one is a 400 naming candidateCount. safetySettings is accepted
+        and named in x-eugene-plexus-ignored-settings because no local safety filter runs. Any other
+        known setting that cannot be carried is refused naming its field and observed cause; unknown
+        or untested model capability never blocks an attempt.
+
+        The answer reports the actual serving model in modelVersion and the x-eugene-plexus-*
+        envelope headers. SAFETY is returned only for an observed content_filter. Query key values
+        are redacted from every log, trace, error and metric, including access logs and failures
+        before routing. Gemini errors use error.code, message and status. All these front-door
+        routes participate in CORS; x-goog-api-key is accepted and envelope headers are exposed, as
+        on the other doors.
+      responses:
+        '200':
+          description: Gemini response. The x-eugene-plexus-* envelope headers identify the actual serving
+            path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiGenerateContentResponse'
+        '400':
+          description: Invalid or unsupported request; names the field and observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '401':
+          description: Missing or invalid caller key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '403':
+          description: Key scope, tool permission or localOnly refusal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '404':
+          description: The resolved model or role has no assignment visible to this key; names it and where
+            to configure it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '429':
+          description: Client rate or concurrency limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '499':
+          description: The caller disconnected; the backend request was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '502':
+          description: |-
+            All eligible backends failed, or the backend's own credential was refused; the message
+            identifies the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '503':
+          description: Gateway starting, safe mode, or no eligible backend ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '504':
+          description: Backend request timed out; names the observed timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeminiGenerateContentRequest'
+  /v1/models/{model}:streamGenerateContent:
+    parameters:
+    - name: model
+      in: path
+      required: true
+      schema:
+        type: string
+      description: |-
+        Requested model name, slashes included. Remove only the leading models/ resource prefix.
+        Known Eugene ids resolve directly, then explicit geminiModelNames, then role:chat
+        (R58-NAMES). Resolved targets retain key scope and localOnly checks.
+    post:
+      tags:
+      - inference
+      operationId: streamGeminiContentV1
+      summary: Stream Gemini content as SSE.
+      security:
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
+      description: |-
+        Gemini API door on the same shared path as Chat Completions, Messages and Responses: the
+        same keys, routing, role resolution, failover, metrics and server-run web search. Unknown
+        model names resolve to role:chat by default; geminiModelNames overrides them, and a known
+        Eugene model id is used directly. Key model scope is checked after resolution, never
+        bypassed by an alias. Slashes in Eugene ids are part of {model}.
+
+        contents text and inlineData images/audio/PDF become shared messages and attachments under
+        the existing limits. functionCall and functionResponse become tool calls and results;
+        systemInstruction becomes the system message. functionDeclarations takes parameters or
+        parametersJsonSchema; toolConfig.functionCallingConfig maps AUTO, ANY, NONE and
+        allowedFunctionNames to tools and tool_choice. googleSearch uses the hub's
+        web_search_options and the same tool and locality permissions.
+
+        generationConfig temperature, topP, topK, maxOutputTokens, stopSequences and seed map to
+        their shared settings. application/json with responseSchema or responseJsonSchema becomes
+        structured output, including the CLI routing classifier. thinkingConfig maps thinkingLevel
+        or thinkingBudget to reasoning effort; includeThoughts controls returning thought parts.
+        candidateCount greater than one is a 400 naming candidateCount. safetySettings is accepted
+        and named in x-eugene-plexus-ignored-settings because no local safety filter runs. Any other
+        known setting that cannot be carried is refused naming its field and observed cause; unknown
+        or untested model capability never blocks an attempt.
+
+        The answer reports the actual serving model in modelVersion and the x-eugene-plexus-*
+        envelope headers. SAFETY is returned only for an observed content_filter. Query key values
+        are redacted from every log, trace, error and metric, including access logs and failures
+        before routing. Gemini errors use error.code, message and status. All these front-door
+        routes participate in CORS; x-goog-api-key is accepted and envelope headers are exposed, as
+        on the other doors.
+
+        With alt=sse, each data: JSON frame has GeminiGenerateContentResponse fields (partial during
+        streaming); no event: name and no [DONE] sentinel. The final frame carries finishReason and
+        available usageMetadata. A tool call is emitted with complete JSON args, buffering shared
+        argument fragments as needed. Before the first frame, errors use the HTTP Google error
+        shape. After streaming begins, an error frame carries GeminiErrorResponse and the stream
+        closes; no STOP is invented. The x-eugene-plexus-* headers report the selected backend, as
+        on the Anthropic door.
+      responses:
+        '200':
+          description: Gemini response. The x-eugene-plexus-* envelope headers identify the actual serving
+            path.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/GeminiStreamGenerateContentResponse'
+        '400':
+          description: Invalid or unsupported request; names the field and observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '401':
+          description: Missing or invalid caller key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '403':
+          description: Key scope, tool permission or localOnly refusal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '404':
+          description: The resolved model or role has no assignment visible to this key; names it and where
+            to configure it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '429':
+          description: Client rate or concurrency limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '499':
+          description: The caller disconnected; the backend request was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '502':
+          description: |-
+            All eligible backends failed, or the backend's own credential was refused; the message
+            identifies the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '503':
+          description: Gateway starting, safe mode, or no eligible backend ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '504':
+          description: Backend request timed out; names the observed timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeminiGenerateContentRequest'
+      parameters:
+      - name: alt
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - sse
+          default: sse
+        description: SSE transport used by the Python SDK and Gemini CLI. Omitted also selects SSE.
+  /v1/models/{model}:countTokens:
+    parameters:
+    - name: model
+      in: path
+      required: true
+      schema:
+        type: string
+      description: |-
+        Requested model name, slashes included. Remove only the leading models/ resource prefix.
+        Known Eugene ids resolve directly, then explicit geminiModelNames, then role:chat
+        (R58-NAMES). Resolved targets retain key scope and localOnly checks.
+    post:
+      tags:
+      - inference
+      operationId: countGeminiTokensV1
+      summary: Count Gemini prompt tokens without generation.
+      security:
+      - bearerAuth: []
+      - geminiApiKeyAuth: []
+      - geminiQueryKeyAuth: []
+      description: |-
+        Translate contents or generateContentRequest exactly as generateContent translates the
+        prompt, then use /v1/generate/count. Gemini providers use their native countTokens,
+        including system instructions, tools and supported attachments. Nothing is generated, woken
+        or recorded as inference. The same ready-backend, key scope and localOnly checks as the
+        other counting doors apply; no rate or concurrency reservation is taken. A count unavailable
+        right now is a 400 naming the observed cause. Model-name mapping and credential redaction
+        are the same as generateContent.
+      responses:
+        '200':
+          description: Gemini response. The x-eugene-plexus-* envelope headers identify the actual serving
+            path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiCountTokensResponse'
+        '400':
+          description: Invalid or unsupported request; names the field and observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '401':
+          description: Missing or invalid caller key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '403':
+          description: Key scope, tool permission or localOnly refusal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '404':
+          description: The resolved model or role has no assignment visible to this key; names it and where
+            to configure it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '429':
+          description: Client rate or concurrency limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '499':
+          description: The caller disconnected; the backend request was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '502':
+          description: |-
+            All eligible backends failed, or the backend's own credential was refused; the message
+            identifies the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '503':
+          description: Gateway starting, safe mode, or no eligible backend ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+        '504':
+          description: Backend request timed out; names the observed timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeminiErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeminiCountTokensRequest'
 
   /v1/chat/completions:
     parameters:
@@ -737,11 +1685,15 @@ paths:
 
         Profile reads go through the gateway's own agent's Library proxy
         using its service credential. They are cached for profileCacheSeconds
-        (30 by default). During an unavailable or invalid Library response,
-        last-known values are usable for profileMaxStaleSeconds (300 by
-        default) after expiry, then gateway defaults apply. Failures are
+        (30 by default). During a transport error, a proxy 502/503/504, or
+        a timeout, last-known values remain in effect with no time limit.
+        profileMaxStaleSeconds is null by default, meaning no limit while
+        the Library cannot answer. An explicit number limits stale reuse
+        to that many seconds after cache expiry, then gateway defaults
+        apply. Zero disables stale reuse. Failures are
         retried no more often than every five seconds and logged with the
-        fallback decision. A successful empty result clears old defaults.
+        fallback decision. Every successful answer replaces the saved
+        values; a successful empty result clears old defaults.
         Setting either cache duration to zero takes effect on the next
         request. Profile edits take effect on subsequent requests after
         cache expiry and do not restart engines.
@@ -761,6 +1713,12 @@ paths:
         that confirms image input; with none, the request is a 400 naming
         the cause, as for a person's own picture.
 
+        Profile and special-token caches survive a gateway restart in
+        `library-cache.json` beside its config file. They are written at
+        most once a minute, only when changed, and loaded as stale, never
+        fresh. `GET /v1/info` reports Library reachability and how many
+        models currently use saved profile settings.
+
         **Audio and files ride the image path (P2, 2026-09-28).** An
         `input_audio` part (WAV or MP3) and a `file` part (a PDF, inline
         as `file_data`) are carried to the backend as they are, within
@@ -770,7 +1728,12 @@ paths:
         fallback included. A model that cannot hear or read the
         attachment is never asked: with no such backend the request is a
         400 saying so, before anything is forwarded or woken. A `file_id`
-        is refused; it names a store this install does not have.
+        (row 53) is read from the caller's own files in the install's
+        store and carried inline: a PDF as `file_data`, an image as an
+        image part, UTF-8 text as text; another owner's id is refused as
+        a missing one, and a store that is not answering is a 503 naming
+        the cause. The files one request names count together against the
+        11 MiB attachment limit, a file named twice twice.
 
         **Audio out (P2b, 2026-09-28).** `modalities: ["text", "audio"]`
         with `audio: {voice, format}` asks for a spoken answer, and routes
@@ -1216,8 +2179,10 @@ paths:
 
         A `url` source is refused and never fetched -- the gateway
         dialling an address a caller names is the request forgery this
-        project closed for node addresses -- and so is a Files API
-        `file` source, which names a store that exists only at Anthropic.
+        project closed for node addresses. A Files API `file` source
+        (row 53) is read from the caller's own files in the install's
+        store and carried as a `base64` source; a text file in a
+        `document` block becomes a `text` source.
         An image on an `assistant` or `system` turn is refused: there is
         nowhere on a backend's wire for it. Every image refusal names the
         block in the caller's own coordinates
@@ -1317,7 +2282,7 @@ paths:
         ### The envelope does not go in the body
 
         `x_eugene_plexus` rides on **response headers**
-        (`x-eugene-plexus-driver`, `-runtime`, `-backend`,
+        (`x-eugene-plexus-driver`, `-runtime`, `-node`, `-backend`,
         `-latency-ms`, `-attempts`, `-tier`, `-swapped-in`,
         `-waited-ms`, `-context-length`, `-prompt-truncated`) rather
         than in the response object. Anthropic's wire is typed events
@@ -1487,10 +2452,11 @@ paths:
         ### When it cannot count, it says so with a 400
 
         A count is answered only by a **ready** backend that can count
-        exactly -- llama.cpp today. When none can (the model is asleep,
-        its backend is vLLM, Ollama, a hosted provider or an agentic CLI,
-        or the request carries an image, whose cost only the projector
-        knows), this is a **400** naming the reason, and Claude Code falls
+        exactly -- llama.cpp or Gemini, using its native `countTokens`.
+        Gemini counts supported attachments as well as text, system
+        instructions and tools. When none can (the model is asleep,
+        its backend cannot count, or llama.cpp receives an image whose
+        cost only its projector knows), this is a **400** naming the reason, and Claude Code falls
         back to counting by inference as above. **A 400 and not a 5xx,
         by measurement:** answered 400, 403 or 404, `/context` tried each
         count once and fell back; answered 501 or 503, it retried every
@@ -1559,8 +2525,9 @@ paths:
         tools refusal, the refresh-and-wake, the settings profile, the
         image path, client-key admission, the truncation detector, the
         cascade and the recording. Every shape below was captured from a
-        real Codex CLI rather than read from the documentation
-        (`docs/acceptance/responses-measurement.md`).
+        real Codex CLI (`docs/acceptance/responses-measurement.md`), except
+        the row 57 client-run tools and compaction, whose wire shapes
+        follow OpenAI's documented API.
 
         ### Stateless: the conversation lives in the client
 
@@ -1603,10 +2570,50 @@ paths:
         header.
         `image_generation` runs
         through this install's image models (P8e, "Server-run tools"
-        above) or is refused with a 400 naming why. Every other
-        server-side tool (file search, code interpreter, computer use,
-        MCP, a custom or local-shell tool) is refused with a 400 naming
-        its type.
+        above) or is refused with a 400 naming why.
+
+        ### Client-run tools (row 57)
+
+        `custom`, `local_shell`, `shell` and `apply_patch` are offered to
+        the model as chat functions. The client executes the calls;
+        nothing executes inside the gateway. A `custom` tool becomes a
+        function with one string parameter `input`. Its call comes back
+        as `custom_tool_call` with `call_id`, `name` and the free-text
+        `input`. A grammar in `format` is included in the function
+        description, not enforced, and named as `tools[i].format` on
+        `x-eugene-plexus-ignored-settings`.
+
+        `local_shell` becomes a function with `command` (an array of
+        strings), `workdir`, `timeout_ms` and `env`. Its
+        `local_shell_call` carries an `action` of `type: exec`, with
+        `working_directory` for `workdir`. `shell` becomes a function
+        with `commands` (an array of strings), `timeout_ms` and
+        `max_output_length`; its `shell_call` carries those in `action`.
+        It uses the client's local environment; a hosted container is
+        refused because this gateway has no shell execution service.
+        `apply_patch` becomes a function with one string parameter
+        `input`, the patch, and returns an `apply_patch_call` with an
+        OpenAI `operation` (`type`, `path` and, for create or update,
+        `diff`).
+
+        These call items can be sent back as assistant history. Their
+        `custom_tool_call_output`, `local_shell_call_output`,
+        `shell_call_output` and `apply_patch_call_output` items become
+        tool results matched by `call_id`. The legacy local-shell
+        output's `id` is also accepted as its call id.
+        `tool_choice` can force any declared client-run tool, by name
+        for a function or custom tool, or by type for the other tools.
+
+        Tools still refused return a 400 naming their observed cause:
+        `computer_use_preview` (no local model is trained for it),
+        `code_interpreter` (Eugene has no sandbox; use a function tool and
+        run it yourself), `mcp` (remote MCP execution needs row 59), and
+        `file_search` (file search needs row 56).
+
+        A `compaction` input item from `/v1/responses/compact` is
+        decrypted and authenticated by this gateway and expanded into a
+        developer message containing the summary. An item that cannot
+        be authenticated is refused with a 400; see the compact endpoint.
 
         **A `namespace` tool is accepted** (2026-10-03): `{"type":
         "namespace", "name", "description", "tools": [...]}`, a group of
@@ -1646,8 +2653,10 @@ paths:
         the chat door's `file` part, and an `input_audio` part as its
         `input_audio`, with the same limits and the same routing: only to
         a model that confirms that input. `filename` is the name the
-        model is shown. A `file_id` or a `file_url` is refused and never
-        fetched. `detail` is accepted and, other than `auto`, named on
+        model is shown. A `file_id` (row 53) is read from the caller's
+        own files in the install's store and carried inline (a PDF as
+        `file_data`, an image as an `input_image`, text as text). A
+        `file_url` is refused and never fetched. `detail` is accepted and, other than `auto`, named on
         the ignored-settings header, as for images.
 
         ### Images
@@ -1656,7 +2665,8 @@ paths:
         carried on the image path every door shares: the limits in
         `MessageContent`, a check that the bytes are the picture they
         claim to be, and routing only to a backend that confirms image
-        input. A URL is refused and never fetched, and so is a `file_id`.
+        input. A URL is refused and never fetched. A `file_id` (row 53)
+        is read from the caller's own files in the install's store.
         **`detail` is accepted whatever it says** -- Codex sends
         `"high"` on every image (measured), both on a `-i` attachment and
         in its `view_image` tool's result -- and a value other than
@@ -1730,7 +2740,7 @@ paths:
         ### The envelope does not go in the body
 
         `x_eugene_plexus` rides on response headers, as on `/v1/messages`
-        (`x-eugene-plexus-driver`, `-runtime`, `-backend`, `-latency-ms`,
+        (`x-eugene-plexus-driver`, `-runtime`, `-node`, `-backend`, `-latency-ms`,
         `-attempts`, `-tier`, `-swapped-in`, `-waited-ms`,
         `-context-length`, `-prompt-truncated`), and
         `x-eugene-plexus-ignored-settings` names every accepted setting
@@ -1752,8 +2762,8 @@ paths:
         run (P8). Refused with a 400 naming the
         field: every stateful field above, `top_logprobs` above 0 and the
         `message.output_text.logprobs` include, an `input_file` with a
-        `file_id` or a `file_url`, `tool_choice` forcing a tool that is
-        not a function, and any top-level field not listed in
+        `file_url`, `tool_choice` forcing an undeclared or
+        refused tool, and any top-level field not listed in
         `ResponsesRequest`.
       requestBody:
         required: true
@@ -1823,6 +2833,90 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/responses/compact:
+    post:
+      tags: [inference]
+      operationId: compactResponse
+      summary: Compact a conversation into an opaque item the client can resend.
+      description: |
+        OpenAI's standalone compact shape. The gateway asks the requested
+        model for a summary using a fixed compaction prompt: what was
+        asked, decided and done, open threads, and files touched. The
+        summary has a budget of 4,000 output tokens. `instructions`, when
+        supplied, guides the summary alongside that fixed prompt.
+
+        The response's output ends with a `compaction` item. Its
+        `encrypted_content` is the summary, encrypted and authenticated
+        with the gateway's own key, made once in an owner-only
+        `compaction.key` file beside its config. The key survives a
+        restart. The item is opaque to the client and needs no response store.
+        The returned output is the next conversation window: send it
+        intact as `input` to `/v1/responses` or this endpoint. The gateway
+        decrypts a compaction item into a developer message for any model
+        serving that later request.
+
+        Admission, model routing, client-key scope, `localOnly`, the
+        16 MiB JSON body limit, timeouts and metrics use the same path as
+        `/v1/responses`. No client tool is executed while summarising.
+        This endpoint returns JSON only. It does not add chain loading:
+        `previous_response_id` remains refused until row 54 supplies it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResponsesCompactRequest'
+      responses:
+        '200':
+          description: A compacted conversation window ending with an opaque compaction item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponsesCompactResponse'
+        '400':
+          description: |
+            An invalid request, a model nothing serves, a backend refusal,
+            or a compaction item's `encrypted_content` that could not be
+            authenticated (malformed, tampered with, or made by another
+            gateway or OpenAI). The error names the field and observed
+            cause and includes: "This compaction was made elsewhere; send
+            the conversation instead." The same error applies to a
+            compaction input on `/v1/responses`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '500':
+          description: The compaction key could not be read or created; the error names the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every eligible backend failed, or an upstream credential was refused.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: A backend serves the model but is not ready, or the gateway is starting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '504':
+          description: No backend answered within requestTimeoutSeconds.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/responses/input_tokens:
     post:
       tags: [inference]
@@ -1837,9 +2931,11 @@ paths:
         recorded.
 
         **A count this door cannot give is a 400 saying why**: a backend
-        that cannot count without generating (every hosted provider;
-        OpenRouter has no such endpoint, measured), an attachment, whose
-        cost is the encoder's, or nothing running. A key or a listing that
+        that cannot count without generating (OpenRouter has no such
+        endpoint, measured), an attachment its counter cannot handle,
+        or nothing running. Gemini uses native `countTokens`, including
+        supported multimodal inputs; llama.cpp still cannot count images.
+        A key or a listing that
         cannot be checked right now is the same 400 (fail-closed), never a
         5xx. It is admitted as `/v1/responses` is: the same key scope and
         `localOnly` rule, and the same body limit (2026-10-12).
@@ -2087,7 +3183,7 @@ paths:
         is refused: raw bytes are the stream.
 
         **What served it rides response headers** (U4, 2026-09-28), as on
-        `/v1/messages`: `x-eugene-plexus-driver`, `-runtime`, `-backend`,
+        `/v1/messages`: `x-eugene-plexus-driver`, `-runtime`, `-node`, `-backend`,
         `-latency-ms`, `-attempts`, `-tier` and the rest of
         `x_eugene_plexus`, because the body is the audio and has nowhere to carry them.
       requestBody:
@@ -2198,7 +3294,7 @@ paths:
         that a model without the surface is never asked.
 
         **What served it rides response headers** (U4, 2026-09-28), as on
-        `/v1/messages`: `x-eugene-plexus-driver`, `-runtime`, `-backend`,
+        `/v1/messages`: `x-eugene-plexus-driver`, `-runtime`, `-node`, `-backend`,
         `-latency-ms`, `-attempts`, `-tier` and the rest of
         `x_eugene_plexus`, because `text` has no body to carry them; every format carries them alike.
       requestBody:
@@ -2286,7 +3382,7 @@ paths:
         here, and `srt`/`vtt` refused.
 
         **What served it rides response headers** (U4, 2026-09-28), as on
-        `/v1/messages`: `x-eugene-plexus-driver`, `-runtime`, `-backend`,
+        `/v1/messages`: `x-eugene-plexus-driver`, `-runtime`, `-node`, `-backend`,
         `-latency-ms`, `-attempts`, `-tier` and the rest of
         `x_eugene_plexus`, because `text` has no body to carry them; every format carries them alike.
       requestBody:
@@ -2834,6 +3930,388 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/files:
+    post:
+      tags: [files]
+      operationId: createFile
+      summary: Keep a file in this install's store (OpenAI's Files API; Anthropic's too).
+      security:
+        - bearerAuth: []
+      description: |
+        Row 53. The file is kept by the install's **store**, one per
+        install on the root by default, and belongs to the caller: the
+        person the root verified (an app's `X-Eugene-Person-Token`), else
+        the client key, else the owner's console. Nobody else sees it, the
+        install owner included. **It is kept until it is deleted**, as
+        OpenAI keeps a file, unless the request sends `expires_after`
+        (OpenAI's field and bounds: one hour to 30 days) or the owner set a
+        default life in Settings; then it is deleted for good at its end.
+
+        **At most 16 MiB here**, the gateway's body limit; a larger file
+        comes through `/v1/uploads` in parts. Over the owner's quota (10
+        GiB and 10,000 files by default) is a 413 that says the numbers;
+        nothing is written past it.
+
+        **Anthropic's Files API is this door too**: a request with
+        `anthropic-version` (every Anthropic SDK sends it) is answered in
+        Anthropic's shapes (`AnthropicFileMetadata`) and its error
+        envelope, and the file is kept as `user_data`.
+
+        **When the store is not answering**, every files and uploads
+        request is a 503 that names the cause ("Eugene's store is not
+        answering: ... Chat keeps working; files wait for it."). Chat,
+        completions and Messages without a `file_id` never ask the store.
+        When the owner turned files off in Settings, a 403 says so.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUploadForm'
+      responses:
+        '200':
+          description: The file, kept.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OpenAIFile'
+                  - $ref: '#/components/schemas/AnthropicFileMetadata'
+        '400':
+          description: A missing file, an unknown `purpose`, an `expires_after` past the maximum.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '401':
+          description: No usable credential.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '403':
+          description: The owner turned files off in Settings.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '413':
+          description: Over 16 MiB, or over the owner's quota (the numbers are in the message).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+    get:
+      tags: [files]
+      operationId: listFiles
+      summary: The caller's own files.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's `purpose`, `limit` (1 to 10,000), `order` and `after`;
+        with `anthropic-version`, Anthropic's `limit` (1 to 1,000, default
+        20), `after_id` and `before_id`. Another owner's files are never
+        listed.
+      parameters:
+        - name: purpose
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/OpenAIFilePurpose'}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 10000}
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: after
+          in: query
+          required: false
+          schema: {type: string}
+        - name: after_id
+          in: query
+          required: false
+          schema: {type: string}
+        - name: before_id
+          in: query
+          required: false
+          schema: {type: string}
+      responses:
+        '200':
+          description: One page of the caller's files.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OpenAIFileList'
+                  - $ref: '#/components/schemas/AnthropicFileList'
+        '401':
+          description: No usable credential.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/files/{file_id}:
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    get:
+      tags: [files]
+      operationId: retrieveFile
+      summary: One of the caller's files.
+      security:
+        - bearerAuth: []
+      description: |
+        **Another owner's file reads as one that does not exist**: the
+        same 404 and the same message, so a caller learns nothing of what
+        others keep.
+      responses:
+        '200':
+          description: The file.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OpenAIFile'
+                  - $ref: '#/components/schemas/AnthropicFileMetadata'
+        '404':
+          description: No such file for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+    delete:
+      tags: [files]
+      operationId: deleteFile
+      summary: Delete one of the caller's files, for good.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OpenAIFileDeleted'
+                  - $ref: '#/components/schemas/AnthropicFileDeleted'
+        '404':
+          description: No such file for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/files/{file_id}/content:
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    get:
+      tags: [files]
+      operationId: downloadFileContent
+      summary: The bytes of one of the caller's files.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The bytes as kept, with the file's media type.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '404':
+          description: No such file for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/uploads:
+    post:
+      tags: [files]
+      operationId: createUpload
+      summary: Start an upload of a file larger than one request (OpenAI's Uploads API).
+      security:
+        - bearerAuth: []
+      description: |
+        Declare the file (`bytes`, `filename`, `mime_type`, `purpose`),
+        add its parts (each at most 16 MiB), then complete it with the
+        parts in order and, optionally, its MD5 (OpenAI's field) or
+        SHA-256. The parts are joined into a temporary file, the size and
+        digest are checked, and only then is it a file. An upload not
+        completed within an hour is deleted with its parts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenAIUploadRequest'}
+      responses:
+        '200':
+          description: The upload, `pending`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIUpload'}
+        '400':
+          description: A missing or wrong field.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '413':
+          description: Over the owner's quota (the numbers are in the message).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/uploads/{upload_id}/parts:
+    parameters:
+      - name: upload_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    post:
+      tags: [files]
+      operationId: addUploadPart
+      summary: Add one part to the caller's upload.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  type: string
+                  format: binary
+                  description: At most 16 MiB.
+      responses:
+        '200':
+          description: The part.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIUploadPart'}
+        '404':
+          description: No such upload for this caller, or it has ended.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '413':
+          description: A part over 16 MiB.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/uploads/{upload_id}/complete:
+    parameters:
+      - name: upload_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    post:
+      tags: [files]
+      operationId: completeUpload
+      summary: Join the parts, in order, into one of the caller's files.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenAIUploadComplete'}
+      responses:
+        '200':
+          description: The upload, `completed`, with its `file`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIUpload'}
+        '400':
+          description: |
+            The parts do not add up to the declared `bytes`, or the MD5 or
+            SHA-256 does not match; the upload stays `pending`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '404':
+          description: No such upload or part for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '409':
+          description: The upload is being completed, or is taking a part, already.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/uploads/{upload_id}/cancel:
+    parameters:
+      - name: upload_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    post:
+      tags: [files]
+      operationId: cancelUpload
+      summary: Stop one of the caller's uploads; its parts are deleted.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The upload, `cancelled`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIUpload'}
+        '404':
+          description: No such upload for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
   /v1/embeddings:
     post:
       tags: [inference]
@@ -2880,20 +4358,20 @@ paths:
         against a real backend's own output rather than inferred from
         the OpenAI documentation.
 
-        **`dimensions` and `user` are accepted and ignored, and the
-        answer says so** (MR0, 2026-10-11). Neither reaches a backend --
-        the driver's `EmbedRequest` has no field for either -- and this
-        layer does not emulate `dimensions`, because a silently
-        truncated vector is a wrong answer that looks like a right one.
-        A request that carries either is answered with
-        `x-eugene-plexus-ignored-settings` naming each one it sent, in
-        this order (`dimensions, user`), as the other doors name what
-        they do not honour. A request that carries neither gets no such
-        header, and a JSON `null` is not a setting. The vectors come
-        back at the model's own width whatever was asked, so read the
-        width off them. Until 2026-10-11 the request schema called
-        `dimensions` "passed through" and `user` "recorded"; the code
-        dropped both without a word.
+        **`dimensions` reaches the driver** (row 58). Gemini sends it as
+        `outputDimensionality`, including each item in a batch. The
+        answer names dimensions in `x-eugene-plexus-ignored-settings`
+        only when the serving backend did not apply it; it is absent
+        for dimensions applied by Gemini. Provider refusals name the
+        field and observed cause. No layer truncates or pads vectors.
+        An untested capability alone never blocks an attempt.
+
+        **`user` remains accepted and ignored**: it is not forwarded,
+        stored or routed on. The ignored-settings header names it when
+        present; when both fields were ignored the order is
+        `dimensions, user`. A JSON null is not a setting. Before row 58
+        dimensions was always ignored (MR0); the header now reports
+        what the backend actually applied.
       requestBody:
         required: true
         content:
@@ -2904,8 +4382,8 @@ paths:
         '200':
           description: |
             Vectors produced. `x-eugene-plexus-ignored-settings` names
-            `dimensions` and `user` when the request carried them, and is
-            absent otherwise.
+            `user` when supplied and `dimensions` only when the backend
+            did not apply it. It is absent when nothing was ignored.
           content:
             application/json:
               schema:
@@ -3619,6 +5097,21 @@ paths:
           `model_not_found` and a message naming the role and where to
           assign one, for example: "No model has the role Reads pages.
           Give one that role under Routing > Model roles."
+        * **`geminiModelNames`** (`model_slots`, default `[]`, label
+          **Gemini model names**) — live mappings on the Gemini door.
+          Each entry is a `GeminiModelNameMapping`: `{model, targets}`,
+          with one Eugene model id or `role:<ModelRole>` in targets.
+          A known Eugene model id is used directly. Otherwise an explicit
+          name mapping wins; an unmapped name uses `role:chat` for both
+          the CLI's routing classifier and its turn (R58-NAMES, default
+          built). The target uses the same slot routing and failover as
+          the other doors; all key scope and locality rules apply to the
+          resolved models. An unassigned role is a 404 naming the role
+          and where to assign it, not a guessed substitute.
+          The GUI edits this field through the existing model_slots
+          renderer, and GET shows the effective mappings and default
+          description, never a value waiting for restart. Unknown target
+          capability warns; checks never block an untested target.
         * **`conversationAffinity`** (`boolean`, default on; CB1, since
           2026-10-02) — a request that continues a conversation goes to
           the replica its earlier turns went to, because only that
@@ -3644,7 +5137,8 @@ paths:
           flight; within noise on three replicas. `least_busy` picks the
           eligible driver with the fewest in-flight requests per slot of
           capacity, ties round-robin; `round_robin` alternates strictly,
-          which is worth having when comparing two replicas. **`conversation` is no longer a value** (it was PC4's
+          which is worth having when comparing two replicas. **`conversation` is no longer a value**
+          (it was PC4's
           default, from 2026-10-02 until CB1 the same day, and kept
           conversations on their replicas, which affinity now does under
           every value): a file holding it, or holding the default because
@@ -3725,6 +5219,14 @@ paths:
         and never block an assignment. Edits to role slots keep every other
         slot; clients save the complete list they read with their edits.
 
+        `geminiModelNames` takes a complete list of
+        `GeminiModelNameMapping` entries, using the same GUI editor as
+        model_slots. Each name is unique and each targets list holds
+        exactly one model or role. Invalid entries are rejected naming
+        geminiModelNames and their observed cause. Valid updates take
+        effect immediately. An invalid file leaves config endpoints
+        reachable and GET reports the mappings actually in effect.
+
         Some fields require a process restart to take effect (see
         `ConfigField.requiresRestart`). The response indicates whether
         a restart is needed and which keys are queued.
@@ -3793,6 +5295,24 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/ConfigTestResult'
 
+  /v1/info:
+    get:
+      tags: [meta]
+      operationId: getInfo
+      summary: The gateway's observed Library state and saved settings use.
+      description: |
+        Reports the last Library check without waiting for another one.
+        A Library outage does not stop routing or running models. Saved
+        profile defaults stay in effect under profileMaxStaleSeconds;
+        this view counts only models whose saved defaults are in effect.
+      responses:
+        '200':
+          description: Current observations, including an unknown state before the first check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayInfo'
+
   /healthz:
     get:
       tags: [meta]
@@ -3844,6 +5364,25 @@ components:
         enum: ['off', observe, stop]
 
   securitySchemes:
+    geminiApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-goog-api-key
+      description: |-
+        An Eugene client key, checked as bearerAuth on the Gemini front-door routes and model reads
+        only. Never grants access to config or admin routes. When multiple credential forms are
+        supplied they must agree; mismatches are refused naming the conflicting headers without
+        echoing secrets.
+    geminiQueryKeyAuth:
+      type: apiKey
+      in: query
+      name: key
+      description: |-
+        The same Eugene client key as x-goog-api-key or bearerAuth. Its value is redacted from every
+        log, trace, error and metrics record, including access logs and failures before routing.
+        Never persisted or forwarded to an inference driver. Accepted only on Gemini front-door
+        routes and model reads.
+
     bearerAuth:
       type: http
       scheme: bearer
@@ -3878,6 +5417,504 @@ components:
         the wrong one.
 
   schemas:
+    GatewayInfo:
+      type: object
+      description: The gateway's observed Library state and use of saved model settings.
+      required:
+        - library
+      properties:
+        library:
+          $ref: '#/components/schemas/GatewayLibraryStatus'
+
+    GatewayLibraryStatus:
+      type: object
+      description: |
+        Library reachability observed by profile and special-token reads.
+        Loading saved caches after a restart does not establish whether
+        the Library can answer. A successful Library answer clears the
+        outage time and cause, including an answer with no profile.
+      required:
+        - reachable
+        - since
+        - cause
+        - modelsOnSavedSettings
+      properties:
+        reachable:
+          type: [boolean, 'null']
+          description: |
+            True after a successful Library answer. False after a
+            transport error, a proxy 502/503/504, or a timeout. Null
+            before the first check, including after a gateway restart.
+        since:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When the current outage was first observed, in UTC. Further
+            failed checks keep this time. Null while reachable or before
+            the first check.
+        cause:
+          type: [string, 'null']
+          description: |
+            The latest observed cause of the failed Library check, such
+            as connection refused, proxy HTTP 502/503/504, or a timeout.
+            Null while reachable or before the first check.
+        modelsOnSavedSettings:
+          type: integer
+          minimum: 0
+          description: |
+            Number of distinct model paths currently using saved profile
+            defaults after cache expiry, including values loaded after a restart.
+            Counts each path once. Excludes fresh profiles, saved values
+            that are not in effect, and values excluded by an explicit
+            profileMaxStaleSeconds limit.
+
+    GeminiGenerateContentRequest:
+      type: object
+      description: |-
+        Native Gemini request translated onto the shared chat path. Unsupported settings are refused
+        by field name. Untested capabilities are attempted rather than blocked by an unmeasured
+        allowlist.
+      required:
+      - contents
+      properties:
+        contents:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeminiContent'
+          minItems: 1
+        systemInstruction:
+          $ref: '#/components/schemas/GeminiContent'
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeminiTool'
+        toolConfig:
+          type: object
+          properties:
+            functionCallingConfig:
+              $ref: '#/components/schemas/GeminiFunctionCallingConfig'
+        generationConfig:
+          $ref: '#/components/schemas/GeminiGenerationConfig'
+        safetySettings:
+          type: array
+          items:
+            type: object
+            properties:
+              category:
+                type: string
+              threshold:
+                type: string
+          description: Accepted; named as ignored because no local safety filter runs.
+        model:
+          type: string
+          description: |-
+            Used inside countTokens.generateContentRequest only. When present it must resolve to the
+            same model as the URL; a mismatch is a 400 naming generateContentRequest.model.
+    GeminiContent:
+      type: object
+      required:
+      - parts
+      properties:
+        role:
+          type: string
+          description: Omitted for systemInstruction; otherwise defaults to user.
+          enum:
+          - user
+          - model
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeminiPart'
+          minItems: 1
+    GeminiPart:
+      type: object
+      description: |-
+        Text, inline image/audio/PDF, function call or result. Existing attachment size and MIME
+        limits apply. Backend reasoning returns as text with thought true only when requested.
+      properties:
+        text:
+          type: string
+        inlineData:
+          type: object
+          required:
+          - mimeType
+          - data
+          properties:
+            mimeType:
+              type: string
+            data:
+              type: string
+              contentEncoding: base64
+        functionCall:
+          type: object
+          required:
+          - name
+          - args
+          properties:
+            id:
+              type: string
+              description: Preserved when supplied; otherwise the shared path assigns one.
+            name:
+              type: string
+            args:
+              type: object
+              additionalProperties: true
+        functionResponse:
+          type: object
+          description: |-
+            Matched to the preceding call by id, or by name in call order when ids are absent. An
+            ambiguous or missing call is a 400 naming functionResponse; its content is never lost.
+          required:
+          - name
+          - response
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            response:
+              type: object
+              additionalProperties: true
+        thought:
+          type: boolean
+        thoughtSignature:
+          type: string
+          description: |-
+            Opaque client data, never invented by the door. The Gemini provider retains its own
+            required signatures on the shared path (G2).
+    GeminiTool:
+      type: object
+      properties:
+        functionDeclarations:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeminiFunctionDeclaration'
+        googleSearch:
+          type: object
+          description: |-
+            Runs the hub's web search through web_search_options, with the same key tool/locality
+            limits and observed-cause refusals.
+          additionalProperties: true
+    GeminiFunctionDeclaration:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Gemini schema form, translated to the shared function schema.
+        parametersJsonSchema:
+          description: JSON Schema form used by Gemini CLI; mutually exclusive with parameters.
+        parameters_json_schema:
+          description: |-
+            Measured google-genai dictionary spelling of parametersJsonSchema. Same translation;
+            conflicting spellings are refused naming the field.
+
+    GeminiFunctionCallingConfig:
+      type: object
+      properties:
+        mode:
+          type: string
+          description: Maps to tool_choice auto, required or none.
+          enum:
+          - AUTO
+          - ANY
+          - NONE
+        allowedFunctionNames:
+          type: array
+          items:
+            type: string
+          description: |-
+            Restricts declarations offered to the shared path. A single name in ANY selects that
+            function. Unknown names are a 400 naming allowedFunctionNames.
+    GeminiGenerationConfig:
+      type: object
+      properties:
+        temperature:
+          type: number
+        topP:
+          type: number
+          minimum: 0
+          maximum: 1
+        topK:
+          type: integer
+          minimum: 0
+        maxOutputTokens:
+          type: integer
+          minimum: 1
+        stopSequences:
+          type: array
+          items:
+            type: string
+        seed:
+          type: integer
+        candidateCount:
+          type: integer
+          minimum: 1
+          description: Only one candidate; larger values are refused naming candidateCount.
+          maximum: 1
+        responseMimeType:
+          type: string
+          description: text/plain or application/json; other types are refused naming this field.
+        responseSchema:
+          type: object
+          additionalProperties: true
+          description: Gemini schema form; used with application/json for structured output.
+        responseJsonSchema:
+          description: JSON Schema form; mutually exclusive with responseSchema.
+        thinkingConfig:
+          $ref: '#/components/schemas/GeminiThinkingConfig'
+    GeminiThinkingConfig:
+      type: object
+      description: |-
+        thinkingLevel LOW, MEDIUM, HIGH maps to reasoning_effort low, medium, high (case
+        insensitive). thinkingBudget maps 0 to none, 1..1024 to low, 1025..8192 to medium, larger
+        values to high; -1 leaves the backend default. An exact positive budget is not promised:
+        thinkingConfig.thinkingBudget is named in ignored-settings when reduced to effort. A level
+        and budget together are a 400 naming thinkingConfig. includeThoughts controls returning
+        thought parts independently of effort; omitted means false. Unsupported effort is refused
+        with the backend's observed cause, never guessed from a name.
+      properties:
+        thinkingLevel:
+          type: string
+        thinkingBudget:
+          type: integer
+          minimum: -1
+        includeThoughts:
+          type: boolean
+          default: false
+        thinking_level:
+          type: string
+          description: |-
+            Measured google-genai dictionary spelling of thinkingLevel; conflicting spellings are
+            refused naming the field.
+        thinking_budget:
+          type: integer
+          minimum: -1
+          description: |-
+            Measured google-genai dictionary spelling of thinkingBudget; conflicting spellings are
+            refused naming the field.
+        include_thoughts:
+          type: boolean
+          description: |-
+            Measured google-genai dictionary spelling of includeThoughts; conflicting spellings are
+            refused naming the field.
+
+    GeminiStreamGenerateContentResponse:
+      type: object
+      description: |-
+        One SSE data object. Each frame carries Gemini response fields as available; text and tool
+        parts are deltas, usageMetadata may arrive only at the end, and finishReason appears only
+        when observed. No synthetic usage or finish reason.
+      properties:
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeminiCandidate'
+          maxItems: 1
+        usageMetadata:
+          $ref: '#/components/schemas/GeminiUsageMetadata'
+        modelVersion:
+          type: string
+          description: The Eugene model id that actually answered, after role routing and failover.
+        responseId:
+          type: string
+
+    GeminiGenerateContentResponse:
+      type: object
+      description: |-
+        A complete answer. SSE uses the same fields but may omit candidates in a usage-only frame
+        and usageMetadata until the final frame. Required fields here apply to a complete
+        non-streamed response.
+      required:
+      - candidates
+      - usageMetadata
+      - modelVersion
+      properties:
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeminiCandidate'
+          maxItems: 1
+        usageMetadata:
+          $ref: '#/components/schemas/GeminiUsageMetadata'
+        modelVersion:
+          type: string
+          description: The Eugene model id that actually answered, after role routing and failover.
+        responseId:
+          type: string
+    GeminiCandidate:
+      type: object
+      properties:
+        index:
+          type: integer
+          minimum: 0
+          const: 0
+        content:
+          $ref: '#/components/schemas/GeminiContent'
+        finishReason:
+          type: string
+          description: |-
+            STOP for stop or tool calls, MAX_TOKENS for length, SAFETY only for observed
+            content_filter. Never invent a safety refusal.
+          enum:
+          - STOP
+          - MAX_TOKENS
+          - SAFETY
+    GeminiUsageMetadata:
+      type: object
+      description: |-
+        Counts from the shared path; omit unavailable counts rather than invent them.
+        candidatesTokenCount excludes thoughtsTokenCount; totalTokenCount includes prompt, candidate
+        and thought tokens, with cachedContentTokenCount already included in promptTokenCount.
+      properties:
+        promptTokenCount:
+          type: integer
+          minimum: 0
+        candidatesTokenCount:
+          type: integer
+          minimum: 0
+        totalTokenCount:
+          type: integer
+          minimum: 0
+        thoughtsTokenCount:
+          type: integer
+          minimum: 0
+        cachedContentTokenCount:
+          type: integer
+          minimum: 0
+    GeminiCountTokensRequest:
+      type: object
+      description: |-
+        Either contents or a full generateContentRequest including system instructions and tools,
+        never both. The SDK sends contents for an ordinary count_tokens call.
+      properties:
+        contents:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeminiContent'
+          minItems: 1
+        generateContentRequest:
+          $ref: '#/components/schemas/GeminiGenerateContentRequest'
+      oneOf:
+      - required:
+        - contents
+        not:
+          required:
+          - generateContentRequest
+      - required:
+        - generateContentRequest
+        not:
+          required:
+          - contents
+    GeminiCountTokensResponse:
+      type: object
+      required:
+      - totalTokens
+      properties:
+        totalTokens:
+          type: integer
+          minimum: 0
+        cachedContentTokenCount:
+          type: integer
+          minimum: 0
+    GeminiListModelsResponse:
+      type: object
+      required:
+      - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeminiModel'
+        nextPageToken:
+          type: string
+          description: Omitted on the last page, so SDK iteration terminates.
+    GeminiModel:
+      type: object
+      required:
+      - name
+      - supportedGenerationMethods
+      properties:
+        name:
+          type: string
+          description: models/<Eugene id or configured Gemini alias>; slashes in ids are preserved.
+        version:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        inputTokenLimit:
+          type: integer
+          minimum: 1
+          description: Effective reported input limit; omitted when unknown, never guessed.
+        outputTokenLimit:
+          type: integer
+          minimum: 1
+          description: Effective reported output limit; omitted when unknown, never guessed.
+        supportedGenerationMethods:
+          type: array
+          items:
+            type: string
+          description: |-
+            Door methods the serving path reports, such as generateContent, streamGenerateContent
+            and countTokens. Unknown capability is not a refusal; requests may still try it.
+    GeminiModelNameMapping:
+      type: object
+      description: |-
+        One geminiModelNames entry using the existing model_slots config renderer. model is the
+        requested Gemini name without models/; targets holds one Eugene model id or
+        role:<ModelRole>. A role uses its existing slot and failover. No capability allowlist blocks
+        an untested target. Duplicate names and empty targets are rejected by field name; a bad file
+        keeps config endpoints reachable.
+      required:
+      - model
+      - targets
+      properties:
+        model:
+          type: string
+          minLength: 1
+        targets:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+          maxItems: 1
+    GeminiErrorResponse:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          - status
+          properties:
+            code:
+              type: integer
+              minimum: 0
+              description: HTTP status code.
+            message:
+              type: string
+              description: |-
+                Names the field or model and the observed cause. Upstream credentials are identified
+                as the backend's, not the caller's. No query key or other secret appears here.
+            status:
+              type: string
+              description: |-
+                Google's status word: INVALID_ARGUMENT (400), UNAUTHENTICATED (401),
+                PERMISSION_DENIED (403), NOT_FOUND (404), RESOURCE_EXHAUSTED (429), CANCELLED (499),
+                INTERNAL (502), UNAVAILABLE (503), DEADLINE_EXCEEDED (504).
+
     WebSearchRequest:
       type: object
       additionalProperties: false
@@ -4134,8 +6171,9 @@ components:
     ModelList:
       type: object
       required:
-        - object
-        - data
+      - object
+      - data
+      - models
       properties:
         object:
           type: string
@@ -4146,6 +6184,14 @@ components:
             $ref: '#/components/schemas/Model'
         x_eugene_plexus:
           $ref: '#/components/schemas/ModelListInfo'
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeminiModel'
+          description: Gemini projection of this same page; existing OpenAI clients continue reading data.
+        nextPageToken:
+          type: string
+          description: Opaque token for the next page; omitted on the last page.
 
     ModelListInfo:
       type: object
@@ -4191,9 +6237,14 @@ components:
         extension. Unknown fields are ignored by OpenAI clients, which
         is what makes it safe to answer "which of my backends is behind
         this name" without breaking compatibility.
+
+        Gemini clients read name, displayName, supportedGenerationMethods and known token limits;
+        OpenAI clients retain id, object and the namespaced extension.
       required:
-        - id
-        - object
+      - id
+      - object
+      - name
+      - supportedGenerationMethods
       properties:
         id:
           type: string
@@ -4230,6 +6281,28 @@ components:
             `unknown` when no provider or local inference is confirmed.
         x_eugene_plexus:
           $ref: '#/components/schemas/ModelRoutingInfo'
+        name:
+          type: string
+          description: models/<Eugene id or configured Gemini alias>; slashes in ids are preserved.
+        version:
+          type: string
+        displayName:
+          type: string
+        inputTokenLimit:
+          type: integer
+          minimum: 1
+          description: Effective reported input limit; omitted when unknown, never guessed.
+        outputTokenLimit:
+          type: integer
+          minimum: 1
+          description: Effective reported output limit; omitted when unknown, never guessed.
+        supportedGenerationMethods:
+          type: array
+          items:
+            type: string
+          description: |-
+            Door methods the serving path reports, such as generateContent, streamGenerateContent
+            and countTokens. Unknown capability is not a refusal; requests may still try it.
 
     ModelRoutingInfo:
       type: object
@@ -6386,6 +8459,16 @@ components:
             Name of the engine runtime behind that driver, when it is a
             local engine. Absent for hosted and CLI backends, which have
             no runtime of ours.
+        node:
+          type:
+            - string
+            - 'null'
+          description: |
+            Name of the machine whose runtime answered, as the root's node
+            registry names it. Null when the backend is not a machine's
+            runtime, such as a cloud provider. Where the `x_eugene_plexus`
+            envelope rides on headers, this field rides as the
+            `x-eugene-plexus-node` header.
         backend:
           $ref: 'components/common.yaml#/components/schemas/BackendKind'
         reported_model:
@@ -6702,15 +8785,13 @@ components:
           type: integer
           minimum: 1
           description: |
-            **Accepted and ignored.** The vectors come back at the
-            model's own width, whatever is asked here. No backend is sent
-            this field (the driver's `EmbedRequest` has none), and this
-            layer does not emulate truncation, because a silently
-            truncated vector is a wrong answer that looks like a right
-            one. A request that carries one is answered with
-            `x-eugene-plexus-ignored-settings: dimensions` (`dimensions,
-            user` when both are sent). Before 2026-10-11 this said it was
-            passed through to the backend unchanged; it never was.
+            Requested vector width, forwarded in EmbedRequest.dimensions.
+            Gemini applies it as outputDimensionality. A backend that
+            does not apply it returns its native width and names
+            dimensions in x-eugene-plexus-ignored-settings; Gemini does
+            not call an applied value ignored. No layer truncates or
+            pads vectors, and an untested capability never blocks an
+            attempt. A provider refusal names the field and its cause.
 
     EmbeddingResponse:
       type: object
@@ -7956,8 +10037,10 @@ components:
             $ref: '#/components/schemas/ResponsesTool'
         tool_choice:
           description: |
-            `auto`, `none`, `required`, or `{"type": "function", "name": …}`.
-            Forcing any other tool type is refused.
+            `auto`, `none`, `required`, or an object forcing a declared
+            client-run tool: `function` or `custom` with `name`, or
+            `local_shell`, `shell` or `apply_patch` by `type`. An
+            undeclared or refused tool is a 400 naming the cause.
           oneOf:
             - type: string
               enum: [auto, none, required]
@@ -8091,6 +10174,70 @@ components:
         prompt:
           description: Refused when set. A stored prompt template exists only at OpenAI.
 
+    ResponsesCompactRequest:
+      type: object
+      description: |
+        Request for standalone compaction. The model and conversation are
+        required while no response store exists. Unknown top-level fields
+        are refused with a 400 naming the field.
+      additionalProperties: true
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+          description: A model id from `GET /v1/models`, resolved against this install's slots.
+        input:
+          description: |
+            A string (one user message), or the conversation as a list of
+            items. Codex resends the whole conversation on every turn.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: '#/components/schemas/ResponsesInputItem'
+        instructions:
+          type:
+            - string
+            - 'null'
+          description: Summary guidance carried alongside the fixed compaction prompt.
+        previous_response_id:
+          type:
+            - string
+            - 'null'
+          description: Refused when set until row 54 supplies chain loading; send input instead.
+
+    ResponsesCompactResponse:
+      type: object
+      description: |
+        OpenAI's compacted response, with output items ending with a
+        `compaction` item (`id`, `type: compaction`, `encrypted_content`).
+        Send the whole output array back as the next input window.
+      additionalProperties: true
+      required:
+        - id
+        - object
+        - created_at
+        - output
+        - usage
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: response.compaction
+        created_at:
+          type: integer
+          description: Unix timestamp in seconds.
+        output:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ResponsesOutputItem'
+        usage:
+          $ref: '#/components/schemas/ResponsesUsage'
+
     ResponsesInputItem:
       type: object
       description: |
@@ -8104,7 +10251,17 @@ components:
         (`call_id`, `name`, `arguments` as a JSON string, and `namespace`
         when the call was to a member of a `namespace` tool),
         `function_call_output` (`call_id`, `output` as a string or a list
-        of `input_text` / `input_image` parts), and `reasoning`
+        of `input_text` / `input_image` parts), `custom_tool_call`
+        (`call_id`, `name`, `input`), `local_shell_call` and `shell_call`
+        (`call_id`, `action`), and `apply_patch_call` (`call_id`,
+        `operation`). Their `custom_tool_call_output`,
+        `local_shell_call_output`, `shell_call_output` and
+        `apply_patch_call_output` become tool results by `call_id`
+        (a legacy local-shell output may use `id` instead).
+        A `compaction` item's authenticated `encrypted_content` is
+        expanded into a developer message with the summary; an
+        unauthenticated item is a 400 (see `/v1/responses/compact`).
+        Also carried: `reasoning`
         (`content` of `reasoning_text` parts, `encrypted_content`), and a
         `web_search_call` handed back (P8), which becomes a line of the
         assistant's history naming the search and its sources, and an
@@ -8118,6 +10275,9 @@ components:
       properties:
         type:
           type: string
+        id:
+          type: string
+          description: Optional item id; also the legacy local-shell output's call id.
         role:
           type: string
         content:
@@ -8131,8 +10291,29 @@ components:
           description: The `namespace` tool a `function_call` was to (Codex 0.133 and later).
         arguments:
           type: string
+        input:
+          type: string
+          description: Free-text input of a custom tool call.
+        action:
+          $ref: '#/components/schemas/ResponsesToolAction'
+        operation:
+          $ref: '#/components/schemas/ResponsesPatchOperation'
+        status:
+          type: string
+          description: A call's status; an apply-patch output reports completed or failed.
+        max_output_length:
+          type:
+            - integer
+            - 'null'
+          description: Carried on shell output when present on its call.
         output:
-          description: A string, or a list of `input_text` / `input_image` parts.
+          description: |
+            A function or custom result is a string or a list of
+            `input_text` / `input_image` parts. A local-shell result is a
+            string. A shell result is a list of objects with `stdout`,
+            `stderr` and `outcome` (`type: exit` with `exit_code`, or
+            `type: timeout`). An apply-patch result is an optional string;
+            its status and observed failure text are carried to the model.
         summary:
           type: array
           items:
@@ -8142,6 +10323,67 @@ components:
           type:
             - string
             - 'null'
+          description: |
+            Reasoning's existing carrier, or a compaction item's encrypted
+            and authenticated summary. A compaction requires a nonempty
+            string that this gateway can authenticate before using it.
+
+    ResponsesToolAction:
+      type: object
+      description: |
+        A local-shell `exec` action has `type: exec`, `command`, `env`,
+        and optional `working_directory`, `timeout_ms` and `user`.
+        A shell action has `commands`, `timeout_ms` and
+        `max_output_length`. The gateway returns these for the client to
+        execute. Other action fields remain open for existing search items.
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+        command:
+          type: array
+          items:
+            type: string
+        commands:
+          type: array
+          items:
+            type: string
+        working_directory:
+          type: string
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        user:
+          type: string
+        timeout_ms:
+          type:
+            - integer
+            - 'null'
+        max_output_length:
+          type:
+            - integer
+            - 'null'
+
+    ResponsesPatchOperation:
+      type: object
+      description: |
+        OpenAI's file operation for a client-run apply-patch call.
+        `create_file` and `update_file` include a V4A `diff`;
+        `delete_file` needs only `path`. The client applies the operation
+        and reports completed or failed with its observed cause.
+      additionalProperties: true
+      required:
+        - type
+        - path
+      properties:
+        type:
+          type: string
+          enum: [create_file, delete_file, update_file]
+        path:
+          type: string
+        diff:
+          type: string
 
     ResponsesTool:
       type: object
@@ -8153,7 +10395,19 @@ components:
         endpoint). `web_search` runs on this install's search account, or
         is removed and named when it cannot (see the endpoint);
         `image_generation` runs on this install's image models, or is
-        refused naming why (P8e); any other `type` is refused.
+        refused naming why (P8e).
+
+        `custom` (`name`, `description`, `format`) maps to a function with
+        one string parameter `input`; `local_shell` maps to a function
+        with `command`, `workdir`, `timeout_ms` and `env`; `shell` maps
+        to a function with `commands`, `timeout_ms` and
+        `max_output_length`; `apply_patch` maps to a function with one
+        string parameter `input`, the patch. The client executes their
+        calls; the gateway translates them into their Responses item
+        types. A shell's `environment` may be absent or `type: local`;
+        hosted containers are refused because no shell execution service
+        exists here. Other tool types are refused with the causes and
+        alternatives on `/v1/responses`.
       additionalProperties: true
       required:
         - type
@@ -8177,13 +10431,43 @@ components:
           type:
             - boolean
             - 'null'
+        format:
+          type: object
+          description: |
+            A custom tool's free-text format, or grammar (Lark or regex).
+            Grammars are not enforced: they are included in the function
+            description and named as `tools[i].format` on
+            `x-eugene-plexus-ignored-settings`. No constrained output is claimed.
+          additionalProperties: true
+          required:
+            - type
+          properties:
+            type:
+              type: string
+              enum: [text, grammar]
+            syntax:
+              type: string
+              enum: [lark, regex]
+            definition:
+              type: string
+        environment:
+          type: object
+          description: |
+            A shell tool's execution environment. Only the client's local
+            environment is supported; hosted containers are refused.
+          additionalProperties: true
+          properties:
+            type:
+              type: string
 
     ResponsesResponse:
       type: object
       description: |
         A response object. `output` holds a `reasoning` item first when
         the model reasoned, then a `message` with one `output_text` part,
-        then one `function_call` item per tool call. The request's settings
+        then one call item per tool call, using the declared tool's type
+        (`function_call`, `custom_tool_call`, `local_shell_call`,
+        `shell_call` or `apply_patch_call`). The request's settings
         are echoed as OpenAI echoes them; `store` is always false.
       additionalProperties: true
       required:
@@ -8247,15 +10531,48 @@ components:
         "status", "result", "revised_prompt", "size", "quality",
         "background", "output_format", "action": "generate"}` -- `result`
         the base64 image, null and `status: failed` when none was made.
+
+        Client-run calls are `custom_tool_call` (`id`, `call_id`, `name`,
+        `input`), `local_shell_call` and `shell_call` (`id`, `call_id`,
+        `status`, `action`), and `apply_patch_call` (`id`, `call_id`,
+        `status`, `operation`). Standalone compact returns a `compaction`
+        item (`id`, `encrypted_content`, the encrypted and authenticated
+        summary); it can be passed back unchanged to any model here.
       additionalProperties: true
       required:
         - type
       properties:
         type:
           type: string
-          enum: [reasoning, message, function_call, web_search_call, image_generation_call]
+          enum:
+            - reasoning
+            - message
+            - function_call
+            - web_search_call
+            - image_generation_call
+            - custom_tool_call
+            - local_shell_call
+            - shell_call
+            - apply_patch_call
+            - compaction
         id:
           type: string
+        call_id:
+          type: string
+        name:
+          type: string
+        input:
+          type: string
+          description: Free-text input of a custom tool call.
+        status:
+          type: string
+        action:
+          $ref: '#/components/schemas/ResponsesToolAction'
+        operation:
+          $ref: '#/components/schemas/ResponsesPatchOperation'
+        encrypted_content:
+          type: string
+          description: An opaque compaction summary or the existing reasoning carrier.
 
     ResponsesUsage:
       type: object
@@ -8287,6 +10604,17 @@ components:
         One frame of the Responses event stream. The SSE `event:` name
         and `data.type` always agree, and every frame has a
         `sequence_number`.
+
+        Custom input uses `response.custom_tool_call_input.delta` (`delta`)
+        and `.done` (`input`), with `item_id` and `output_index`. Shell
+        commands use `response.shell_call_command.added`, `.delta` and
+        `.done`, with `command_index` and `output_index`; added and done
+        carry `command`, delta carries `delta`. All client call types,
+        including `local_shell_call` and `apply_patch_call`, also use
+        `response.output_item.added` and `response.output_item.done` with
+        their Responses `item`, including the complete action or operation
+        on done. Internal function-adapter arguments are not exposed as
+        function-call events for these client-run tools.
       additionalProperties: true
       required:
         - type
@@ -8307,6 +10635,11 @@ components:
             - response.reasoning_text.done
             - response.function_call_arguments.delta
             - response.function_call_arguments.done
+            - response.custom_tool_call_input.delta
+            - response.custom_tool_call_input.done
+            - response.shell_call_command.added
+            - response.shell_call_command.delta
+            - response.shell_call_command.done
             - response.completed
             - response.incomplete
             - response.failed
@@ -8314,6 +10647,22 @@ components:
           type: integer
         response:
           $ref: '#/components/schemas/ResponsesResponse'
+        item:
+          $ref: '#/components/schemas/ResponsesOutputItem'
+        item_id:
+          type: string
+        output_index:
+          type: integer
+          minimum: 0
+        command_index:
+          type: integer
+          minimum: 0
+        delta:
+          type: string
+        input:
+          type: string
+        command:
+          type: string
 
     SystemOneRequest:
       type: object
@@ -9195,3 +11544,230 @@ components:
         clients:
           type: array
           items: {$ref: '#/components/schemas/ClientUsageGroup'}
+
+    # -------- Files and uploads (row 53) --------
+
+    OpenAIFilePurpose:
+      type: string
+      enum: [assistants, batch, fine-tune, vision, user_data, evals]
+      description: OpenAI's upload purposes. Kept as given; nothing here processes a file by its purpose.
+
+    OpenAIFileStatus:
+      type: string
+      enum: [processed]
+      description: OpenAI's (deprecated) file status. A file kept here is ready at once.
+
+    OpenAIUploadStatus:
+      type: string
+      enum: [pending, completed, cancelled, expired]
+
+    OpenAIExpiresAfter:
+      type: object
+      additionalProperties: false
+      required: [anchor, seconds]
+      properties:
+        anchor:
+          type: string
+          const: created_at
+        seconds:
+          type: integer
+          minimum: 3600
+          maximum: 2592000
+          description: Seconds after upload, one hour to 30 days, as OpenAI takes them.
+
+    FileUploadForm:
+      type: object
+      required: [file]
+      description: |
+        `POST /v1/files`, as the OpenAI SDK sends it. `purpose` is
+        required on the OpenAI door and absent on Anthropic's.
+        `expires_after` arrives as the two form fields the SDK writes.
+      properties:
+        file:
+          type: string
+          format: binary
+        purpose:
+          $ref: '#/components/schemas/OpenAIFilePurpose'
+        expires_after[anchor]:
+          type: string
+          const: created_at
+        expires_after[seconds]:
+          type: integer
+          minimum: 3600
+          maximum: 2592000
+
+    OpenAIFile:
+      type: object
+      required: [id, object, bytes, created_at, filename, purpose, status]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: file
+        bytes:
+          type: integer
+        created_at:
+          type: integer
+        expires_at:
+          type: ['integer', 'null']
+          description: Null when the file is kept until it is deleted (OpenAI's default).
+        filename:
+          type: string
+        purpose:
+          $ref: '#/components/schemas/OpenAIFilePurpose'
+        status:
+          $ref: '#/components/schemas/OpenAIFileStatus'
+        status_details:
+          type: ['string', 'null']
+
+    OpenAIFileList:
+      type: object
+      required: [object, data, has_more]
+      properties:
+        object:
+          type: string
+          const: list
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/OpenAIFile'}
+        first_id:
+          type: ['string', 'null']
+        last_id:
+          type: ['string', 'null']
+        has_more:
+          type: boolean
+
+    OpenAIFileDeleted:
+      type: object
+      required: [id, object, deleted]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: file
+        deleted:
+          type: boolean
+
+    OpenAIUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [bytes, filename, mime_type, purpose]
+      properties:
+        bytes:
+          type: integer
+          minimum: 1
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        mime_type:
+          type: string
+          maxLength: 255
+        purpose:
+          $ref: '#/components/schemas/OpenAIFilePurpose'
+        expires_after:
+          $ref: '#/components/schemas/OpenAIExpiresAfter'
+
+    OpenAIUpload:
+      type: object
+      required: [id, object, bytes, created_at, filename, purpose, status, expires_at]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: upload
+        bytes:
+          type: integer
+        created_at:
+          type: integer
+        filename:
+          type: string
+        purpose:
+          $ref: '#/components/schemas/OpenAIFilePurpose'
+        status:
+          $ref: '#/components/schemas/OpenAIUploadStatus'
+        expires_at:
+          type: integer
+        file:
+          oneOf:
+            - $ref: '#/components/schemas/OpenAIFile'
+            - type: 'null'
+
+    OpenAIUploadPart:
+      type: object
+      required: [id, object, created_at, upload_id]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: upload.part
+        created_at:
+          type: integer
+        upload_id:
+          type: string
+
+    OpenAIUploadComplete:
+      type: object
+      additionalProperties: false
+      required: [part_ids]
+      properties:
+        part_ids:
+          type: array
+          minItems: 1
+          items: {type: string}
+        md5:
+          type: string
+          description: The joined file's MD5, checked before it becomes a file.
+        sha256:
+          type: string
+          description: Eugene's own check, the joined file's SHA-256.
+
+    AnthropicFileMetadata:
+      type: object
+      required: [id, type, filename, mime_type, size_bytes, created_at]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          const: file
+        filename:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        downloadable:
+          type: boolean
+          description: Always true here; the owner may read back what it kept.
+
+    AnthropicFileList:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/AnthropicFileMetadata'}
+        first_id:
+          type: ['string', 'null']
+        last_id:
+          type: ['string', 'null']
+        has_more:
+          type: boolean
+
+    AnthropicFileDeleted:
+      type: object
+      required: [id, type]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          const: file_deleted

@@ -21,6 +21,7 @@ REPOS = (
     "gateway",
     "inference-driver",
     "library",
+    "store",
     "tool-driver",
     "ui",
     "workbench",
@@ -81,7 +82,7 @@ def generate(*, check=False, resolve=False, uv="uv"):
     if set(components) != set(REPOS) - {"workbench"} or any(
         not re.fullmatch("[a-f0-9]{40}", v) for v in components.values()
     ):
-        raise ValueError("release components must be seven full commit IDs")
+        raise ValueError("release components must be eight full commit IDs")
     for name in ("install.sh", "install.ps1"):
         path = ROOT / "scripts" / name
         before = path.read_text(encoding="utf-8")

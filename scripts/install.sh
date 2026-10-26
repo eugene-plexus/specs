@@ -29,7 +29,7 @@
 #   1. fetches `uv` into the install prefix and nowhere else -- and fetches
 #      it again over one older than UV_MINIMUM,
 #   2. makes a virtualenv there with a Python `uv` downloads itself,
-#   3. installs the seven Eugene Plexus packages into it,
+#   3. installs the eight Eugene Plexus packages into it,
 #   4. checks that what landed can actually serve — see VERIFY below,
 #   5. writes a systemd unit (Linux: a system unit, or a user unit with
 #      --user) or launchd agent (macOS),
@@ -52,27 +52,28 @@
 # that export is `next build` output, gitignored on `main`. Installing
 # from a `main` archive therefore *succeeds* and produces a package with
 # no UI inside it — verified 2026-09-11, `static_dir()` was not even a
-# directory. The `dist` branch carries the built export so that all seven
+# directory. The `dist` branch carries the built export so that all eight
 # packages install by one mechanism. See install-paths §12, step 3.
 
 set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=8e5d2ea069358a109fc76aa0343176fd5f3171c9
-PIN_CONTROL=341ed54edde8156756d64a3c4793bf126511188d
-PIN_GATEWAY=72378a0eab23f2807de111de12ab787ed288960b
-PIN_DRIVER=121f5a37d39a5735e253358fc5ca6850ce2d32cf
-PIN_LIBRARY=40d911e0ee7baf3ceb43d3de59c4c3cfaf8ebad8
-PIN_TOOL_DRIVER=9934205ce5eb5b0c0d845c23ff83a1b3f3e85609
-PIN_UI=87cfb10e15b52a170775b76f491fa108d25c99cc   # branch `dist`, not `main`
+PIN_AGENT=ee95fc9e35cf4f51f29f9363deb1f862d78b04ca
+PIN_CONTROL=34f655e461455e8b38c468f2fb5dab77c0e442b5
+PIN_GATEWAY=a6da8f6924395abd453c976b92887968ce54efc7
+PIN_DRIVER=7fb4c875ef86ae65b601249818212b2934d8b506
+PIN_LIBRARY=1b015632de2dddde6139719916b77128a9019869
+PIN_STORE=845e6803a2af6825eb1ae3fd550076cf9f3d1d0c
+PIN_TOOL_DRIVER=a9c8b03439b60d2ba24275bf9f17da02c245190e
+PIN_UI=aa58e2fdc071206630197b5282ad0cbcefb9f9d8   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
-# block above: it is not one of the seven packages in the agent's prefix. It
+# block above: it is not one of the eight packages in the agent's prefix. It
 # must equal SITE_HOST_COMMIT in agent/src/eugene_plexus_agent/site_host.py,
 # and it moves at landing, with the agent's pin.
-PIN_SITE_HOST=4f5378904cfc31d34607d0c5a6bd1bfd0341928c
+PIN_SITE_HOST=5ac27d6f840ed58cc0ab45a09133c8bca46a4d91
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
@@ -595,6 +596,7 @@ LoadCredential=client_key:$PREFIX/apps/%i/data/client_key
 LoadCredential=admin_token:$PREFIX/apps/%i/admin_token
 # Its sign-in secret (C2); empty for an app that signs nobody in.
 LoadCredential=oidc_secret:$PREFIX/apps/%i/data/oidc_secret
+LoadCredential=memory_server_token:$PREFIX/apps/%i/memory_server_token
 ExecStart=$PREFIX/apps/%i/python -I -u $PREFIX/apps/launcher/app_launcher.py $PREFIX/apps/%i/launch.json
 Restart=on-failure
 RestartSec=5
@@ -1446,7 +1448,8 @@ def inventory(prefix: Path) -> dict:
     ]
     apps = prefix / "apps"
     software += [apps / name for name in ("pythons", "launcher", "ctl")]
-    data = [prefix / name for name in ("logs", "passphrase", "control-state")]
+    # `store`: the files apps kept through the gateway (row 53).
+    data = [prefix / name for name in ("logs", "passphrase", "control-state", "store")]
     for app in apps.iterdir() if apps.is_dir() and not apps.is_symlink() else []:
         if (
             app.is_dir()
@@ -1471,6 +1474,7 @@ def inventory(prefix: Path) -> dict:
             or item.name.startswith(
                 (
                     ".update-channel",
+                    ".store-declared",
                     "agent.yaml.",
                     "node.yaml.",
                     "control.yaml.",
@@ -2588,6 +2592,26 @@ attrs==26.1.0 \
 authlib==1.8.0 \
     --hash=sha256:88aebbd9af6757e14e912d5dc007ae1dc1f3e27e3b2152ce7c552ee2c3b3c121 \
     --hash=sha256:f3ecd5f1da737262fb53bf1a4d95c4ea1ad9dd509316587a255c99ab1838a4f0
+av==19.0.2 \
+    --hash=sha256:04c8e412642c652cb2b1997a9cb2114546ee7d894600c631f4be8ceb26a0d0d2 \
+    --hash=sha256:0e425d631510ca21e47c58f3837a9dceae0453c24e926408c8a12b95239cbbd6 \
+    --hash=sha256:1e7cb7b66a832bce8996af5b94f1cf4014a05ff51e0005feac4cb2566d711020 \
+    --hash=sha256:32a8d37bde9e24ad0cc855140cbeecde17a363d7dc7928dcfc71a34b5f3ed387 \
+    --hash=sha256:3ce5a1d7b916d13c16ac58f1756f0fee4af2d53f02bc1403e18550b50d375a22 \
+    --hash=sha256:44d3faae747cf04a33f39db8ae983ff3d93adc864ee663bc186b25b686803c3e \
+    --hash=sha256:79a277b077e3768a0ea9f881ca0b3bc96d4135a8d3a7a579938adb58718d0dfd \
+    --hash=sha256:8596fad2017d380708de35ddf9d34f808b8488c912cdc3f361691d866d9dc32d \
+    --hash=sha256:91924f5c836b1cbf89fe1522c642f98e89a733124908561fd49dc7a70e9b6d10 \
+    --hash=sha256:9c1da7aad0fa6c13b4a5c1e7985be0d13f8526a96284573acaf3d55ead6d3fe8 \
+    --hash=sha256:9d4f9f78c0ce1f20deb72626fdb3c723757f61a8cd6fbb7dd44d9401884a91fd \
+    --hash=sha256:9db27c2248112a8eed3edd3ca83cf4405f52a402cda2eb1956035e646e6b99c6 \
+    --hash=sha256:ae4618eab172f8135596972252f39c7399291c921e661c1771ba26b9254b800f \
+    --hash=sha256:b0dff6dfcc6ff9944fbbff15bc4ee2d90a2c1695d493bdea96e86f48823e9feb \
+    --hash=sha256:b559ff381bd800c46fee6a17d7e22a3443708cdd58d0901ae91d27cf5dd0578c \
+    --hash=sha256:b632e026f4375037438a6b2b5d6a489e55bc9504fad22078991ef96211bec2a9 \
+    --hash=sha256:bebbc52598886480f4d861c575dc2b020785d6c04e1308680ddcc545e1b94c66 \
+    --hash=sha256:dfe7af5aa8243afd5d4778f85ad1a7c948e37fad272869da1f8f93f8d57fa7ad \
+    --hash=sha256:f5f7bcf987567cd3f9b01f1c375c59bf59d8a5b98c9c5c154aeda7a11e0c5dce
 certifi==2026.7.22 \
     --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
     --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55
@@ -3924,13 +3948,14 @@ run_step "installing locked dependencies" \
     in_prefix "$UV" pip install --python "$PYBIN" --require-hashes --only-binary :all: \
     -r "$PREFIX/release-requirements.lock"
 say "installing Eugene Plexus"
-run_step "installing the seven Eugene Plexus packages" \
+run_step "installing the eight Eugene Plexus packages" \
     in_prefix "$UV" pip install --python "$PYBIN" --no-deps --no-build-isolation \
     "eugene-plexus-agent @ $(gh_archive agent "$PIN_AGENT")" \
     "eugene-plexus-control @ $(gh_archive control "$PIN_CONTROL")" \
     "eugene-plexus-gateway @ $(gh_archive gateway "$PIN_GATEWAY")" \
     "eugene-plexus-inference-driver @ $(gh_archive inference-driver "$PIN_DRIVER")" \
     "eugene-plexus-library @ $(gh_archive library "$PIN_LIBRARY")" \
+    "eugene-plexus-store @ $(gh_archive store "$PIN_STORE")" \
     "eugene-plexus-tool-driver @ $(gh_archive tool-driver "$PIN_TOOL_DRIVER")" \
     "eugene-plexus-ui @ $(gh_archive ui "$PIN_UI")"
 
@@ -3960,6 +3985,7 @@ for mod, what in [
     ("eugene_plexus_gateway", "the gateway"),
     ("eugene_plexus_inference_driver", "the inference driver"),
     ("eugene_plexus_library", "the model library"),
+    ("eugene_plexus_store", "the store that keeps apps' files"),
     ("eugene_plexus_tool_driver", "the web-search tool driver"),
 ]:
     if importlib.util.find_spec(mod) is None:
@@ -3982,7 +4008,7 @@ raise SystemExit(1 if bad else 0)
 PYEOF
 
 in_prefix test -x "$VENV/bin/eugene-plexus-agent" || die "the eugene-plexus-agent command did not install"
-say "all seven packages present, with a web UI"
+say "all eight packages present, with a web UI"
 
 # --- 4b. join, if this machine is a worker ----------------------------
 # **The installer owns the one onboarding question, because this is the

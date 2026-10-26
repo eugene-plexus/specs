@@ -13,9 +13,11 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
-COMPONENTS = {"agent", "control", "gateway", "inference-driver", "library", "tool-driver", "ui"}
+COMPONENTS = {
+    "agent", "control", "gateway", "inference-driver", "library", "store", "tool-driver", "ui",
+}
 #: Pinned by install.sh alone, for the job-site host root installs on a Linux
-#: system install (Job Sites 2b.2). Not one of the seven packages in the
+#: system install (Job Sites 2b.2). Not one of the eight packages in the
 #: agent's prefix, so not in the comparison; recorded in the manifest beside them.
 SITE_HOST = "site-host"
 
@@ -33,7 +35,7 @@ def pins(shell: bytes, powershell: bytes) -> dict[str, str]:
     posix.pop(SITE_HOST, None)
     windows = dict(re.findall(r'^\s*"([a-z-]+)"\s*=\s*"([0-9a-f]{40})"', powershell.decode(), re.M))
     if set(posix) != COMPONENTS or windows != posix:
-        raise ValueError("installers must pin the same seven components to full commit IDs")
+        raise ValueError("installers must pin the same eight components to full commit IDs")
     return posix
 
 

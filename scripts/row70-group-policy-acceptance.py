@@ -13,9 +13,9 @@ wizard joins the control host. No model, no engine, no installed service.
    person carries no band, and a caller cannot name its own band.
 3. Signing in to the app, the ID token and /oidc/userinfo carry
    `eugene_groups` and the effective values (70% for A, 85% for B).
-   (Workbench reading those claims is row 70c's step: TODO 70c.)
-4. TODO 70c: the owner adds a memory server to G1 in Workbench Settings; A
-   and B both see it as "Set by your group: G1" and cannot remove it.
+   Workbench reading those claims is `row70c-workbench-groups-acceptance.py`.
+4. Workbench's group memory servers: `row70c-workbench-groups-acceptance.py`,
+   which installs Workbench at the commit under test.
 5. B is taken out of G2: after a token refresh, B's band is `background`
    and B's percent is 70.
 6. Sabotage: a second root whose `effective_policies` takes the first
@@ -526,13 +526,12 @@ def exercise(directory: Path) -> None:
                 assert claims["eugene_policies"]["queueBand"] == band, (name, claims)
                 assert claims["eugene_policies"]["summaryContextPercent"] == percent, (name, claims)
         ok("step 3: the ID token and userinfo carry the groups, and 70% for A and 85% for B")
-        # TODO 70c: sign in to Workbench as A and B and read the same values
-        # from Workbench's own session (signin.py), not only from the tokens.
+        # Workbench reading them: row70c-workbench-groups-acceptance.py, step 2.
 
         # ---------------------------------------------------------------- #
-        # 4. TODO 70c: a group memory server in Workbench Settings
+        # 4. A group memory server in Workbench Settings: row70c-workbench-groups-
+        # acceptance.py, step 3, which installs Workbench at the commit under test.
         # ---------------------------------------------------------------- #
-        print("SKIP step 4: Workbench group memory servers are row 70c (TODO 70c)", flush=True)
 
         # ---------------------------------------------------------------- #
         # 5. Taken out of G2: after a refresh, B is background and 70%

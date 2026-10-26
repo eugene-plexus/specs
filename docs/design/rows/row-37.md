@@ -171,3 +171,23 @@ Risks:
 - **Token life:** a removed model stays reachable until the person's next
   token refresh, as row 70's policies do; the group page says so.
 - **Mixed versions** of root and gateway; see "Delivery".
+
+## Calls answered by Troy (2026-10-22)
+
+- **R37-FIRST: several groups stay, and the person chooses.** A person in
+  several groups picks which group's set of models they work from (the
+  **active group**). Built as:
+  - `Person.activeGroup` (one of their groups, or null for the first in
+    their list), set by the person themselves in Workbench Settings and the
+    console ("Work with: Sales models"), and by the owner on the person's
+    page; control refuses a group the person is not in.
+  - `roleRouting` and `allowedModels` come from the active group only (not
+    the union), so the person's model set is exactly one group's. The
+    other row 70 policies (queue band, summary percent) keep the
+    most-generous rule across all their groups.
+  - The choice reaches the gateway in the admission check and the sign-in
+    claim at the next token refresh; the picker says so.
+  - Tests: `test_role_routing_follows_the_active_group`,
+    `test_allowed_models_are_the_active_groups_only`,
+    `test_a_person_cannot_pick_a_group_they_are_not_in`; the acceptance's
+    person B switches active group and gets the other group's models.

@@ -29,8 +29,11 @@ def main() -> None:
         env["PYTHONPATH"] = os.pathsep.join(str(root / name / "src") for name in ("gateway", "library"))
         def run(repo: str, test: str, label: str, expected: int) -> None:
             env["PYTHONPYCACHEPREFIX"] = str(root / "pycache" / label)
+            # Each run compiles every import afresh (its own pycache). A busy Windows
+            # runner once took 75 s for a 6 s run and timed out the next at 90 s
+            # (specs run 39946184252); the limit only catches a hang.
             result = subprocess.run([sys.executable, "-m", "pytest", test, "-q", "--disable-warnings", "--tb=no"],
-                cwd=root / repo, env=env, text=True, capture_output=True, timeout=90)
+                cwd=root / repo, env=env, text=True, capture_output=True, timeout=300)
             if result.returncode != expected:
                 raise AssertionError(f"{label}: expected {expected}, got {result.returncode}\n{result.stdout}\n{result.stderr}")
             print(("PASS baseline " if expected == 0 else "CAUGHT ") + label, flush=True)
@@ -55,7 +58,8 @@ def main() -> None:
              'and now - previous.fetched_at < self._seconds("profileCacheSeconds", 30)',
              'and False', "tests/test_profile_defaults.py::test_cache_outage_expiry_deletion_and_recovery"),
             ("stale-bound", "gateway", module + "profiles.py",
-             "if age < fresh + stale else {}", "if True else {}",
+             "if limit is None:\n            return dict(entry.values)",
+             "if limit is None:\n            return dict(entry.values) if age < fresh + 300 else {}",
              "tests/test_profile_defaults.py::test_cache_outage_expiry_deletion_and_recovery"),
             ("retry-backoff", "gateway", module + "profiles.py",
              "_RETRY_SECONDS = 5.0", "_RETRY_SECONDS = 0.0",
@@ -73,10 +77,11 @@ def main() -> None:
         for label, repo, relative, old, new, test in cases:
             path = root / repo / relative
             saved = path.read_bytes()
-            text = saved.decode("utf-8")
+            # A Windows checkout holds CRLF; a multi-line mutation is written with LF.
+            text = saved.decode("utf-8").replace("\r\n", "\n")
             assert old in text, f"{label}: mutation no longer matches"
             try:
-                path.write_text(text.replace(old, new, 1), encoding="utf-8")
+                path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
                 run(repo, test, label, 1)
             finally:
                 path.write_bytes(saved)

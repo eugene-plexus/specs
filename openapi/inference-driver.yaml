@@ -444,19 +444,24 @@ paths:
         tokenizer. Nothing is generated and no prefill runs. Added
         2026-09-23 for the Anthropic door's `count_tokens`.
 
-        **llama.cpp only, and measured.** The payload goes to
+        **llama.cpp and Gemini.** The llama.cpp payload goes to
         `/apply-template` and the prompt it returns to `/tokenize` with
         `add_special: true`; against Gemma 4 E4B on b10948 that gave
         27, 59 and 95 tokens for a plain, a tool-bearing and a tool-loop
         request, **exactly** the `prompt_tokens` a one-token generation
-        of each reported. Every other backend answers **501**: vLLM has
-        a `/tokenize` of its own that has not been run here, Ollama and
-        hosted providers have none, and the agentic CLIs have no prompt
-        to count. A backend that does not know is not asked to guess.
+        of each reported. The Gemini provider sends the same translated
+        contents, system instructions and tools as generation to Gemini's
+        native `countTokens`, including supported multimodal parts, and
+        returns its `totalTokens`. No generation or estimate substitutes
+        for a count. A provider refusal names its observed cause.
 
-        **A request carrying an image is 501 too**: an image's token
-        cost is decided by the projector when it encodes the picture,
-        and the template renders only a marker for it.
+        Other backends answer **501** when they cannot count: vLLM's
+        `/tokenize` has not been measured here, OpenRouter offers none,
+        and agentic CLIs have no prompt to count. A backend that does
+        not know is not asked to guess. The llama.cpp image case is
+        still 501: its template renders only a marker, and only the
+        projector knows the picture's token cost. This limitation does
+        not block Gemini's native multimodal counter.
       requestBody:
         required: true
         content:
@@ -568,18 +573,26 @@ paths:
       description: |
         The speech counterpart of `POST /v1/generate` (P3a, 2026-09-28):
         normalised, so one request fronts OpenAI's `/v1/audio/speech`,
-        OpenRouter's and ElevenLabs' text-to-speech, each translated here.
+        OpenRouter's, ElevenLabs' and Gemini's text-to-speech, each translated here.
         No local engine speaks yet.
 
         **The answer is the audio itself, streamed** as the backend sends
-        it, with the format's media type. Nothing is buffered; the first
-        byte out is the commit point one layer up. A failure before it is a
+        it, with the format's media type. Gemini first decodes its inline
+        PCM audio; converted formats may buffer before their first byte.
+        The first byte out is the commit point one layer up. A failure before it is a
         status code with a `problem+json` body, as for chat.
 
         **Formats are the model's.** A `format` the backend cannot make is
         refused with 400 naming the ones it can (`SpeechFormat`); `wav` is
         made from `pcm` where the backend has no WAV of its own. A voice
         the backend does not know is its own 400, relayed with its words.
+
+        **Gemini speech formats (row 58).** Its PCM is wrapped as wav,
+        served directly as pcm, or converted with PyAV to mp3, opus,
+        aac or flac. speechFormats reports the formats actually available
+        on this driver. An encoder failure names the requested format
+        and observed cause; unsupported is never inferred just because
+        the platform has not been measured. No local engine is started.
       requestBody:
         required: true
         content:
@@ -2784,6 +2797,18 @@ components:
       properties:
         model:
           $ref: '#/components/schemas/RequestModel'
+        dimensions:
+          type: integer
+          minimum: 1
+          description: |
+            Optional requested vector width. Gemini passes it to
+            outputDimensionality on each embedContent request, including
+            each entry in batchEmbedContents. A provider refusal names
+            dimensions and the observed cause. The driver never truncates
+            or pads a vector to imitate this setting. Backends that cannot
+            apply it keep their native width and name dimensions in
+            x-eugene-plexus-ignored-settings; the gateway preserves that
+            header. An untested capability alone never blocks an attempt.
         localOnly:
           type: boolean
           default: false

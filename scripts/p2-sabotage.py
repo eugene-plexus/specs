@@ -135,10 +135,10 @@ SABOTAGES: list[Sabotage] = [
         ((GATEWAY / "images.py", _AUDIO_BYTES, _NO_AUDIO_BYTES),),
     ),
     Sabotage(
-        "the gateway accepts a file_id",
-        ((GATEWAY / "images.py",
-          '    if file.get("file_id"):\n        raise ImageRefusal(\n',
-          '    if False:\n        raise ImageRefusal(\n'),),
+        "the gateway does not read a file_id from the install's store (row 53)",
+        ((GATEWAY / "files_door.py",
+          "    if not isinstance(raw, dict) or not _has_file_id(raw):\n        return raw\n",
+          "    if True:\n        return raw\n"),),
     ),
     Sabotage(
         "neither layer checks an audio clip's bytes",

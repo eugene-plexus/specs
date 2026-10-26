@@ -165,8 +165,9 @@ states=$(printf '%s' "$NODE" | json '" ".join(c["state"] for c in d["install"]["
 mechanism=$(printf '%s' "$NODE" | json 'd["install"]["mechanism"]')
 agent_commit=$(printf '%s' "$NODE" | json 'next(c.get("commit","") for c in d["install"]["components"] if c["name"]=="agent")')
 pinned=$(sed -n 's/^PIN_AGENT=\([0-9a-f]*\).*/\1/p' "$WORK/install.sh")
-# One stamped commit per pin the installer that ran carries: seven since P8
-# added the tool-driver, six from an EP_FROM that predates it. PIN_SITE_HOST
+# One stamped commit per pin the installer that ran carries: eight since row
+# 53 added the store, seven from an EP_FROM before it, six from one before P8
+# added the tool-driver. PIN_SITE_HOST
 # (Job Sites 2b.2) is not one: root installs the site host apart from the
 # agent's prefix, and the agent does not report it as a component.
 count=$(grep -E '^PIN_[A-Z_]+=[0-9a-f]{40}' "$WORK/install.sh" | grep -vc '^PIN_SITE_HOST=')
@@ -247,24 +248,37 @@ for _ in $(seq 1 60); do curl -fsS -o /dev/null "http://127.0.0.1:$PORT/healthz"
 AFTER=$(api GET /v1/node)
 last=$(printf '%s' "$AFTER" | json '(d["update"].get("last") or {}).get("outcome","")')
 [ "$last" = succeeded ] && ok "6d. the agent that came back reports it" || bad "6d. update: $(printf '%s' "$AFTER" | json 'd["update"]')"
-curl -fsSL "https://raw.githubusercontent.com/eugene-plexus/specs/$TARGET/scripts/install.sh" \
-    -o "$WORK/target-install.sh" 2>/dev/null || : >"$WORK/target-install.sh"
+# The target's installer: from this checkout when it has the commit (a branch run's
+# commit is not always served by raw.githubusercontent), else from GitHub, tried
+# three times. An empty file would read as "?" for every pin, so say what failed.
+git -c safe.directory='*' -C "$HERE" show "$TARGET:scripts/install.sh" >"$WORK/target-install.sh" 2>/dev/null \
+    || for _ in 1 2 3; do
+        curl -fsSL "https://raw.githubusercontent.com/eugene-plexus/specs/$TARGET/scripts/install.sh" \
+            -o "$WORK/target-install.sh" 2>/dev/null && break
+        sleep 3
+    done
+grep -q '^PIN_' "$WORK/target-install.sh" 2>/dev/null \
+    || bad "6e. could not read the installer at $TARGET (neither this checkout nor raw.githubusercontent had it)"
 compare=$(printf '%s' "$AFTER" | python3 -c '
 import json, re, sys
 pins = dict(re.findall(r"^PIN_([A-Z_]+)=([0-9a-f]{40})", open(sys.argv[1]).read(), re.M))
 before = dict(re.findall(r"^PIN_([A-Z_]+)=([0-9a-f]{40})", open(sys.argv[2]).read(), re.M))
 names = {"agent": "AGENT", "control": "CONTROL", "gateway": "GATEWAY",
          "inference-driver": "DRIVER", "library": "LIBRARY", "ui": "UI",
-         "tool-driver": "TOOL_DRIVER"}
+         "tool-driver": "TOOL_DRIVER", "store": "STORE"}
 now = {c["name"]: c.get("commit", "") for c in json.load(sys.stdin)["install"]["components"]}
+# A part the pins name and the reporting agent does not know is not judged: an
+# agent from before the store (row 53) lists no store at all. One that knows
+# the part lists it always, as missing when it is not installed.
+names = {n: k for n, k in names.items() if k in pins and n in now}
 wrong = ["%s %s not %s" % (n, (now.get(n) or "-")[:7], pins.get(k, "?")[:7])
          for n, k in names.items() if now.get(n) != pins.get(k)]
 moved = sum(1 for k in names.values() if pins.get(k) != before.get(k))
 print("; ".join(wrong) if wrong else f"ok {moved}")
 ' "$WORK/target-install.sh" "$WORK/install.sh")
 case $compare in
-    "ok 0") ok "6e. it runs all seven commits $TARGET pins (the same seven it had: no version changed)" ;;
-    ok\ *)  ok "6e. it runs all seven commits $TARGET pins, ${compare#ok } of them new" ;;
+    "ok 0") ok "6e. it runs every commit $TARGET pins (the same ones it had: no version changed)" ;;
+    ok\ *)  ok "6e. it runs every commit $TARGET pins, ${compare#ok } of them new" ;;
     *)      bad "6e. $compare" ;;
 esac
 

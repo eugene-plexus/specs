@@ -62,6 +62,7 @@ PINS_SH = {
     "GATEWAY": "GATEWAY",
     "DRIVER": "DRIVER",
     "LIBRARY": "LIBRARY",
+    "STORE": "STORE",
     "TOOL_DRIVER": "TOOL_DRIVER",
 }
 PINS_PS1 = {
@@ -70,6 +71,7 @@ PINS_PS1 = {
     "GATEWAY": "gateway",
     "DRIVER": "inference-driver",
     "LIBRARY": "library",
+    "STORE": "store",
     "TOOL_DRIVER": "tool-driver",
 }
 

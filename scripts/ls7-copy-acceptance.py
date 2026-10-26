@@ -136,7 +136,7 @@ def main() -> int:
         # Long names: a CI runner's temp folder is its 8.3 short name
         # (RUNNER~1), which the agent spells long once it resolves a path.
         directory = Path(raw).resolve()
-        agent_port, library_port = ls3.free_ports(2)
+        agent_port, library_port, machine_port = ls3.free_ports(3)
         models = directory / "share"
         models.mkdir()
         provenance = lay_out(models)
@@ -171,6 +171,7 @@ def main() -> int:
                 "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(directory / "agent.yaml"),
                 "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1",
                 "EUGENE_PLEXUS_AGENT_BIND_PORT": str(agent_port),
+                "EUGENE_PLEXUS_AGENT_MACHINE_PORT": str(machine_port),
                 "EUGENE_PLEXUS_AGENT_ENGINE_ROOT": str(directory / "engines"),
                 "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
                 "PYTHONUNBUFFERED": "1",

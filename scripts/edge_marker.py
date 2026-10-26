@@ -97,6 +97,10 @@ def choose(
     for position, candidate in enumerate(history):
         if candidate == marker:
             break
+        # First-parent history passes through merged branches and then older main
+        # commits the marker has already passed; only a descendant moves Edge forward.
+        if marker is not None and not ancestor(root, marker, candidate):
+            continue
         ci = checked("ci.yml", candidate)
         if ci is None:
             continue
