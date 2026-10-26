@@ -26,8 +26,9 @@ Checks (design `docs/design/rows/row-11.md` §5):
 10. a v13 metrics store is moved to v14 in place.
 """
 
-from __future__ import annotations
-
+# No `from __future__ import annotations`: the stand-in's FastAPI routes import
+# `Request` inside `engine_app`, and a string annotation of it does not resolve
+# there, so FastAPI read `request` as a query parameter (a 422 for every answer).
 import argparse
 import asyncio
 import importlib.util
