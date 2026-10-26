@@ -217,6 +217,9 @@ Built on `r32-skills` (workbench, specs). Store schema 34.
   requests and show in the owner's read-only view (W4) as any tool's do;
   only notes and past chats are withheld. Calls to the two tools count as
   tool reads for `remember`'s write policy: a skill is a stranger's words.
+- Row 27a's acceptance pinned the store's schema after its migration at 33;
+  with schema 34 it migrates on, so its check now reads "33 and on". The
+  Workbench tests that pinned 33 now pin 34.
 - PyYAML is now declared by Workbench (the safe loader, aliases refused);
   the requirement is the one other components already declare, so
   `release/requirements.in` is unchanged.
