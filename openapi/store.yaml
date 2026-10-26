@@ -1218,11 +1218,14 @@ components:
         One item in OpenAI's shape (a message, a function call, its
         output, reasoning, ...), as the gateway sent it. The store reads
         only `id`, which is unique within its response or conversation.
+        An id has OpenAI's shape, a short prefix and hex digits, so no id
+        carries words into a path, a log line or an error: the gateway
+        gives a new one to an item whose id has another shape, and the
+        store refuses one (400, the id not repeated).
       properties:
         id:
           type: string
-          minLength: 1
-          maxLength: 128
+          pattern: '^[a-z]{1,16}_[0-9a-f]{16,64}$'
         type:
           type: string
 
@@ -1255,6 +1258,15 @@ components:
           type: string
           maxLength: 64
           description: The conversation this response belongs to; its items are added to it.
+        conversationPosition:
+          type: integer
+          minimum: 0
+          description: |
+            With `conversationId`: the conversation's `position` when its
+            context was read for this request (`StoredContext.position`).
+            The items before it are what the response was given, whatever
+            another turn added meanwhile; absent, the conversation's end
+            when the response is kept.
         input:
           type: array
           maxItems: 10000
@@ -1337,9 +1349,12 @@ components:
         items:
           type: array
           minItems: 1
-          maxItems: 20
+          maxItems: 10000
           items: {$ref: '#/components/schemas/StoredItem'}
-          description: Added at the end, in order (OpenAI's 20 at a time).
+          description: |
+            Added at the end, in order, in one transaction. The gateway
+            takes OpenAI's 20 at a time from a client; a turn kept with
+            `store: false` adds all its items in one call.
 
     StoredContext:
       type: object
@@ -1358,6 +1373,13 @@ components:
         conversationId:
           type: string
           description: For a conversation, its id.
+        position:
+          type: integer
+          minimum: 0
+          description: |
+            For a conversation, the place after its last item when it was
+            read: sent back as `conversationPosition` when the response is
+            kept.
         hadInstructions:
           type: boolean
           description: |
