@@ -332,6 +332,10 @@ def exercise(directory: Path) -> None:
                         "allowedModels": allowed,
                         "maxConcurrentRequests": concurrency,
                         "requestsPerMinute": rate,
+                        # Row 11: a key that waits for nothing is refused at once
+                        # past its shared limit, as A5 checks; the queue has its
+                        # own acceptance (ld1-fair-queue-acceptance.py).
+                        "maxQueuedRequests": 0,
                     },
                 },
             )
@@ -443,6 +447,7 @@ def exercise(directory: Path) -> None:
                     "allowedModels": ["alias", "allowed", "excluded"],
                     "maxConcurrentRequests": 1,
                     "requestsPerMinute": 4,
+                    "maxQueuedRequests": 0,
                 }
             },
         )

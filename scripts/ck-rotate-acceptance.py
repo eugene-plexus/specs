@@ -207,7 +207,17 @@ def exercise(directory: Path) -> None:
                 "POST",
                 "/v1/auth/client-keys",
                 operator,
-                json={"name": name, "limits": {"maxConcurrentRequests": 1, "requestsPerMinute": 60, **limits}},
+                # maxQueuedRequests 0: a request past the shared limit is refused at
+                # once, as before the gateway's queue (row 11), which this checks.
+                json={
+                    "name": name,
+                    "limits": {
+                        "maxConcurrentRequests": 1,
+                        "requestsPerMinute": 60,
+                        "maxQueuedRequests": 0,
+                        **limits,
+                    },
+                },
             )
             assert response.status_code == 201, response.text
             return response.json()
