@@ -574,7 +574,10 @@ def exercise(work: Path, workbench_ref: str) -> None:
 
         say("5. Ada is removed")
         folder = data / "skills" / key_of(people["ada"])
-        must("5a", "her skill folder is there before", (folder / skill["id"] / "SKILL.md").is_file())
+        # A skill's files are in `<id>.<revision>` (or `<id>` in a Workbench before the review).
+        kept = [p for p in folder.glob(f"{skill['id']}*/SKILL.md")
+                if p.parent.name.split(".")[0] == skill["id"]]
+        must("5a", "her skill folder is there before", len(kept) == 1, kept)
         client.delete(urls["control"] + f"/v1/people/{people['ada']}",
                       headers={"Authorization": f"Bearer {root}"}).raise_for_status()
         checked = owner.post("/api/removed-people/check").json()

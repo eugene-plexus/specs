@@ -223,3 +223,35 @@ Built on `r32-skills` (workbench, specs). Store schema 34.
 - PyYAML is now declared by Workbench (the safe loader, aliases refused);
   the requirement is the one other components already declare, so
   `release/requirements.in` is unchanged.
+
+### The second-model review (2026-10-26), and what changed for it
+
+- **A purge no longer races a skill change in flight.** The removal's
+  `skills` step takes the lock every skill change holds, and every change
+  (and the store itself, in the same transaction as its write) refuses a
+  person whose removal has begun (`HIDDEN_STATES`). An upload paused after
+  its room check while the purge ran used to make its folder and row after
+  the purge said it was done; now the purge waits, then deletes them.
+- **Content and the switch go together.** A skill's files are in
+  `<id>.<revision>`, and every change of content (replace, edit, added or
+  removed file, given to everyone or taken back) writes a whole new revision
+  first, then commits the row, its revision and its switch in one step, then
+  removes the old folder. A replaced skill that was on is never read with
+  its new words under its old switch, and a stop before the row is written
+  leaves the skill as it was: the next start removes every folder no row
+  names. A read that finds its files gone reads the row again, so a skill
+  deleted mid-read says it was removed.
+- **The reader judges the name the archive has, not the one `zipfile`
+  makes:** a NUL (where `zipfile` cuts the name short) and DEL are refused.
+  Each entry's local header must agree with the directory (method, CRC and
+  both sizes; from the data descriptor for a streamed entry, from the ZIP64
+  record when the sizes are there), and a broken Deflate stream is refused
+  as that entry's damage instead of failing the request.
+- **"Only these" picks first and bounds after**, so any skill that is on
+  can be picked, the 33rd included.
+- **Reads are anchored to the storage root** as Workbench resolves it, not
+  to the skill's folder as it resolves now: a folder replaced by a link
+  leads nowhere. A local process that can change Workbench's data folder is
+  outside what this defends.
+- Skill names reach the operator's log (who added which skill); noted, not
+  changed.
