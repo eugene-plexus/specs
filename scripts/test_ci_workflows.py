@@ -132,7 +132,17 @@ class WiringTests(unittest.TestCase):
         for repo in ("specs", "agent", "workbench"):
             self.assertIn("eugene-plexus/" + repo, repos)
         self.assertIn("needs.plan.outputs.agent_ref", repos["eugene-plexus/agent"]["ref"])
-        self.assertIn("inputs.workbench_ref", repos["eugene-plexus/workbench"]["ref"])
+        # Workbench's ref comes from a lookup step: a given candidate, else its
+        # same-named branch only when it exists, else main (a specs-only branch
+        # has no Workbench branch, and a missing ref fails the checkout).
+        self.assertEqual(repos["eugene-plexus/workbench"]["ref"], "${{ steps.workbench.outputs.ref }}")
+        chooser = next(s for s in steps if s.get("id") == "workbench")
+        self.assertIn("inputs.workbench_ref", chooser["env"]["GIVEN"])
+        self.assertIn("git ls-remote --exit-code --heads", chooser["run"])
+        self.assertIn('echo "ref=${ref:-main}"', chooser["run"])
+        self.assertLess(steps.index(chooser), next(
+            i for i, s in enumerate(steps)
+            if s.get("with", {}).get("repository") == "eugene-plexus/workbench"))
         commands = "\n".join(s.get("run", "") for s in steps)
         self.assertIn("mv5b-hindsight-acceptance.py", commands)
         self.assertIn(".codex-tmp", commands)
