@@ -33,6 +33,7 @@ PINNED_STEPS = {
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
     # Row 70 (2026-10-21): group policies at the root and through an agent.
     "row70-group-policy-acceptance.py": (EVERY, "both"),
+    "row29-tool-pictures-acceptance.py": (EVERY, "both"),
     # Row 4 (2026-10-22): a promoted root's address reaches every machine.
     "root-moved-acceptance.py": (EVERY, "both"),
     "row57-responses-tools-acceptance.py": (EVERY, "linux"),
@@ -442,6 +443,13 @@ class WiringTests(unittest.TestCase):
             with self.subTest(job=name):
                 self.assertEqual(jobs[name]["needs"], "plan")
                 self.assertIn(f"needs.plan.outputs.{gate}", jobs[name]["if"])
+
+    def test_tool_picture_contract_runs_in_contract_validation(self) -> None:
+        steps = workflow("ci.yml")["jobs"]["validate-openapi"]["steps"]
+        self.assertIn(
+            "python scripts/test_tool_pictures_contract.py",
+            [step.get("run") for step in steps],
+        )
 
     def test_reusable_workflows_accept_declared_inputs(self) -> None:
         for path in WORKFLOWS.glob("*.yml"):

@@ -471,6 +471,12 @@ jobs:
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
+      - name: Tool pictures through MCP and Job Sites, vision replay and newest-picture limits (row 29)
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
+        env:
+          R29_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row29-tool-pictures-acceptance.py
+
       # Row 4: four agents on this runner's routable address, each behind its
       # own machine port; a standby whose copy differs takes a fresh one, and
       # after a promotion every machine follows the new root's address.
@@ -1026,6 +1032,9 @@ jobs:
 
       - name: Check Ollama Keep and worker report contracts
         run: python scripts/test_ollama_contract.py
+
+      - name: Check tool picture contracts (row 29)
+        run: python scripts/test_tool_pictures_contract.py
 
       - name: Check folder access contract and credential boundaries (row 23)
         run: python scripts/test_folder_access_contract.py

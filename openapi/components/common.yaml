@@ -84,7 +84,9 @@ components:
           type: string
           description: |
             On a **tool** message: which call this is the result of.
-            `content` is the result, serialized by the caller.
+            For inference-driver requests, `content` carries text; the gateway
+            moves a tool's pictures to the next user message, labelled with
+            this id.
         reasoning:
           type:
             - string
@@ -112,19 +114,33 @@ components:
           description: When the message was produced. Server-assigned if omitted.
     MessageContent:
       description: |
-        Text, null for an assistant tool-call turn, or ordered user content parts.
+        Text, null for an assistant tool-call turn, or ordered content parts.
+        Images ride on user messages and on tool results (the gateway carries
+        a tool's picture on the next user message). Audio and files ride on
+        user messages only.
+
         Images are inline PNG/JPEG only: the gateway's `maxImagesPerRequest`
         per request (12 by default, at most 64, counted across the whole
         conversation), 5 MiB decoded each, 10 MiB decoded total, 16 million
         pixels each, maximum dimension 8192. The inference-driver enforces
         the ceiling of 64; the gateway enforces the setting.
 
+        Tool pictures count toward these same limits. On all three gateway
+        doors (`/v1/chat/completions`, `/v1/messages`, `/v1/responses`), when
+        tool pictures exceed the image count or decoded-byte limits, the
+        gateway keeps the newest tool pictures that fit. Each picture not
+        attached becomes a note in its tool message naming the limit, for
+        example: "[A picture this tool returned is not attached: this request
+        holds at most 12 pictures.]" (with the effective setting's value).
+        A person's own pictures are never dropped; if they alone exceed a
+        limit, the request is a 400.
+
         Audio (`input_audio`, WAV or MP3) and files (`file`, PDF) are
         inline too: at most 10 MiB decoded each, and every attachment in
         the request together -- images, audio and files -- at most
         11 MiB decoded, which is what fits in the 16 MiB JSON body once
-        base64 has grown it by a third. Attachments ride on user messages
-        only. Remote URLs are never fetched, and a `file_id` is refused:
+        base64 has grown it by a third. Remote URLs are never fetched, and a
+        `file_id` is refused:
         each names a store this install does not have.
       anyOf:
         - type: string
