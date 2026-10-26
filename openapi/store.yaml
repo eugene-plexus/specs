@@ -1365,11 +1365,11 @@ components:
     StoredMetadata:
       type: object
       maxProperties: 16
-      propertyNames: {maxLength: 64}
       additionalProperties:
         type: string
-        maxLength: 512
-      description: OpenAI's metadata, 16 pairs at most.
+      description: |
+        OpenAI's metadata: 16 pairs at most, a key of at most 64
+        characters and a value of at most 512 (the gateway checks both).
 
     StoredConversationRequest:
       type: object

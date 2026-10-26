@@ -10635,12 +10635,7 @@ components:
             `previous_response_id`.
           oneOf:
             - type: string
-            - type: object
-              additionalProperties: true
-              required: [id]
-              properties:
-                id:
-                  type: string
+            - $ref: '#/components/schemas/ResponsesConversationRef'
             - type: 'null'
         prompt:
           description: |
@@ -11312,11 +11307,20 @@ components:
     ConversationMetadata:
       type: object
       maxProperties: 16
-      propertyNames: {maxLength: 64}
       additionalProperties:
         type: string
-        maxLength: 512
-      description: OpenAI's metadata, 16 pairs at most.
+      description: |
+        OpenAI's metadata: 16 pairs at most, a key of at most 64
+        characters and a value of at most 512.
+
+    ResponsesConversationRef:
+      type: object
+      additionalProperties: true
+      required: [id]
+      description: A conversation named by object, as OpenAI's SDKs may send it.
+      properties:
+        id:
+          type: string
 
     Conversation:
       type: object
