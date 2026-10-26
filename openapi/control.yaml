@@ -614,9 +614,15 @@ paths:
         '403': {description: Model excluded by the key.}
         '409': {description: Reservation expired or policy changed.}
         '429':
-          description: Shared concurrency/rate allowance exhausted.
+          description: |
+            Shared concurrency/rate allowance exhausted. `X-Eugene-Refusal-Reason`
+            says which (row 11): the gateway keeps a request refused for
+            `concurrency` in its queue and asks again, and refuses one refused
+            for `rate`.
           headers:
             Retry-After: {schema: {type: integer, minimum: 1}}
+            X-Eugene-Refusal-Reason:
+              schema: {$ref: '#/components/schemas/AdmissionRefusalReason'}
         '503': {description: Authority unavailable; no local fallback allowance.}
 
   /v1/auth/client-keys/{keyId}/limits:
@@ -4255,6 +4261,9 @@ components:
 
     QueueBand:
       $ref: 'components/client-keys.yaml#/components/schemas/QueueBand'
+
+    AdmissionRefusalReason:
+      $ref: 'components/client-keys.yaml#/components/schemas/AdmissionRefusalReason'
 
     ClientKey:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKey'

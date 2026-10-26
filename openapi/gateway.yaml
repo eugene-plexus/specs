@@ -369,6 +369,72 @@ info:
     which key served a request; `/v1/metrics` counts backends, not
     callers.
 
+    ## Waiting in line (row 11)
+
+    A request that cannot run yet waits in this gateway instead of being
+    refused. One queue holds three waits: a client key over its
+    `maxConcurrentRequests`, a busy local runtime (no free slot of the
+    `parallelSlots` its agent reports, or no room in the
+    `contextPoolTokens` it reports), and a runtime that is still starting.
+    Requests leave by band (`interactive`, then `background`, then
+    `sheddable`), then by person in turns, then by arrival. A key still
+    runs at most its limit at once across every gateway; the queue is per
+    gateway, and the root enforces the limit.
+
+    * **Band.** The verified person's band from their permission groups
+      (`queueBand` on the root's admission answer), else the key's
+      `limits.band`, else `interactive`. A request may send `X-Eugene-Band`
+      to lower its own band. A header that asks for a higher band is
+      ignored. The band used is on the request's metrics row.
+    * **Person.** Requests take turns by person: the person the root
+      verified (an app's `X-Eugene-Person-Token`), else the client key,
+      else the operator's session. Open WebUI sends no person, so its
+      users share one turn.
+    * **Bounds.** At most the key's `maxQueuedRequests` (default 8) wait
+      for each key and person, and at most `queueMaxRequests` (default
+      256) in the gateway. When the gateway's line is full, a request of a
+      higher band takes the place of the newest request of the lowest band
+      that waits, and that request is refused as set aside.
+    * **Time.** A request that waited `queueWaitSeconds` (default 60) for a
+      runtime moves to its slot's next tier when the slot has one, and is
+      refused when it does not. Each move is counted (`tierMoves`). A
+      runtime that is starting is waited for up to `swapWaitSeconds`.
+    * **Room.** On a runtime that reports `contextPoolTokens`, a turn holds
+      its prompt plus room for its answer: the lower of its `max_tokens`
+      and the length 95 of 100 of its conversation's last 16 answers were
+      shorter than (4,096 tokens for a new conversation), never less than
+      `answerReserveFloorTokens` (default 1,024). An answer longer than
+      that is counted (`outranReserve`).
+    * **Where.** The chat doors (`/v1/chat/completions`, `/v1/messages`,
+      `/v1/responses`, `/v1/completions` and the Gemini door) wait for the
+      key's turn and for a runtime. Every other door that names a model,
+      and web search, waits for the key's turn only. A request takes its
+      key's lease (`acquire`) only when it leaves the line, so a key at its
+      limit cannot start or stop a runtime.
+
+    **Refusals name their cause**, in the door's own error shape, with
+    `Retry-After` and an `X-Eugene-Refusal-Reason` header that carries the
+    `QueueRefusalCode`. The OpenAI and Gemini doors also put it in the
+    error's `code`. The Anthropic door answers `rate_limit_error` for a
+    429 and `overloaded_error` for a 503; the Responses door keeps its own
+    retry codes (`rate_limit_exceeded`, `server_error`).
+
+    | Code | Status, Retry-After | Words |
+    |---|---|---|
+    | `key_queue_full` | 429, 5 | "This key has 2 running and 8 waiting for you, its most. Retry when one finishes." |
+    | `queue_full` | 503, 5 | "Eugene has 256 requests waiting, its most. Retry in a few seconds." |
+    | `set_aside` | 503, 10 | "Set aside for a more urgent request. Retry later." |
+    | `key_queue_timeout` | 429, 5 | "Waited 60 s for this key's turn (2 at once). Retry, or raise the key's limit." |
+    | `queue_timeout` | 503, 10 | "Waited 60 s for room on qwen3-8b on tower, 14 ahead. Retry shortly." |
+    | `still_starting` | 503, 10 | "qwen3-8b on tower is still starting after 120 s. Retry shortly." |
+    | `shutting_down` | 503, 5 | "Eugene's gateway is restarting. Retry in a few seconds." |
+    | `rate_limited` | 429, from the root | "This key's 60 requests a minute are used. Retry in 12 s." |
+
+    A stream whose head is already sent gets the same type and words in the
+    door's error frame (`response.failed` on the Responses door), with the
+    retry time in the words. Every refusal is kept as a metrics row with
+    outcome `refused` and its `refusal` code.
+
     ## Browsers, and CORS
 
     The front-door paths -- `GET /v1/models`,
@@ -395,6 +461,7 @@ info:
     answered before auth (it carries no bearer by definition), every
     response on those paths carries `Access-Control-Allow-Origin` and
     `Access-Control-Expose-Headers` naming `Retry-After`, `X-Request-ID`
+    `X-Eugene-Refusal-Reason` (row 11)
     and every `x-eugene-plexus-*` header (U4, 2026-09-28: a browser hides
     any header not named, so a page could not read what served its
     request), and **no other path does**: `/v1/config`, `/v1/admin/*` and
@@ -1600,6 +1667,7 @@ paths:
   /v1/chat/completions:
     parameters:
       - $ref: '#/components/parameters/RepetitionMode'
+      - $ref: '#/components/parameters/QueueBandHeader'
     post:
       tags: [inference]
       operationId: createChatCompletion
@@ -1937,6 +2005,7 @@ paths:
   /v1/messages:
     parameters:
       - $ref: '#/components/parameters/RepetitionMode'
+      - $ref: '#/components/parameters/QueueBandHeader'
     post:
       tags: [inference]
       operationId: createAnthropicMessage
@@ -2493,6 +2562,7 @@ paths:
   /v1/responses:
     parameters:
       - $ref: '#/components/parameters/RepetitionMode'
+      - $ref: '#/components/parameters/QueueBandHeader'
     post:
       tags: [inference]
       operationId: createResponse
@@ -2972,6 +3042,7 @@ paths:
   /v1/completions:
     parameters:
       - $ref: '#/components/parameters/RepetitionMode'
+      - $ref: '#/components/parameters/QueueBandHeader'
     post:
       tags: [inference]
       operationId: createCompletion
@@ -5027,12 +5098,12 @@ paths:
         - name: outcome
           in: query
           description: |
-            Restrict to one outcome. `error` and `cascaded` are the two
-            worth filtering for; `cascaded` means `attempts > 1`
-            whether or not the request eventually succeeded.
+            Restrict to one outcome. `error`, `refused` (row 11) and
+            `cascaded` are the ones worth filtering for; `cascaded` means
+            `attempts > 1` whether or not the request eventually succeeded.
           schema:
             type: string
-            enum: [served, error, cascaded]
+            enum: [served, error, refused, cascaded]
       responses:
         '200':
           description: One page of retained requests.
@@ -5127,23 +5198,38 @@ paths:
         * **`swapWaitSeconds`** (`duration`) — how long a request waits
           for a `startOnDemand` runtime to reach `ready` before the next
           tier is tried. Engine-dependent: llama.cpp loads a small
-          model in seconds; vLLM's silent load is minutes. **Since
-          2026-10-02 (CB3) also how long a chat turn waits for room in a
-          runtime's shared context.** A runtime whose agent reports
+          model in seconds; vLLM's silent load is minutes. **Since row 11
+          also how long a request waits for a runtime that is already
+          starting** (one shared poll a runtime), where it was refused at
+          once with a 503 before. A runtime whose agent reports
           `capabilities.contextPoolTokens` gets no more prompt tokens in
-          flight than 90% of it: each turn counted as its conversation's
-          last prompt tokens, plus its new text at ~3.5 characters a
-          token (the whole request's, for a new conversation), plus its
-          `max_tokens`. A turn that does not fit waits — on the replica
-          that holds its conversation while it holds one, else on any
-          replica of the tier with room — and after this long is sent
-          in the usual order. A request bigger than the whole pool is
-          sent at once, and the engine's own refusal is the answer.
-          Measured on an 8B at 64k with four agents a replica: 158 of
-          204 turns failed before, when a few prompts overflowed a pool
-          and the engine's refusal was counted as a broken backend. That
-          refusal (the driver's `#backend-capacity`) now cascades and is
-          not counted by a backend's circuit.
+          flight than 90% of it (CB3): each turn counted as its
+          conversation's last prompt tokens, plus its new text at ~3.5
+          characters a token (the whole request's, for a new
+          conversation), plus room for its answer (see
+          `answerReserveFloorTokens`). A request bigger than the whole
+          pool is sent at once, and the engine's own refusal is the
+          answer. That refusal (the driver's `#backend-capacity`)
+          cascades and is not counted by a backend's circuit. **The wait
+          for room is the queue's since row 11** ("Waiting in line"):
+          `queueWaitSeconds` bounds it, not this.
+        * **`queueWaitSeconds`** (`duration`, default 60, 5 to 600; row
+          11) — how long a request waits in line. After it, a request
+          waiting for a runtime moves to its slot's next tier when the
+          slot has one, and is refused (`queue_timeout`) when it does not;
+          a request waiting for its key's turn is refused
+          (`key_queue_timeout`).
+        * **`queueMaxRequests`** (`integer`, default 256, 16 to 4,096; row
+          11) — how many requests may wait in this gateway at once. Past
+          it a request of a higher band takes the place of the newest one
+          of the lowest band waiting (`set_aside`); any other is refused
+          (`queue_full`).
+        * **`answerReserveFloorTokens`** (`integer`, default 1,024, 0 to
+          131,072; row 11, CB-C2) — the least room a turn holds for its
+          answer in a runtime's shared context. A turn holds the lower of
+          its `max_tokens` and its conversation's long answers (the length
+          95 of 100 of its last 16 were shorter than), or 4,096 for a new
+          conversation, and never less than this.
         * **`idleCheckSeconds`** (`duration`) — how often the gateway
           checks each runtime's idle timeout.
         * **`controlUrl`** (`url`, optional) — the control root, when
@@ -5342,6 +5428,20 @@ components:
       schema:
         type: string
         enum: ['off', observe, stop]
+
+    QueueBandHeader:
+      name: X-Eugene-Band
+      in: header
+      required: false
+      description: |
+        Lower this request's queue band (row 11): `background` or
+        `sheddable` waits behind `interactive` work when the machines are
+        busy. The band in effect is the lower of this header and the band
+        the operator gave the person's groups or the key. A value that asks
+        for a higher band is ignored, never refused, and the band used is on
+        the request's metrics row. Read on every door that waits in line.
+      schema:
+        $ref: '#/components/schemas/QueueBand'
 
   securitySchemes:
     geminiApiKeyAuth:
@@ -10828,6 +10928,10 @@ components:
         p90:
           type: integer
           minimum: 0
+        p95:
+          type: integer
+          minimum: 0
+          description: Present where a reader shows it (`queuedMs`, row 11).
         p99:
           type: integer
           minimum: 0
@@ -11011,6 +11115,29 @@ components:
             Requests served, keyed by the 1-based tier that answered. A
             slot whose tier 2 answers everything has a primary that is
             not working, and this is where that becomes visible.
+        queuedMs:
+          oneOf:
+            - $ref: '#/components/schemas/Percentiles'
+            - type: 'null'
+          description: |
+            How long requests waited in line (row 11), with `p95`, over the
+            group's requests that waited at all. Null when none waited.
+            Refused requests are not in a group; `MetricsSummary.refused`
+            counts them.
+        tierMoves:
+          type: integer
+          minimum: 0
+          description: |
+            Times a request moved to its slot's next tier after it waited
+            `queueWaitSeconds` for a runtime (row 11). Absent on stores
+            from before schema v14.
+        outranReserve:
+          type: integer
+          minimum: 0
+          description: |
+            Answers longer than the room their turn held for them in a
+            shared context (row 11, CB-C2). Many of them mean the floor
+            (`answerReserveFloorTokens`) is too low for this model's work.
 
     MetricsPromptCache:
       type: object
@@ -11084,6 +11211,82 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MetricsGroup'
+        refused:
+          type: object
+          description: |
+            Requests refused in the window, by `QueueRefusalCode` (row 11),
+            each kept as a row with outcome `refused`. Absent when none
+            were.
+          additionalProperties:
+            type: integer
+            minimum: 0
+        queue:
+          type: array
+          description: |
+            What waits in this gateway's line now (row 11), one entry for
+            each runtime something waits for, and one with no runtime for
+            requests that wait only for their key's turn. Live, not a
+            figure over the window.
+          items:
+            $ref: '#/components/schemas/MetricsQueueRuntime'
+
+    MetricsQueueRuntime:
+      type: object
+      required: [waiting, running]
+      properties:
+        model:
+          type: [string, 'null']
+          description: The model the requests asked for.
+        runtime:
+          type: [string, 'null']
+          description: The runtime they wait for. Null for a wait for the key's turn only.
+        node:
+          type: [string, 'null']
+        waiting:
+          $ref: '#/components/schemas/MetricsQueueBands'
+        running:
+          type: integer
+          minimum: 0
+          description: Requests this gateway runs on the runtime now.
+        slots:
+          type: [integer, 'null']
+          minimum: 1
+          description: The runtime's `parallelSlots`, when its agent reports them.
+
+    MetricsQueueBands:
+      type: object
+      required: [interactive, background, sheddable]
+      properties:
+        interactive: {type: integer, minimum: 0}
+        background: {type: integer, minimum: 0}
+        sheddable: {type: integer, minimum: 0}
+
+    QueueBand:
+      $ref: 'components/client-keys.yaml#/components/schemas/QueueBand'
+
+    QueueRefusalCode:
+      type: string
+      enum:
+        - key_queue_full
+        - queue_full
+        - set_aside
+        - key_queue_timeout
+        - queue_timeout
+        - still_starting
+        - shutting_down
+        - rate_limited
+      description: |
+        Why the queue refused a request (row 11), on its
+        `X-Eugene-Refusal-Reason` header and its metrics row. "Waiting in
+        line" in this document's description has the table.
+
+    MetricOutcome:
+      type: string
+      enum: [served, error, refused]
+      description: |
+        `refused` (row 11, schema v14): the queue turned the request away
+        before any backend was asked, for the `refusal` the row names.
+        Named rather than inline, so a new value cannot rename an enum.
 
     MetricAttempt:
       type: object
@@ -11345,8 +11548,33 @@ components:
             - 'null'
           description: For a video job, the seconds asked for (P5, schema v9).
         outcome:
-          type: string
-          enum: [served, error]
+          $ref: '#/components/schemas/MetricOutcome'
+        queuedMs:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            How long the request waited in line (row 11, schema v14): for
+            its key's turn, for a runtime, or both. Not the wake, which is
+            `waitedMs`. Null on rows from before v14.
+        band:
+          oneOf:
+            - $ref: '#/components/schemas/QueueBand'
+            - type: 'null'
+          description: The queue band the request ran or waited in. Null on rows from before v14.
+        refusal:
+          oneOf:
+            - $ref: '#/components/schemas/QueueRefusalCode'
+            - type: 'null'
+          description: Why the queue refused it, when `outcome` is `refused`.
+        tierMoves:
+          type: [integer, 'null']
+          minimum: 0
+          description: Times it moved to its slot's next tier after waiting (row 11).
+        outranReserve:
+          type: [boolean, 'null']
+          description: |
+            Its answer was longer than the room its turn held for it in a
+            shared context (row 11, CB-C2). Null where nothing was held.
         tries:
           type: array
           minItems: 0
