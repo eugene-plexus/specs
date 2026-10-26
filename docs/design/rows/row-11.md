@@ -228,4 +228,17 @@ After the last step, one acceptance run and one adversarial review come before t
 - **`check` before `acquire` is visible in admission logs.** A chat is now check, acquire, renew, release (one more round trip, as §2 said); the gateway tests that pinned the old order were updated.
 - **The Metrics summary's window ends at the second before `until`.** Rows recorded in the current second are not in `GET /v1/metrics` until it passes (existing behaviour, `_iso` truncates `until`). Tests that read the summary at once pass an explicit `until`.
 - **Root refusal retries need their own timer.** `loop.call_later` runs on the loop's clock, so the pass it starts can come a tick before `perf_counter` reaches the retry time; each pass re-arms the timer for what is still held back (found as a 1-in-4 hang in the two-gateway test).
+- **Order is call R11-ORDER** in Troy's calls file, built as the default: people take turns within a band.
+- **Update the root and every gateway before anyone sets a band or a queue bound.** A key at its defaults is answered as before, so mixed versions keep working; a non-default `band` or `maxQueuedRequests` reaches an older reader that refuses unknown fields (`extra='forbid'`) and fails its requests.
+- **The second-model review (Codex, 2026-10-26) found ten defects, each fixed with a test that failed first:**
+  1. A key's policy changed between `check` and `acquire` (made local-only while the request waited): the request was sent under the old one. Now `acquire`'s policy is compared with `check`'s, outside the queue's own fields, and a change is a 409.
+  2. A fallback attempt walked into a runtime with no free slot and took pool room with no fit check. Now every attempt is admitted where it goes: a fallback gives back what it held and waits in line, as the first turn does, on the replicas of its tier whose circuits would take it, and goes to the first with a free slot and room. The read that names the backend asked first (a stream's head) follows the same rule.
+  3. Root `concurrency` refusals let returning entries wait past `maxQueuedRequests` and `queueMaxRequests`. Now every join is bounded, a return too.
+  4. Waits for a starting runtime were outside the line: unbounded, unseen by the Metrics page, and cancelled rather than refused at a stop. Now they wait in the line (no pass lets them go; the shared poll does), under both bounds, and a stop refuses them `shutting_down`.
+  5. The v13 to v14 move was not one transaction (`with conn` opens none before `ALTER TABLE` here): cut short after a column, the next start failed and metrics stayed off. Now it is one explicit transaction, and each column is added only when absent, so a half-done move is finished.
+  6. The key's turn taken before a wake ran out as an unhandled error; now `key_queue_timeout`.
+  7. A reservation that failed as an entry left kept its key and slot counts; now they are rolled back and the wait ends with the failure.
+  8. A key the root refused stayed in memory after its last waiter left; now it is dropped then.
+  9. Ordering cost depth times persons (67 ms on a skewed line of 4,096); now it is linear in entries, and a request that competes with nobody waiting leaves without a pass.
+  10. Browsers could not read `X-Eugene-Refusal-Reason`; it is exposed now.
 - **Not built here:** the Metrics page's live line reads this gateway only (fairness is per gateway, as §7 says); the engine-side check (`prompt-cache-measurement.py --experiments concurrent`) and row 10's sweep stay on Amish_Station.
