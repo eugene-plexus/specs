@@ -174,7 +174,11 @@ on by default, as part of full OpenAI API compatibility.
   moves to v14 with row 11 (branch `ld1`), and two rows bumping one schema
   in parallel would collide; the chain key itself is built and tested
   (`affinity.key_for(..., chain=...)`, the acceptance's two lookalike
-  chats). A follow-up adds the column after row 11 merges.
+  chats). A follow-up adds the column after row 11 merges (gateway#19).
+- **CI: the row 23 job checked out Workbench at the row's branch name**
+  on every specs branch push, and failed for a row Workbench has no branch
+  for. Its checkout now falls back to Workbench's `main`, as the
+  acceptance scripts already did.
 - **The console shows the new counts only through the existing owner
   list**: `/v1/owners` gains `responses` and `conversations` per owner, and
   their bytes count in `bytes`; Settings -> Store shows the two new
