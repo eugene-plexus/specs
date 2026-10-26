@@ -2036,3 +2036,21 @@ def test_a_finished_record_drops_a_kept_entry_that_was_taken_away(
     del f.acl[seed]["group:1001"]
     f.h.main()
     assert stale_or_decided(capsys)["kept"] == []
+
+
+def test_acceptance_makes_every_credential_the_installed_unit_loads():
+    """CI: the app unit gained LoadCredential=memory_server_token (main), the
+    acceptance's hand list did not, and Workbench's unit failed to start. The
+    fixture now reads the list from the unit the installer writes."""
+    module = acceptance()
+    function = (ROOT / "scripts/install.sh").read_text("utf-8").split(
+        "write_app_units() {", 1
+    )[1].split("\n}\n", 1)[0]
+    files = module.credential_files(function, "workbench")
+    assert "apps/workbench/memory_server_token" in files
+    assert {
+        "apps/workbench/data/client_key",
+        "apps/workbench/data/oidc_secret",
+        "apps/workbench/admin_token",
+    } <= set(files)
+    assert all(not f.startswith("/") and "%i" not in f for f in files)

@@ -481,6 +481,17 @@ print(r.model_dump_json())
 """
 
 
+def credential_files(function: str, app: str) -> list[str]:
+    """Every file the installed app unit loads as a credential, relative to the prefix.
+
+    Read from the unit `write_app_units()` writes, so a credential the installer
+    adds is made here too: a missing one stops the unit from starting."""
+    import re
+
+    found = re.findall(r"^LoadCredential=[^:]+:\$PREFIX/(\S+)$", function, re.MULTILINE)
+    return [path.replace("%i", app) for path in found]
+
+
 def linux(specs: Path) -> None:
     import grp
     import hashlib
@@ -535,11 +546,8 @@ def linux(specs: Path) -> None:
         assert installed.stat().st_uid == 0 and installed.stat().st_mode & 0o022 == 0
         for directory in ("apps/pythons", "apps/launcher", "apps/workbench/data"):
             (prefix / directory).mkdir(parents=True, exist_ok=True)
-        for file in (
-            "apps/workbench/data/client_key",
-            "apps/workbench/data/oidc_secret",
-            "apps/workbench/admin_token",
-        ):
+        for file in credential_files(function, "workbench"):
+            (prefix / file).parent.mkdir(parents=True, exist_ok=True)
             (prefix / file).write_text("disposable")
         (root / "service_probe.py").write_text(PROBE, encoding="utf-8")
         drop.mkdir(exist_ok=True)
@@ -569,8 +577,15 @@ def linux(specs: Path) -> None:
             )
             answer = json.loads(result.read_text())
             result.unlink()
-            if expect_success:
-                assert answer["code"] == 0, answer
+            if expect_success and answer["code"] != 0:
+                # Name the unit's own cause, not only the broker's summary.
+                status = subprocess.run(
+                    ["journalctl", "-n", "30", "--no-pager", "-u", unit],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                ).stdout
+                raise AssertionError(f"{answer}\n{status}")
             return answer
 
         step("Linux: start Workbench's unit through the broker")
