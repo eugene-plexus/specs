@@ -166,3 +166,57 @@ Risks:
 - **R32-OWNER: Choice 1, with a change of words.** A person may turn off a
   skill the owner gave everyone, and the page marks it **"From Eugene"**,
   not "From the owner".
+
+## What building found (2026-10-26)
+
+Built on `r32-skills` (workbench, specs). Store schema 34.
+
+- **An upload arrives off (default built).** "The Skills page shows the
+  whole `SKILL.md` before a skill is turned on" is built literally: an
+  uploaded skill is added off, its card opens with the whole `SKILL.md`, and
+  its switch is enabled once that has loaded. A replaced skill is off again
+  (its words changed). A skill the person writes on the page is on at once.
+  A skill Eugene gives everyone is on for everyone, as R32-OWNER says.
+- **The listing is the same bytes while the skills are.** No copy is kept
+  per chat: `use_skill`'s description is built each answer from the person's
+  skills that are on, by name, so it changes only when their skills do,
+  which is what a per-chat snapshot retaken on a change gives. The chat's
+  pick (`settings.skills`; unset is "All my skills", `[]` is none) narrows it.
+- **The reader refuses bzip2 and LZMA entries.** `zipfile` hands each
+  compressed piece to those decompressors whole, so an entry whose header
+  lies about its size can fill memory before the size is checked; Deflate is
+  read a bounded piece at a time. Every skill seen so far uses Deflate.
+- **The 100:1 rule applies to entries over 64 KiB.** A short file of
+  repeated lines packs past 100:1 and is no bomb; the 20 MiB limit, counted
+  on the bytes read, holds for every entry.
+- **More Windows and macOS rules than the design listed:** device names with
+  any extension (`CON.md`, `COM1`-`COM9`, `LPT1`-`LPT9`, the superscript
+  forms, `CONIN$`), `<>:"|?*` and control characters (a `:` would be an NTFS
+  stream), names over 255 bytes, paths over 200 characters, and two names
+  that differ only in case or Unicode form. A file and a folder of one name,
+  and a name twice, are refused too. Depth counts folders on the archive's
+  own path, a top folder included. `__MACOSX/`, `.DS_Store`, `Thumbs.db` and
+  `desktop.ini` are left out, as nobody wrote them.
+- **Two walls.** The writer judges every place again on its words before it
+  makes any folder (on Windows a `C:` part in `joinpath` would leave the
+  folder), then checks the real path. With the reader's `..` rule sabotaged
+  the dot rule still refused `../x.sh`, and the test failed on its message.
+- **A person's own skill hides an install skill of the same name** from
+  their chats (the page says why), so the names the model sees are unique.
+- **Keep both** names the new row `name-2`; its `SKILL.md` is kept as
+  written, so its frontmatter still says `name`.
+- **Data.** A person's own download holds each of their skills under
+  `skills/<name>/`; the owner's download of a removed person does too; the
+  owner's download of a person who uses Workbench does not (skills are
+  treated as notes are). A skill the owner gave everyone is the install's,
+  not theirs: it stays when they are removed, and it is never in a person's
+  download. Removal gains a `skills` step for the folder; the rows go with
+  `PERSON_TABLES`, `skill_off` by `sub` so the existing seeded purge test
+  covers it.
+- **What it does not hide.** A skill's tool results replay to later
+  requests and show in the owner's read-only view (W4) as any tool's do;
+  only notes and past chats are withheld. Calls to the two tools count as
+  tool reads for `remember`'s write policy: a skill is a stranger's words.
+- PyYAML is now declared by Workbench (the safe loader, aliases refused);
+  the requirement is the one other components already declare, so
+  `release/requirements.in` is unchanged.
