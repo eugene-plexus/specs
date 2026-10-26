@@ -711,12 +711,25 @@ paths:
         60 seconds, the endpoint returns 429 and refuses further
         attempts from that source for 60 seconds. (No lockout of the
         legitimate operator — they'll just have to wait.)
+
+        **A machine that was off when the passphrase changed** (row 5).
+        Enrolled, a passphrase this agent's own hash refuses is still sent
+        to the root. When the root accepts it (a session that verifies
+        against this agent's trust bundle and names this machine), this
+        agent takes it as its own: unlocked, it wraps its master key under
+        it at once. Locked, it cannot open its key with the new
+        passphrase, so it answers **409** with the problem type
+        `.../old-passphrase-needed` and asks once for the old one:
+        *"This machine was off when the passphrase changed. Enter the old
+        passphrase once to finish."* The same sign-in again with
+        `previousPassphrase` opens the key with the old passphrase and
+        wraps it under the new one.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "components/common.yaml#/components/schemas/AuthLoginRequest"
+              $ref: "#/components/schemas/AgentLoginRequest"
       responses:
         "200":
           description: Logged in.
@@ -734,12 +747,75 @@ paths:
           description: |
             The install no longer lists this machine (it was removed).
             The detail says whether it has left the install already.
+            Or (row 5, type `.../old-passphrase-needed`) the passphrase
+            changed while this machine was off, and it is locked: send
+            the sign-in again with `previousPassphrase`.
           content:
             application/problem+json:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
         "429":
           description: Rate-limited.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+
+  /v1/auth/passphrase:
+    post:
+      tags: [auth]
+      operationId: changePassphrase
+      summary: Change Eugene's passphrase (the console's door).
+      description: |
+        Row 5 (5b). **Enrolled, this forwards to the control root's
+        `POST /v1/auth/passphrase`** with the caller's operator session
+        and the browser's address (the login rate limit is the root's),
+        and returns the root's answer: the root re-seals its own values,
+        then sends the new passphrase to every machine that keeps one of
+        its own, this one included.
+
+        **Standalone**, this agent changes its own passphrase: it checks
+        `current` (under the login rate limit), keeps its master key, and
+        wraps it under the new passphrase (`kekSalt`, `wrappedMasterKey`
+        in `agent.yaml`), so every secret it sealed still opens. It
+        rewrites the passphrase file it keeps, if it keeps one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PassphraseChangeRequest"}
+      responses:
+        "200":
+          description: Changed. Where each machine stands.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PassphraseChangeResult"}
+        "401":
+          description: No operator session, or `current` is wrong.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "409":
+          description: The root refused (for example, its standby is too old).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "422":
+          description: The new passphrase is shorter than 12 characters.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "429":
+          description: Rate-limited.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "503":
+          description: The control root did not answer, or is locked.
           content:
             application/problem+json:
               schema:
@@ -3748,6 +3824,65 @@ paths:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
 
+  /v1/node/passphrase:
+    post:
+      tags: [node]
+      operationId: takeNodePassphrase
+      summary: Take Eugene's new passphrase from the control root.
+      description: |
+        Row 5 (5b). **The control root's own service token only**
+        (`sub: control`, addressed to this node), and **only over TLS**:
+        through this node's machine port, whose key the root pinned, or on
+        loopback from the root on this same machine. Anything else is a
+        403 and nothing changes. The root never sends it in plain HTTP.
+
+        The agent checks `current` against its own hash, keeps its master
+        key (so every secret it sealed still opens), wraps it under `new`
+        (`kekSalt`, `wrappedMasterKey` in `agent.yaml`), stores the new
+        hash and rewrites the passphrase file it keeps. A replay carries a
+        `current` that no longer verifies, so it changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NodePassphraseRequest"}
+      responses:
+        "200":
+          description: |
+            Taken. Whether its passphrase file now holds the new
+            passphrase, and why not when it does not.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NodePassphraseResult"}
+        "401":
+          description: Not the control root's token.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "403":
+          description: Not over TLS or loopback.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "409":
+          description: |
+            This machine keeps no passphrase of its own (type
+            `.../no-own-passphrase`), or its own passphrase is not
+            `current` (type `.../passphrase-differs`). Either way nothing
+            changed; it takes the new one at its next sign-in.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "422":
+          description: The new passphrase is shorter than 12 characters.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+
   /v1/directories:
     get:
       tags: [config]
@@ -5539,6 +5674,97 @@ components:
           items:
             $ref: "#/components/schemas/HostSeries"
 
+    AgentLoginRequest:
+      type: object
+      description: |
+        `common.yaml`'s `AuthLoginRequest`, and (row 5) the old passphrase
+        once, for a machine that was off when the passphrase changed.
+      required:
+        - passphrase
+      properties:
+        passphrase:
+          type: string
+          minLength: 1
+        previousPassphrase:
+          type: string
+          minLength: 1
+          description: |
+            Only after a 409 of type `.../old-passphrase-needed`: the
+            passphrase this machine had, which opens its master key so it
+            can wrap it under `passphrase`.
+    PassphraseChangeRequest:
+      type: object
+      description: The same shape as `control.yaml`'s.
+      additionalProperties: false
+      required: [current, new]
+      properties:
+        current:
+          type: string
+          format: password
+          minLength: 1
+          writeOnly: true
+        new:
+          type: string
+          format: password
+          minLength: 12
+          writeOnly: true
+    NodePassphraseRequest:
+      type: object
+      description: What the control root sends a machine that keeps its own passphrase.
+      additionalProperties: false
+      required: [current, new]
+      properties:
+        current:
+          type: string
+          format: password
+          minLength: 1
+          writeOnly: true
+        new:
+          type: string
+          format: password
+          minLength: 12
+          writeOnly: true
+    NodePassphraseResult:
+      type: object
+      required: [passphraseFile]
+      properties:
+        passphraseFile: {$ref: "#/components/schemas/PassphraseFileState"}
+        detail:
+          type: string
+          description: |
+            When `passphraseFile` is `old`: why the file could not be
+            written. After a restart this machine stays locked until
+            someone signs in.
+    PassphraseMachineState:
+      type: string
+      enum: [changed, pending, plain]
+      description: The same values as `control.yaml`'s.
+    PassphraseMachine:
+      type: object
+      required: [node, state]
+      properties:
+        node: {type: string}
+        state: {$ref: "#/components/schemas/PassphraseMachineState"}
+        detail: {type: string}
+    PassphraseFileState:
+      type: string
+      enum: [matches, old, none]
+      description: The same values as `control.yaml`'s.
+    PassphraseChangeResult:
+      type: object
+      description: The same shape as `control.yaml`'s.
+      required: [changedAt, machines, passphraseFile]
+      properties:
+        changedAt:
+          type: string
+          format: date-time
+        machines:
+          type: array
+          items: {$ref: "#/components/schemas/PassphraseMachine"}
+        passphraseFile: {$ref: "#/components/schemas/PassphraseFileState"}
+        cleanup:
+          type: string
+          description: The same as `control.yaml`'s.
     NodeIdentity:
       type: object
       description: |
@@ -5592,6 +5818,13 @@ components:
             moves only for a signed machine list at a higher epoch. Set to
             the epoch held when a node updated to row 4 first starts, so an
             update never moves a node. Absent until enrolled.
+        ownPassphrase:
+          type: boolean
+          description: |
+            Whether this agent keeps a passphrase of its own (row 5): the
+            root machine's agent, and a machine set up on its own before
+            it joined. The control root sends a changed passphrase only to
+            these. Absent from an agent older than row 5.
         standby:
           $ref: '#/components/schemas/LocalStandby'
         rootLocked:
