@@ -3185,8 +3185,11 @@ paths:
       description: |
         OpenAI's Conversations API over the install's store. A
         conversation belongs to its caller (the person, else the key),
-        is seen by no one else, and is deleted `responseDays` (30) after
-        its last use, or on `DELETE`. A Responses request with
+        is seen by no one else, and is kept until `DELETE`, as OpenAI
+        keeps one; an expert may set `conversationDays` (Settings ->
+        Store) to end each one that many days after its last use. A
+        removed person's are hidden, then deleted (row 53's rule). A
+        Responses request with
         `conversation` reads its items first and adds its own input and
         output when it ends. The owner's console session keeps none
         (403). While the owner has turned responses off, every

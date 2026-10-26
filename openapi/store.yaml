@@ -67,9 +67,12 @@ info:
     after it is kept (row 54). A response kept with
     `previousResponseId` extends the end of every response before it in
     its chain to its own, so a conversation chained by id lives as long
-    as its newest response. **A conversation lives `responseDays` after
-    its last use**: each item added, and each response kept in it, moves
-    its end. Its items end with it. `DELETE` deletes a response or a
+    as its newest response. **A conversation is kept until it is
+    deleted**, as OpenAI keeps one, unless the owner set
+    `conversationDays` (0, never, by default): then it ends that many days
+    after its last use (an item added, a response kept in it, its
+    metadata changed), whenever the setting was made. Its items end with
+    it. `DELETE` deletes a response or a
     conversation for good at once; a response later in a chain whose
     history passes through a deleted one can no longer be rebuilt
     (`409`, named).
@@ -1395,7 +1398,7 @@ components:
     StoredConversation:
       type: object
       additionalProperties: false
-      required: [id, createdAt, expiresAt, metadata, items]
+      required: [id, createdAt, metadata, items]
       properties:
         id:
           type: string
@@ -1404,7 +1407,10 @@ components:
           type: integer
         expiresAt:
           type: integer
-          description: Unix seconds, `responseDays` after its last use.
+          description: |
+            Unix seconds, `conversationDays` after its last use. Absent,
+            the conversation is kept until it is deleted (the default, as
+            OpenAI keeps one).
         metadata:
           $ref: '#/components/schemas/StoredMetadata'
         items:
