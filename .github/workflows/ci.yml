@@ -468,6 +468,11 @@ jobs:
       - name: A stolen worker key tried against every other process, then revoked
         if: matrix.shard == 'L2' || matrix.shard == 'W2'
         run: python specs/scripts/row3-per-node-keys-acceptance.py --lan
+      # Row 46: with its root stopped past its limit, a machine refuses another
+      # machine's stop request and still answers; the refusal sabotaged must fail.
+      - name: A machine cut off from its root refuses other machines' changes and still answers (row 46)
+        if: matrix.shard == 'L1' || matrix.shard == 'W2'
+        run: python specs/scripts/row46-frozen-trust-acceptance.py --sabotage
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py

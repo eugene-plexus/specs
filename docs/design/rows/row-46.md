@@ -83,6 +83,57 @@ Risk: **the freeze limit can refuse a real change** from the console on a
 machine whose network to the root is broken; the 403 and Home both name
 the cause, and the limit is a setting.
 
+## What building found (2026-10-26)
+
+- **A pushed copy of the held bundle reset the age.** The push door
+  (`POST /v1/node/trust-bundle`) takes no bearer: the signature is the
+  credential. So anybody who can reach a machine, a removed machine
+  included, could post the last bundle every hour and the limit would
+  never come. Built: a bundle the machine pulled from the root at its own
+  address is word now; a pushed bundle counts only when it is newer than
+  the one held, and only from the time the root signed it. A bundle that
+  does not verify changes nothing.
+- **The clock.** The age is the longer of the wall clock's count and the
+  process's own (`perf_counter`), so a clock set back does not shorten
+  it while the agent runs, and a suspended Linux machine still counts
+  the time it slept. A pull after a clock set back still counts as word.
+  Left: across a restart the age comes from the kept file's time on the
+  wall clock, so a clock set back before a restart shortens it. Moving
+  this machine's clock needs this machine.
+- **Which tokens are another machine's.** Any token whose `iss` is not
+  `control` and not this machine. `verify` binds `iss` to the key that
+  signed it, so a third key cannot claim to be the root or this machine.
+  Today only two kinds of another machine's token reach a change route:
+  a gateway with the `gateway` grant (runtime start and stop), and the
+  Library machine's agent on `POST /v1/ollama/send` (Keep). The other
+  routes in §2 (declare, PATCH, components, config, engines) take only
+  the root's tokens or an operator session, which the root signs. They
+  are listed as changes too, so a route that starts to take another
+  machine's token is covered from its first day.
+- **Classification.** `dependencies.FROZEN_TRUST_CHANGES` and
+  `FROZEN_TRUST_QUESTIONS` name every agent route on a method other than
+  GET, HEAD and OPTIONS (75 changes, 11 questions). A route in neither is
+  refused as a change, and `test_trust.py` fails until it is named. The
+  questions are the admission dry run and client-key admission (on an
+  answer's path), and the preflights, previews and checks.
+- **A stopped model is not woken from another machine** while the limit
+  is passed (start is a change). A running model keeps answering.
+- **The root's sessions pass by design**, so a session signed out at the
+  root after the machine lost it still works there until it expires.
+- **A client key needs the root anyway.** Client-key admission is relayed
+  to the root and never allowed locally during an outage (A5), so with
+  the root dead an app's key is refused at the gateway whatever this
+  limit says. Operator sessions and the machine's own tokens answer. The
+  acceptance's prompt uses a session.
+- **The acceptance** sets the limit to 1 hour and the kept bundle's time
+  back 2 hours, then restarts the agent with the root stopped. The
+  setting is in whole hours, so a 60 s limit is not possible.
+- **Mixed versions.** `NodeIdentity` gains two optional fields
+  (`trustBundleMaxAgeSeconds`, `trustBundleFrozen`). The root reads
+  `GET /v1/node` as a plain mapping and the push answer is not parsed,
+  so no root needs deploying first. No request any machine sends
+  changes. An older agent has no limit; an older UI shows no second line.
+
 ## Calls answered by Troy (2026-10-22)
 
 - **R46-FREEZE: Choice 1.** After 24 hours without the root, a machine
