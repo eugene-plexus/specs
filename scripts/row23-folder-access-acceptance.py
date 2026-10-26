@@ -858,6 +858,42 @@ def linux(specs: Path) -> None:
             ("seed.txt", "kept")
         ], outcome
         assert "group:" + group + ":rw-" in run("getfacl", "-cpnE", str(again / "seed.txt"))
+        # Re-review 3: a file that gains another name after an entry prompt, and
+        # pipes that each hold an entry, never change; each is its own decision.
+        step("Linux: a file that gains another name after the prompt is asked about again")
+        late = root / "late"
+        late.mkdir(mode=0o700)
+        (late / "seed.txt").write_text("late")
+        (late / "seed.txt").chmod(0o600)
+        grant = agent("add", str(late), "read")
+        assert grant["state"] == "ready", grant
+        run("setfacl", "-m", f"g:{group}:rw-", str(late / "seed.txt"))
+        for name in ("one.fifo", "two.fifo"):  # made after the grant: one may not grant them
+            os.mkfifo(late / name, 0o600)
+            run("setfacl", "-m", f"g:{group}:rw-", str(late / name))
+            os.link(late / name, root / ("outside-" + name))
+        outcome = agent("remove", grant["id"])
+        assert outcome["state"] == "incomplete", outcome
+        pending = {Path(u["path"]).name: u for u in outcome["unknown"]}
+        assert {n: u["kind"] for n, u in pending.items()} == {
+            "seed.txt": "entry",
+            "one.fifo": "special",
+            "two.fifo": "special",
+        }, outcome
+        os.link(late / "seed.txt", root / "outside-seed.txt")
+        outcome = agent("decide", grant["id"], pending["seed.txt"]["id"], "remove")
+        assert outcome["state"] == "incomplete", outcome
+        again_asked = {Path(u["path"]).name: u for u in outcome["unknown"]}
+        assert again_asked["seed.txt"]["kind"] == "hardlink", outcome
+        for path in (late / "seed.txt", root / "outside-seed.txt"):
+            assert "group:" + group + ":rw-" in run("getfacl", "-cpnE", str(path)), path
+        outcome = agent("decide", grant["id"], again_asked["one.fifo"]["id"], "keep")
+        assert outcome["state"] == "incomplete", outcome
+        still = {Path(u["path"]).name: u["decision"] for u in outcome["unknown"]}
+        assert still == {"seed.txt": "pending", "one.fifo": "kept", "two.fifo": "pending"}, outcome
+        for name in ("one.fifo", "two.fifo"):
+            for path in (late / name, root / ("outside-" + name)):
+                assert "group:" + group + ":rw-" in run("getfacl", "-cpnE", str(path)), path
         step("Linux: a masked ACL entry is refused and left unchanged")
         for entry in ("u:65534:rwx", "g::rwx"):
             run("setfacl", "-n", "-m", entry + ",m::r--", str(folder))
@@ -1247,6 +1283,28 @@ def windows(root: Path) -> None:
         ]
         assert sddl(root / "linked-outside.txt") == sddl(names / "linked.txt")
         run("cmd.exe", "/d", "/c", "rmdir", str(names / "sub"))
+        # Re-review 3: a file that gains another name after an entry prompt is
+        # never changed on the old answer; the owner is asked about it again.
+        step("Windows: a file that gains another name after the prompt is asked about again")
+        late = root / "late"
+        late.mkdir()
+        private(late)
+        (late / "seed.txt").write_text("late")
+        grant = access.add("workbench", str(late), "read", "acceptance")
+        assert grant.state == "ready", grant.message
+        private(late / "seed.txt")
+        run("icacls", str(late / "seed.txt"), "/grant", account + ":(F)")
+        outcome = access.remove("workbench", grant.id)
+        (entry,) = outcome.unknown or []
+        assert entry.kind == "entry", outcome
+        os.link(late / "seed.txt", root / "late-outside.txt")
+        before = sddl(late / "seed.txt")
+        outcome = access.decide("workbench", grant.id, entry.id, "remove")
+        assert outcome.state == "incomplete", outcome.message
+        assert [(Path(u.path).name, u.kind) for u in outcome.unknown or []] == [
+            ("seed.txt", "hardlink")
+        ], outcome
+        assert sddl(late / "seed.txt") == before == sddl(root / "late-outside.txt")
         step("Windows: a folder swapped for a junction is left alone, and so is the target")
         swap, target = root / "swap", root / "swap-target"
         swap.mkdir()
@@ -1328,6 +1386,7 @@ def main() -> None:
                         "an entry changed by hand is the owner's call: Remove and Keep",
                         "a file with another name and a new file's own entry wait for the owner",
                         "a Keep the helper committed shows again after the agent lost it",
+                        "a file gaining another name after a prompt and each pipe are asked about",
                     ],
                 }
             ),
@@ -1384,6 +1443,7 @@ def main() -> None:
                             "unrelated service account and outside folder gain nothing",
                             "an entry Eugene did not add is the owner's call: Remove and Keep",
                             "a file with another name waits; a decision never follows a swapped folder",
+                            "a file gaining another name after a prompt is asked about again",
                         ],
                     }
                 ),

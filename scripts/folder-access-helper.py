@@ -481,10 +481,22 @@ def grant(fd, group, write, ledger, save, check=None):
 def fingerprint_key(fingerprint):
     """What an owner's answer is about: the item and the entry, never its name.
 
-    A rename keeps the inode, so it keeps the answer; the name is only shown."""
+    A rename keeps the inode, so it keeps the answer; the name is only shown. The
+    link count is the item's state, checked when Remove is applied, not part of it."""
     return json.dumps(
-        {k: v for k, v in fingerprint.items() if k != "names"}, sort_keys=True
+        {k: v for k, v in fingerprint.items() if k not in ("names", "links")},
+        sort_keys=True,
     )
+
+
+def own_identity(fd, ident):
+    """The item's identity; a special file has none from statx, so its device and inode.
+
+    Each special file is its own decision: two pipes never share one answer."""
+    if ident:
+        return list(ident)
+    info = os.fstat(fd)
+    return [info.st_dev, info.st_ino]
 
 
 def report(fingerprint, found):
@@ -500,6 +512,27 @@ def report(fingerprint, found):
 HARDLINK = (
     "it has another name outside the folder, so changing it here changes it there too"
 )
+SPECIAL = (
+    "it is a pipe, socket or device, which Eugene never changes on its own"
+)
+
+
+def held_back(fd, ident, allowed):
+    """Why removal leaves this item for the owner: None, "hardlink" or "special".
+
+    One rule on both systems: removal never changes a file with another name, nor a
+    file that is not a regular file or a folder, unless the owner chose Remove for
+    it at no more names than it has now. Read on the held descriptor every time."""
+    info = os.fstat(fd)
+    if stat.S_ISDIR(info.st_mode):
+        return None
+    special = not stat.S_ISREG(info.st_mode)
+    if not special and info.st_nlink == 1:
+        return None
+    limit = allowed.get(identity_key(own_identity(fd, ident)))
+    if limit is not None and info.st_nlink <= limit:
+        return None
+    return "special" if special else "hardlink"
 
 
 def revoke(fd, ledger):
@@ -521,41 +554,54 @@ def revoke(fd, ledger):
     ledger["retained"] = []
     accepted = {fingerprint_key(f) for f in ledger.get("accepted", [])}
     found = (ledger["unknown"], ledger["retained"], accepted)
-    # What Eugene's own default leaves on a new item; anything else is the owner's.
-    own = {
-        item["after"]["default:group:" + group]
-        for item in ledger["items"]
-        if "default:group:" + group in item.get("after", {})
-    }
-    allowed = {identity_key(i) for i in ledger.get("allowed", [])}
+    # What Eugene's own default gives what is made in each folder: a new item is
+    # compared with its own folder's value only, never another folder's.
+    expect = {}
+    allowed = {identity_key(a["identity"]): a["links"] for a in ledger.get("allowed", [])}
+    keys = ("group:" + group, "default:group:" + group)
     for batch in batches(fd, revoke=True, skipped=skipped):
-        # One rule: an item with another name is never changed here, since the
-        # change would reach that name too. The owner decides (R23-UNKNOWN).
-        shared = []
+        waiting, specials, normal = [], [], []
         for item in batch:
-            info = os.fstat(item[1])
-            if (
-                not stat.S_ISDIR(info.st_mode)
-                and info.st_nlink > 1
-                and identity_key(item[2]) not in allowed
-            ):
+            reason = held_back(item[1], item[2], allowed)
+            if reason is not None:
+                waiting.append((item, reason))
+            elif not item[2]:
+                specials.append(item)  # the owner chose Remove for this one
+            else:
+                normal.append(item)
+        # Left for the owner: listed only when it holds an entry for the app.
+        for (names, child, ident), reason in waiting:
+            try:
+                current = acl(child)
+            except (OSError, ValueError) as exc:
+                skipped.append("/".join(names) + ": " + str(exc))
+                continue
+            if any(key in current for key in keys):
                 report(
-                    dict(kind="hardlink", names=list(item[0]), identity=list(item[2])),
+                    dict(
+                        kind=reason,
+                        names=list(names),
+                        identity=own_identity(child, ident),
+                        links=os.fstat(child).st_nlink,
+                    ),
                     found,
                 )
-                shared.append(item)
-        batch = [item for item in batch if item not in shared]
-        normal = [item for item in batch if item[2]]
-        entries = list(zip(normal, acls([c for _, c, _ in normal]))) if normal else []
-        for item in batch:
-            if item[2]:
-                continue
+        for names, child, _ in specials:
             try:
-                current = acl(item[1])
-                remove_entries([(item, current)], group, plans, kept, found, own)
+                if "group:" + group in acl(child):
+                    run(
+                        "setfacl",
+                        "-n",
+                        "-x",
+                        "g:" + group,
+                        "--",
+                        f"/proc/self/fd/{child}",
+                        pass_fds=(child,),
+                    )
             except (OSError, ValueError) as exc:
-                skipped.append("/".join(item[0]) + ": " + str(exc))
-        remove_entries(entries, group, plans, kept, found, own)
+                skipped.append("/".join(names) + ": " + str(exc))
+        entries = list(zip(normal, acls([c for _, c, _ in normal]))) if normal else []
+        remove_entries(entries, group, plans, kept, found, expect)
     ledger["refusal"] = "; ".join(skipped)
     return not skipped
 
@@ -581,10 +627,11 @@ def recorded(records, names, ident):
     return records.get(tuple(names))
 
 
-def remove_entries(entries, group, plans, kept=None, found=None, own=None):
+def remove_entries(entries, group, plans, kept=None, found=None, expect=None):
     kept = kept or {}
     found = found if found is not None else ([], [], set())
     keys = ("group:" + group, "default:group:" + group)
+    default_key = "default:group:" + group
     restore, removable = [], []
     spare = {}  # fd -> keys that stay for the owner to decide
     left = set()  # items whose default entry for the group stays
@@ -592,6 +639,14 @@ def remove_entries(entries, group, plans, kept=None, found=None, own=None):
         item = recorded(plans, names, ident)
         planned = item is not None and same_identity(ident, item["identity"])
         prior = recorded(kept, names, ident)
+        # What Eugene's default gives this item, from its own folder alone.
+        given = expect.get(tuple(names[:-1])) if expect is not None and names else None
+        if expect is not None and stat.S_ISDIR(os.fstat(child).st_mode):
+            value = current.get(default_key)
+            if planned and value is not None and value == item["after"].get(default_key):
+                expect[tuple(names)] = value  # what Eugene's grant left on this folder
+            elif not planned and value is not None and value == given:
+                expect[tuple(names)] = value  # a new folder inherits its folder's
         if planned and current == item["after"]:
             if current != item["before"]:
                 restore.append((child, item["before"]))
@@ -628,11 +683,12 @@ def remove_entries(entries, group, plans, kept=None, found=None, own=None):
             if wanted != current:
                 restore.append((child, wanted))
             continue
-        if not planned and own is not None:
+        if not planned and expect is not None:
             # Made, or replaced, after the grant: only what Eugene's default
-            # puts on a new item is Eugene's. Any other value was set by hand.
+            # puts on a new item in this folder is Eugene's. Any other value,
+            # or any value under a default Eugene did not add, is the owner's.
             for key in keys:
-                if key in current and current[key] not in own:
+                if key in current and (given is None or current[key] != given):
                     spare.setdefault(child, set()).add(key)
                     report(
                         dict(
@@ -981,12 +1037,18 @@ def main():
             return
         record = json.loads(target.read_text())
         if record.get("removed"):
-            # Finished before; the agent may not have heard, so say what stays.
+            # Finished before; the agent may not have heard, so say what stays,
+            # as it is now: a kept file since deleted, or its entry since taken
+            # away, is no longer access the app has.
+            retained = still_there(record, group)
+            if retained != record.get("retained", []):
+                record["retained"] = retained
+                write_record(target, record)
             print(
                 json.dumps(
                     dict(
                         removed=True,
-                        kept=[listing(f, group_name, record) for f in record.get("retained", [])],
+                        kept=[listing(f, group_name, record) for f in retained],
                         unknown=[],
                     )
                 )
@@ -1041,11 +1103,40 @@ def main():
         )
 
 
+def still_there(record, group):
+    """The owner's kept entries still in the folder, under their names now."""
+    retained = record.get("retained") or []
+    if not retained:
+        return []
+    wanted = {identity_key(f["identity"]): f for f in retained}
+    present = []
+    try:
+        with opened(record["path"], parents_safe=False, allow_mount_root=True) as fd:
+            if not same_identity(identity(fd), record["identity"]):
+                return []
+            for names, child, ident in tree(fd, mount_id(fd), revoke=True, skipped=[]):
+                found = wanted.get(identity_key(own_identity(child, ident)))
+                if found is None:
+                    continue
+                if found["kind"] == "entry":
+                    try:
+                        if acl(child).get(found["key"]) is None:
+                            continue
+                    except (OSError, ValueError):
+                        pass  # cannot read it: it stays shown
+                present.append(dict(found, names=list(names)))
+    except (FileNotFoundError, NotADirectoryError):
+        return []
+    return present
+
+
 def listing(found, group_name, record=None):
     """One entry for the agent: where it is, in words, and the ledger's fingerprint."""
     root = (record or {}).get("path", "")
     if found["kind"] == "hardlink":
         words_for = HARDLINK
+    elif found["kind"] == "special":
+        words_for = SPECIAL
     else:
         words_for = (
             f"group {group_name} has {found['value']}"
@@ -1060,15 +1151,20 @@ def listing(found, group_name, record=None):
 
 
 @contextlib.contextmanager
-def entry_fd(fd, names):
-    """Hold an item below `fd` by name, never following a link."""
+def entry_fd(fd, names, *, path_only=False):
+    """Hold an item below `fd` by name, never following a link.
+
+    `path_only` holds the last item without opening it, as a special file must be."""
     held = []
     try:
         current = fd
-        for name in names:
-            current = os.open(
-                name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=current
+        for index, name in enumerate(names):
+            flags = (
+                os.O_PATH
+                if path_only and index == len(names) - 1
+                else os.O_RDONLY | os.O_NONBLOCK
             )
+            current = os.open(name, flags | os.O_NOFOLLOW, dir_fd=current)
             held.append(current)
         yield current
     finally:
@@ -1119,19 +1215,48 @@ def decide(prefix, account, group, ident, mode, target):
         with opened(record["path"], parents_safe=False, allow_mount_root=True) as fd:
             if not same_identity(identity(fd), record["identity"]):
                 raise ValueError("The folder was replaced, so the entry was left as it is.")
-            with entry_fd(fd, wanted["names"]) as child:
-                if not same_identity(identity(child), wanted["identity"]):
-                    raise ValueError(
+            with entry_fd(fd, wanted["names"], path_only=wanted["kind"] == "special") as child:
+                info = os.fstat(child)
+                regular = stat.S_ISREG(info.st_mode)
+                now = (
+                    identity(child)
+                    if regular or stat.S_ISDIR(info.st_mode)
+                    else [info.st_dev, info.st_ino]
+                )
+                if not same_identity(now, wanted["identity"]):
+                    return stale(
                         "The item changed since Eugene found it, so the entry was left as it is."
                     )
-                if wanted["kind"] == "hardlink":
+                if wanted["kind"] in ("hardlink", "special"):
+                    if info.st_nlink > wanted.get("links", 1):
+                        return stale(
+                            "The file has more names than when Eugene asked, so it was "
+                            "left as it is."
+                        )
                     # Only allows: the removal that follows changes the item.
-                    record.setdefault("allowed", []).append(wanted["identity"])
+                    record.setdefault("allowed", []).append(
+                        dict(identity=wanted["identity"], links=info.st_nlink)
+                    )
                 else:
+                    allowed = {
+                        identity_key(a["identity"]): a["links"]
+                        for a in record.get("allowed", [])
+                    }
+                    limit = allowed.get(identity_key(now))
+                    if (
+                        not stat.S_ISDIR(info.st_mode)
+                        and (not regular or info.st_nlink > 1)
+                        and not (limit is not None and info.st_nlink <= limit)
+                    ):
+                        # Checked on the held file: an entry removed here would
+                        # be removed through every other name too.
+                        return stale(
+                            "The file has another name outside the folder now, so "
+                            "the entry was left as it is."
+                        )
                     if acl(child).get(wanted["key"]) != wanted["value"]:
-                        raise ValueError(
-                            "The entry changed since Eugene found it, so it was left as it is. "
-                            "Choose Remove access again to check the folder."
+                        return stale(
+                            "The entry changed since Eugene found it, so it was left as it is."
                         )
                     default = wanted["key"].startswith("default:")
                     run(
@@ -1146,6 +1271,11 @@ def decide(prefix, account, group, ident, mode, target):
     record["unknown"] = [f for f in record["unknown"] if f != wanted]
     write_record(target, record)
     print(json.dumps(dict(decided=True)))
+
+
+def stale(message):
+    """Nothing applied: what the owner saw has changed. The agent asks again."""
+    print(json.dumps(dict(decided=False, stale=True, message=message)))
 
 
 if __name__ == "__main__":

@@ -1000,16 +1000,19 @@ def test_revoke_under_now_unsafe_parent_uses_only_ledger_identity(
 
 
 @pytest.mark.parametrize("kind", ["fifo", "socket"])
-def test_revoke_removes_group_from_new_unusual_items(fake_tree, kind):
+def test_revoke_leaves_new_special_files_for_the_owner(fake_tree, kind):
+    """Re-review 3: removal never changes a file that is not a regular file or a
+    folder, even with the value Eugene's own default gives; the owner decides."""
     f = fake_tree
     record = {}
     f.h.grant(10, "1001", True, record, lambda _: None)
     mode = {"fifo": stat.S_IFIFO, "socket": stat.S_IFSOCK}[kind]
     child = f.add(kind, mode | 0o600)
-    # What Eugene's own default gives a new item.
     f.acl[child]["group:1001"] = f.acl[10]["default:group:1001"]
+    before = f.acl[child].copy()
     assert f.h.revoke(10, record)
-    assert "group:1001" not in f.acl[child]
+    assert [(u["kind"], u["identity"]) for u in record["unknown"]] == [("special", [7, child])]
+    assert f.acl[child] == before
 
 
 def test_revoke_reports_unsupported_special_acl_and_finishes_other_items(
@@ -1047,7 +1050,18 @@ def test_same_device_bind_mount_is_refused_on_grant_and_skipped_on_revoke(fake_t
         f.h.grant(10, "1001", False, {}, lambda _: None)
     last = f.add("last")
     f.acl[last]["group:1001"] = "r--"
-    record = {"group": "1001", "items": [{"after": {"default:group:1001": "r--"}}]}
+    f.acl[10]["default:group:1001"] = "r--"
+    record = {
+        "group": "1001",
+        "items": [
+            {
+                "names": [],
+                "identity": [10, 1, 2],
+                "before": {},
+                "after": {"default:group:1001": "r--"},
+            }
+        ],
+    }
     assert not f.h.revoke(10, record)
     assert f.acl[15] == private
     assert "group:1001" not in f.acl[last]
@@ -1658,8 +1672,9 @@ def test_decide_remove_checks_the_entry_again_and_deletes_only_it(
     f.h.revoke(10, record)
     target = configure_decide_main(f, monkeypatch, tmp_path, record, "remove", fingerprint)
     f.acl[seed]["group:1001"] = "rwx"  # changed again since it was found
-    with pytest.raises(ValueError, match="changed since"):
-        f.h.main()
+    f.h.main()
+    outcome = json.loads(capsys.readouterr().out)
+    assert outcome["stale"] is True and "changed since" in outcome["message"]
     assert f.acl[seed]["group:1001"] == "rwx"
     f.acl[seed]["group:1001"] = "rw-"
     f.h.main()
@@ -1706,7 +1721,12 @@ def test_revoke_never_changes_a_file_with_another_name(fake_tree):
     linked(f, seed)
     granted = f.acl[seed].copy()  # still exactly what the grant wrote
     assert f.h.revoke(10, record)
-    fingerprint = {"kind": "hardlink", "names": ["seed.txt"], "identity": [seed, 1, 2]}
+    fingerprint = {
+        "kind": "hardlink",
+        "names": ["seed.txt"],
+        "identity": [seed, 1, 2],
+        "links": 2,
+    }
     assert record["unknown"] == [fingerprint]
     assert f.acl[seed] == granted
     # A change by hand on such a file is left too: both names see it.
@@ -1722,7 +1742,12 @@ def test_a_kept_file_with_another_name_stays_and_is_reported(fake_tree):
     record = {}
     f.h.grant(10, "1001", False, record, lambda _: None)
     linked(f, seed)
-    fingerprint = {"kind": "hardlink", "names": ["seed.txt"], "identity": [seed, 1, 2]}
+    fingerprint = {
+        "kind": "hardlink",
+        "names": ["seed.txt"],
+        "identity": [seed, 1, 2],
+        "links": 2,
+    }
     record["accepted"] = [fingerprint]
     granted = f.acl[seed].copy()
     assert f.h.revoke(10, record)
@@ -1737,7 +1762,7 @@ def test_remove_on_a_file_with_another_name_is_the_owners_decision(fake_tree):
     record = {}
     f.h.grant(10, "1001", False, record, lambda _: None)
     linked(f, seed)
-    record["allowed"] = [[seed, 1, 2]]
+    record["allowed"] = [{"identity": [seed, 1, 2], "links": 2}]
     assert f.h.revoke(10, record)
     assert record["unknown"] == [] and f.acl[seed] == before
 
@@ -1815,5 +1840,199 @@ def test_deciding_remove_on_a_file_with_another_name_allows_its_removal(
     granted = f.acl[seed].copy()
     f.h.main()
     saved = json.loads(target.read_text())
-    assert saved["unknown"] == [] and saved["allowed"] == [[seed, 1, 2]]
+    assert saved["unknown"] == []
+    assert saved["allowed"] == [{"identity": [seed, 1, 2], "links": 2}]
     assert f.acl[seed] == granted  # the decision only allows; the removal changes it
+
+
+# --- Re-review 3 -----------------------------------------------------------------
+
+
+def special(f, name, links=1, entry="rw-"):
+    """A FIFO in the granted folder carrying an entry for the app's group."""
+    fd = f.add(name, stat.S_IFIFO | 0o600, links=links)
+    if entry:
+        f.acl[fd]["group:1001"] = entry
+    return fd
+
+
+def stale_or_decided(capsys):
+    return json.loads(capsys.readouterr().out)
+
+
+def test_remove_on_an_entry_never_changes_a_file_that_gained_another_name(
+    fake_tree, monkeypatch, tmp_path, capsys
+):
+    """Re-review 3 (blocker): an ordinary entry prompt, then an outside hard link,
+    then Remove: the entry went through both names. The decision checks the link
+    count on the held file; a file with another name now waits as a hard link."""
+    f = fake_tree
+    seed, record, fingerprint = changed_by_hand(f)
+    f.h.revoke(10, record)
+    assert record["unknown"] == [fingerprint]
+    configure_decide_main(f, monkeypatch, tmp_path, record, "remove", fingerprint)
+    linked(f, seed)
+    f.h.main()
+    outcome = stale_or_decided(capsys)
+    assert outcome["decided"] is False and outcome["stale"] is True
+    assert "another name" in outcome["message"]
+    assert f.acl[seed]["group:1001"] == "rw-"
+    f.h.revoke(10, record)
+    assert [(u["kind"], u["names"], u["links"]) for u in record["unknown"]] == [
+        ("hardlink", ["seed.txt"], 2)
+    ]
+    assert f.acl[seed]["group:1001"] == "rw-"
+
+
+def test_an_allowed_file_with_another_name_is_asked_again_when_it_gains_more(fake_tree):
+    f = fake_tree
+    seed = f.add("seed.txt")
+    record = {}
+    f.h.grant(10, "1001", False, record, lambda _: None)
+    granted = f.acl[seed].copy()
+    linked(f, seed, 3)
+    record["allowed"] = [{"identity": [seed, 1, 2], "links": 2}]
+    assert f.h.revoke(10, record)
+    assert [(u["kind"], u["links"]) for u in record["unknown"]] == [("hardlink", 3)]
+    assert f.acl[seed] == granted
+
+
+def test_each_special_file_is_its_own_decision_and_never_changed(fake_tree):
+    """Re-review 3 (blocker): two FIFOs, each with an entry and an outside link,
+    collapsed into one prompt (no identity, no name in the key). Keep on the one
+    prompt left both, and only one showed."""
+    f = fake_tree
+    record = {}
+    f.h.grant(10, "1001", False, record, lambda _: None)
+    first = special(f, "first.fifo", links=2)
+    second = special(f, "second.fifo", links=2)
+    quiet = special(f, "quiet.fifo", entry=None)  # nothing of the app's: no prompt
+    before = {fd: f.acl[fd].copy() for fd in (first, second, quiet)}
+    assert f.h.revoke(10, record)
+    assert sorted((u["kind"], u["names"][0], u["identity"]) for u in record["unknown"]) == [
+        ("special", "first.fifo", [7, first]),
+        ("special", "second.fifo", [7, second]),
+    ]
+    assert {fd: f.acl[fd] for fd in before} == before
+    record["accepted"] = [next(u for u in record["unknown"] if u["names"] == ["first.fifo"])]
+    assert f.h.revoke(10, record)
+    assert [u["names"] for u in record["unknown"]] == [["second.fifo"]]
+    assert [u["names"] for u in record["retained"]] == [["first.fifo"]]
+    assert {fd: f.acl[fd] for fd in before} == before
+
+
+def test_remove_on_a_special_file_lets_the_removal_take_only_its_entry(
+    fake_tree, monkeypatch, tmp_path, capsys
+):
+    f = fake_tree
+    record = {"path": "/srv/shared", "identity": [10, 1, 2], "write": False}
+    f.h.grant(10, "1001", False, record, lambda _: None)
+    pipe = special(f, "pipe.fifo")
+    f.acl[pipe]["user:42"] = "r--"
+    f.h.revoke(10, record)
+    (fingerprint,) = record["unknown"]
+    target = configure_decide_main(f, monkeypatch, tmp_path, record, "remove", fingerprint)
+    f.h.main()
+    assert stale_or_decided(capsys)["decided"] is True
+    saved = json.loads(target.read_text())
+    assert saved["allowed"] == [{"identity": [7, pipe], "links": 1}]
+    assert f.acl[pipe]["group:1001"] == "rw-"  # the decision allows; the removal changes it
+    assert f.h.revoke(10, saved)
+    assert saved["unknown"] == []
+    assert "group:1001" not in f.acl[pipe] and f.acl[pipe]["user:42"] == "r--"
+
+
+def test_a_new_file_is_compared_with_its_own_folder_default_only(fake_tree):
+    """Re-review 3: Eugene's defaults were pooled across folders, so a value Eugene
+    put on one folder made the same value set by hand elsewhere look like Eugene's."""
+    f = fake_tree
+    sub = f.add("sub", stat.S_IFDIR | 0o700)
+    f.acl[sub] = {
+        "user:": "rwx",
+        "group:": "---",
+        "other:": "---",
+        "default:user:": "rwx",
+        "default:group:": "---",
+        "default:other:": "---",
+        "default:group:1001": "rwx",
+        "default:mask:": "rwx",
+    }
+    record = {}
+    f.h.grant(10, "1001", False, record, lambda _: None)
+    assert f.acl[10]["default:group:1001"] == "r-x"
+    by_hand = f.add("new.txt")
+    f.acl[by_hand].update({"group:1001": "rwx", "mask:": "rwx"})
+    inherited = f.add("inherited.txt")
+    f.acl[inherited].update({"group:1001": "r-x", "mask:": "r-x"})
+    under = f.add("under.txt")
+    f.nodes[under] = (("sub", "under.txt"), *f.nodes[under][1:])
+    f.acl[under].update({"group:1001": "r-x", "mask:": "r-x"})
+    assert f.h.revoke(10, record)
+    asked = sorted(tuple(u["names"]) for u in record["unknown"])
+    # rwx on new.txt is not root's own r-x, though sub's default is rwx; and r-x
+    # under sub is not sub's rwx, though it is root's.
+    assert asked == [("new.txt",), ("sub", "under.txt")]
+    assert f.acl[by_hand]["group:1001"] == "rwx" and f.acl[under]["group:1001"] == "r-x"
+    assert "group:1001" not in f.acl[inherited]
+
+
+def test_a_new_folder_passes_its_inherited_default_to_what_is_made_inside(fake_tree):
+    f = fake_tree
+    record = {}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    value = f.acl[10]["default:group:1001"]
+    made = f.add("made", stat.S_IFDIR | 0o700)
+    f.acl[made].update({"group:1001": value, "default:group:1001": value})
+    inside = f.add("inside.txt")
+    f.nodes[inside] = (("made", "inside.txt"), *f.nodes[inside][1:])
+    f.acl[inside].update({"group:1001": value})
+    assert f.h.revoke(10, record)
+    assert record["unknown"] == []
+    assert "group:1001" not in f.acl[inside] and "group:1001" not in f.acl[made]
+
+
+def finished(f, monkeypatch, tmp_path, capsys):
+    """A record the helper finished, whose answer the agent never heard."""
+    seed, record, fingerprint = changed_by_hand(f)
+    record["accepted"] = [fingerprint]
+    f.h.revoke(10, record)
+    record["removed"] = True
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    return seed, target, fingerprint
+
+
+def test_a_finished_record_drops_a_kept_file_that_is_gone(
+    fake_tree, monkeypatch, tmp_path, capsys
+):
+    """Re-review 3: a finished record repeated its cached keeps, so the card could
+    show access to a file someone has since deleted."""
+    f = fake_tree
+    seed, target, fingerprint = finished(f, monkeypatch, tmp_path, capsys)
+    f.h.main()
+    assert [k["fingerprint"]["names"] for k in stale_or_decided(capsys)["kept"]] == [["seed.txt"]]
+    del f.nodes[seed]
+    f.h.main()
+    outcome = stale_or_decided(capsys)
+    assert outcome["removed"] is True and outcome["kept"] == []
+    assert json.loads(target.read_text())["retained"] == []
+
+
+def test_a_finished_record_follows_a_kept_file_that_was_renamed(
+    fake_tree, monkeypatch, tmp_path, capsys
+):
+    f = fake_tree
+    seed, target, fingerprint = finished(f, monkeypatch, tmp_path, capsys)
+    f.nodes[seed] = (("moved.txt",), *f.nodes[seed][1:])
+    f.h.main()
+    (kept,) = stale_or_decided(capsys)["kept"]
+    assert kept["path"] == "/srv/shared/moved.txt"
+
+
+def test_a_finished_record_drops_a_kept_entry_that_was_taken_away(
+    fake_tree, monkeypatch, tmp_path, capsys
+):
+    f = fake_tree
+    seed, target, fingerprint = finished(f, monkeypatch, tmp_path, capsys)
+    del f.acl[seed]["group:1001"]
+    f.h.main()
+    assert stale_or_decided(capsys)["kept"] == []

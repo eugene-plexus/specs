@@ -2144,9 +2144,12 @@ paths:
         so a kept entry is listed even when an earlier call failed
         before this record was saved.
 
-        An item changed since the agent found it (its permissions or its
-        owner on Windows) is not changed on the owner's old answer: the
-        removal runs again and asks again about what is there now.
+        An item changed since the agent found it is not changed on the
+        owner's old answer: its identity, its entry, its owner and
+        permissions on Windows, or its number of names (a file that
+        gained another name outside the folder is asked about again as
+        hardlink). The removal runs again and asks again about what is
+        there now.
 
         An entry that changed since the agent found it, or that the
         agent cannot change, is not removed; the response names the
@@ -10361,7 +10364,7 @@ components:
 
     FolderAccessUnknownKind:
       type: string
-      enum: [entry, null_dacl, owner, unreadable, hardlink]
+      enum: [entry, null_dacl, owner, unreadable, hardlink, special]
       description: |
         entry is a permission entry for the app's account. null_dacl is
         a Windows item with no permission list, which lets everyone
@@ -10369,8 +10372,12 @@ components:
         change the item's permissions. unreadable means Eugene cannot
         read the item's permissions. hardlink is a file with another
         name outside the folder: removal never changes such a file on
-        its own, since the change would reach that name too. Remove
-        lets the removal change it; Keep leaves it as it is.
+        its own, since the change would reach that name too. special is
+        a pipe, socket or device holding an entry for the app's account
+        (Linux): removal never changes one on its own. Each file is its
+        own entry. For hardlink and special, Remove lets the removal
+        change that file, at no more names than it has when the owner
+        decides; Keep leaves it as it is.
 
     FolderAccessUnknownDecision:
       type: string
