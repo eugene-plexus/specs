@@ -43,6 +43,9 @@ def generated(windows: bool) -> str:
     else:
         output += ["write_removal_bundle() {", '    mkdir -p "$PREFIX/uninstall"']
         for target, source in files.items():
+            if target == "remove.sh":
+                output.append('    removal_script > "$PREFIX/uninstall/remove.sh"')
+                continue
             marker = "EUGENE_REMOVAL_" + target.replace(".", "_").upper()
             output += [
                 f"    cat > \"$PREFIX/uninstall/{target}\" <<'{marker}'",
@@ -56,6 +59,16 @@ def generated(windows: bool) -> str:
             'exec /bin/sh "$HERE/remove.sh" --interactive',
             "EUGENE_REMOVAL_COMMAND",
             '    chmod 700 "$PREFIX/uninstall/Remove Eugene.command" "$PREFIX/uninstall/remove.sh"',
+            "}",
+        ]
+        # The removal script on its own as well (row 8): a Mac system
+        # install keeps root's own copy of it outside the prefix, which
+        # Eugene's account can write.
+        output += [
+            "removal_script() {",
+            "    cat <<'EUGENE_REMOVAL_REMOVE_SH'",
+            (ROOT / "uninstall.sh").read_text(encoding="utf-8").rstrip(),
+            "EUGENE_REMOVAL_REMOVE_SH",
             "}",
         ]
     output += [END]

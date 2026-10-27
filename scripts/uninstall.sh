@@ -2,20 +2,276 @@
 # Offline removal. The installer embeds this script and inventory.py.
 set -eu
 PREFIX=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
-INTERACTIVE=0 PURGE_DOWNLOADS=0 PURGE_DATA=0
+INTERACTIVE=0 PURGE_DOWNLOADS=0 PURGE_DATA=0 PERSON=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --prefix) PREFIX=$2; shift 2 ;;
         --interactive) INTERACTIVE=1; shift ;;
         --purge-downloads|--purge-model-copies) PURGE_DOWNLOADS=1; shift ;;
         --purge-data) PURGE_DATA=1; shift ;;
+        --person) PERSON=$2; shift 2 ;;
         *) echo "Unknown removal option: $1" >&2; exit 2 ;;
     esac
 done
 PLATFORM=$(uname -s)
-case "$PREFIX" in ''|/|"$HOME"|/Applications|/usr|/var|/opt|*/../*|*/./*) echo "Not an installation folder: $PREFIX" >&2; exit 1 ;; esac
+case "$PREFIX" in ''|/|"$HOME"|/Applications|/usr|/usr/local|/var|/opt|*/../*|*/./*) echo "Not an installation folder: $PREFIX" >&2; exit 1 ;; esac
 if [ ! -d "$PREFIX" ]; then echo "Nothing installed at $PREFIX"; exit 0; fi
 if [ -L "$PREFIX" ]; then echo "Refusing a linked installation folder: $PREFIX" >&2; exit 1; fi
+
+# --- a Mac's system install (row 8) -----------------------------------------
+# Eugene runs as a LaunchDaemon in its own account, `_eugeneplexus`, from a
+# prefix only that account can read. Removing it is root's work: stop the
+# job, keep the files as root's alone, and remove the account only when the
+# installer recorded making it. Nothing from the prefix runs here, because
+# that account can write it: this is root's own copy of the script, outside
+# the prefix, and only system tools run as root. A daemon whose program is
+# in another folder is another install's, and is left alone.
+DAEMON_LABEL=com.eugeneplexus.agent
+DAEMON_PLIST=/Library/LaunchDaemons/$DAEMON_LABEL.plist
+RECEIPTS=/usr/local/lib/eugene-plexus
+SERVICE_ACCOUNT=_eugeneplexus
+IS_DAEMON=0 PLIST_OURS=0
+if [ "$PLATFORM" = Darwin ]; then
+    if [ -f "$DAEMON_PLIST" ]; then
+        PROGRAM=$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - "$DAEMON_PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$DAEMON_PLIST" 2>/dev/null || true)
+        REAL_PREFIX=$(CDPATH= cd -- "$PREFIX" 2>/dev/null && pwd -P || printf '%s' "$PREFIX")
+        case "$PROGRAM" in "$PREFIX"/*|"$REAL_PREFIX"/*) PLIST_OURS=1 ;; esac
+    fi
+    # A prefix Eugene's account owns is the daemon layout even with its job
+    # gone, and root must never run the Python in it (the steps below do).
+    if [ "$PLIST_OURS" = 1 ] || [ "$(stat -f %Su "$PREFIX" 2>/dev/null)" = "$SERVICE_ACCOUNT" ]; then
+        IS_DAEMON=1
+    fi
+fi
+if [ "$IS_DAEMON" = 1 ]; then
+    dialog() {
+        [ "$INTERACTIVE" = 1 ] || return 0
+        /usr/bin/osascript - "$1" "$2" <<'APPLE' >/dev/null 2>&1 || true
+on run argv
+    display dialog (item 2 of argv) with title (item 1 of argv) buttons {"OK"} default button "OK"
+end run
+APPLE
+    }
+    die_daemon() {
+        printf 'error: %s\n' "$*" >&2
+        dialog "Eugene removal did not finish" "$*"
+        exit 1
+    }
+    if [ "$(id -u)" != 0 ]; then
+        # Root runs this script again, so it must be root's: owned by root,
+        # written by nobody else, in a folder only root can write.
+        SELF=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")
+        for path in "$SELF" "$(dirname -- "$SELF")"; do
+            [ "$(stat -f %u "$path" 2>/dev/null)" = 0 ] || die_daemon "Removing Eugene needs root's own copy of its removal: run $RECEIPTS/remove.sh. Nothing was removed."
+            case "$(stat -f %Sp "$path" 2>/dev/null)" in
+                ?????w*|????????w*) die_daemon "$path can be changed by others, so it was not run as root. Nothing was removed." ;;
+            esac
+        done
+        set -- /bin/sh "$SELF" --prefix "$PREFIX" --person "$(id -un)"
+        [ "$PURGE_DOWNLOADS" != 1 ] || set -- "$@" --purge-downloads
+        [ "$PURGE_DATA" != 1 ] || set -- "$@" --purge-data
+        if [ "$INTERACTIVE" != 1 ]; then
+            exec sudo "$@"
+        fi
+        if ! /usr/bin/osascript - "$PREFIX" <<'APPLE' >/dev/null 2>&1
+on run argv
+    display dialog ("Remove Eugene from this Mac?" & return & "It stops starting at boot, and its own account is removed. Its settings are kept, readable by administrators only, beside " & item 1 of argv & ". A copy kept when Eugene moved to its own account is deleted.") with title "Remove Eugene Plexus" buttons {"Cancel", "Remove Eugene"} default button "Cancel" cancel button "Cancel" with icon caution
+end run
+APPLE
+        then echo 'Removal cancelled.'; exit 0; fi
+        if REPORT=$(/usr/bin/osascript - "$@" <<'APPLE' 2>&1
+on run argv
+    set command to ""
+    repeat with anArgument in argv
+        set command to command & " " & quoted form of (contents of anArgument)
+    end repeat
+    do shell script command with administrator privileges
+end run
+APPLE
+        ); then
+            printf '%s\n' "$REPORT"
+            dialog "Eugene removal" "$REPORT"
+            exit 0
+        fi
+        die_daemon "Eugene was not removed: $REPORT"
+    fi
+
+    # Root from here on.
+    WARNINGS=$(mktemp "/tmp/eugene-plexus-removal.XXXXXX")
+    warn() { printf 'warning: %s\n' "$*" >&2; printf '%s\n' "$*" >> "$WARNINGS"; }
+    if [ "$PLIST_OURS" = 1 ]; then
+        if launchctl print "system/$DAEMON_LABEL" >/dev/null 2>&1; then
+            if ! SAID=$(launchctl bootout "system/$DAEMON_LABEL" 2>&1); then
+                rm -f "$WARNINGS"
+                die_daemon "macOS refused to stop Eugene's startup job: ${SAID:-launchctl gave no reason}. Nothing was removed."
+            fi
+        fi
+        rm -f "$DAEMON_PLIST"
+    fi
+    # Anything still running from the prefix, its engines included. Match
+    # an executable's path, never a pattern.
+    PIDS=$(ps -axo pid=,comm= | awk -v root="$PREFIX/" '{pid=$1; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, ""); if(index($0,root)==1) print pid}')
+    for pid in $PIDS; do kill -TERM "$pid" 2>/dev/null || true; done
+    tries=0
+    while [ "$tries" -lt 15 ]; do
+        alive=0
+        for pid in $PIDS; do if kill -0 "$pid" 2>/dev/null; then alive=1; fi; done
+        [ "$alive" = 0 ] && break
+        sleep 1; tries=$((tries + 1))
+    done
+    for pid in $PIDS; do
+        if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || warn "Eugene process $pid did not stop."; fi
+    done
+    # The firewall entry the installer added for this install's Python.
+    if [ -f "$RECEIPTS/firewall.txt" ]; then
+        while IFS= read -r program; do
+            case "$program" in "$PREFIX"/*) ;; *) continue ;; esac
+            /usr/libexec/ApplicationFirewall/socketfilterfw --remove "$program" >/dev/null 2>&1 \
+                || warn "Firewall entry kept: $program. Remove it in System Settings > Network > Firewall > Options."
+        done < "$RECEIPTS/firewall.txt"
+    fi
+    # Keychain entries the person's own install made before it moved to the
+    # daemon (os_keyring); they are named by this install's master salt.
+    # Read as root, so never through a link the account left there.
+    SALT=
+    if [ -f "$PREFIX/agent.yaml" ] && [ ! -L "$PREFIX/agent.yaml" ]; then
+        SALT=$(sed -n 's/^[[:space:]]*masterSalt:[[:space:]]*//p' "$PREFIX/agent.yaml" 2>/dev/null | head -n 1 | tr -d "'\"")
+    fi
+    if [ -n "$PERSON" ] && [ -n "$SALT" ] && id -u "$PERSON" >/dev/null 2>&1 && [ "$PERSON" != root ]; then
+        FP=$(printf '%s' "$SALT" | base64 --decode 2>/dev/null | shasum -a 256 | cut -c1-12)
+        for service in eugene-plexus-agent eugene-plexus-control; do
+            for name in "master-key:$FP" "master-key-$FP"; do
+                rc=0
+                sudo -u "$PERSON" /usr/bin/security delete-generic-password -s "$service" -a "$name" >/dev/null 2>&1 || rc=$?
+                case "$rc" in 0|44) ;; *) warn "Keychain entry kept: $service ($name). Remove it in Keychain Access." ;; esac
+            done
+        done
+    fi
+    # The files stay, as root's alone: the account goes next, and files
+    # left with its number would belong to whichever account gets it. The
+    # top folder is root's and closed, so nothing inside is reachable; it
+    # is not chowned through, where a hard link the account made could
+    # hand another person's file to root.
+    # An ACL entry on it (the account owned it, and could add one that lets
+    # somebody search it) survives a numeric chmod: taken off, and checked.
+    KEEP=$PREFIX.removed-$(date +%Y%m%d%H%M%S)
+    [ ! -e "$KEEP" ] || die_daemon "The retained folder already exists: $KEEP. Nothing more was removed."
+    mv -- "$PREFIX" "$KEEP" || die_daemon "Could not move $PREFIX to $KEEP. Eugene no longer starts; run the removal again."
+    chown -h root:wheel "$KEEP" || warn "Could not give $KEEP to root."
+    chmod -h -N "$KEEP" >/dev/null 2>&1 || true
+    chmod -h 0700 "$KEEP"
+    CLOSED=$(ls -lden "$KEEP" 2>/dev/null || true)
+    case "$(printf '%s\n' "$CLOSED" | awk 'NR == 1 {print $1, $3, $4}')" in
+        "drwx------ 0 0"|"drwx------@ 0 0") [ "$(printf '%s\n' "$CLOSED" | wc -l | tr -d ' ')" = 1 ] \
+            || warn "$KEEP still carries an ACL entry: sudo chmod -N '$KEEP'" ;;
+        *) warn "$KEEP is not closed to everyone but root: $(printf '%s' "$CLOSED" | head -n 1)" ;;
+    esac
+    # The engine builds and model copies this install downloaded, as the
+    # Linux system removal names them: the account's home is the prefix.
+    if [ "$PURGE_DOWNLOADS" = 1 ]; then rm -rf -- "$KEEP/engines" "$KEEP/.eugene-plexus" || warn "Could not remove the engine builds in $KEEP."; fi
+    if [ "$PURGE_DATA" = 1 ]; then
+        # Everything but a models folder, which holds a person's files.
+        for item in "$KEEP"/* "$KEEP"/.[!.]*; do
+            [ -e "$item" ] || [ -L "$item" ] || continue
+            [ "${item##*/}" = models ] && continue
+            rm -rf -- "$item" || warn "Could not remove $item."
+        done
+        rmdir "$KEEP" 2>/dev/null || true
+    fi
+    # The account, only when the installer made it, and only that account.
+    if [ -f "$RECEIPTS/account.txt" ]; then
+        read -r _kind UID_MADE GID_MADE GROUP_MADE < "$RECEIPTS/account.txt" || true
+        if [ "$(id -u "$SERVICE_ACCOUNT" 2>/dev/null)" = "$UID_MADE" ] && [ -n "$UID_MADE" ] && [ "$UID_MADE" != 0 ]; then
+            for group in $(id -Gn "$SERVICE_ACCOUNT" 2>/dev/null); do
+                [ "$group" = "$SERVICE_ACCOUNT" ] && continue
+                dseditgroup -o edit -d "$SERVICE_ACCOUNT" -t user "$group" >/dev/null 2>&1 || true
+            done
+            dscl . -delete "/Users/$SERVICE_ACCOUNT" || warn "Could not remove the $SERVICE_ACCOUNT account: sudo dscl . -delete /Users/$SERVICE_ACCOUNT"
+        fi
+        if [ "$GROUP_MADE" = 1 ] && [ -n "$GID_MADE" ] && [ "$GID_MADE" != 0 ] \
+                && [ "$(dscl . -read "/Groups/$SERVICE_ACCOUNT" PrimaryGroupID 2>/dev/null | awk '{print $2}')" = "$GID_MADE" ]; then
+            dscl . -delete "/Groups/$SERVICE_ACCOUNT" || warn "Could not remove the $SERVICE_ACCOUNT group: sudo dscl . -delete /Groups/$SERVICE_ACCOUNT"
+        fi
+    fi
+    # The models folder's group, and its entry in the person's home ACL:
+    # the entry always -- in the home the installer recorded putting it in,
+    # so root running this alone finds it, and in the home of the person
+    # who asked -- and the group only when the installer made it.
+    MODELS_GROUP=_eugeneplexusmodels
+    HOMES=
+    if [ -f "$RECEIPTS/models-ace.txt" ]; then HOMES=$(cat "$RECEIPTS/models-ace.txt"); fi
+    if [ -n "$PERSON" ] && [ "$PERSON" != root ]; then
+        HOMES="$HOMES
+$(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHomeDirectory: //p' | head -n 1)"
+    fi
+    # Read back by name (`ls -le`; with -n macOS prints the group's UUID):
+    # an entry that stays is said, and its receipt kept for the next try.
+    ACE_LEFT=0
+    OLD_IFS=$IFS
+    set -f
+    IFS='
+'
+    for HOME_OF in $HOMES; do
+        IFS=$OLD_IFS
+        case "$HOME_OF" in /?*) ;; *) continue ;; esac
+        [ -d "$HOME_OF" ] || continue
+        chmod -h -a "group:$MODELS_GROUP allow search" "$HOME_OF" >/dev/null 2>&1 || true
+        if ls -led "$HOME_OF" 2>/dev/null | grep -qF "group:$MODELS_GROUP allow search"; then
+            warn "Could not take Eugene's entry out of $HOME_OF's ACL: sudo chmod -a 'group:$MODELS_GROUP allow search' '$HOME_OF'"
+            ACE_LEFT=1
+        fi
+    done
+    IFS=$OLD_IFS
+    set +f
+    if [ -f "$RECEIPTS/models-group.txt" ]; then
+        read -r _kind MODELS_GID < "$RECEIPTS/models-group.txt" || true
+        if [ -n "$MODELS_GID" ] && [ "$MODELS_GID" != 0 ] \
+                && [ "$(dscl . -read "/Groups/$MODELS_GROUP" PrimaryGroupID 2>/dev/null | awk '{print $2}')" = "$MODELS_GID" ]; then
+            dscl . -delete "/Groups/$MODELS_GROUP" || warn "Could not remove the $MODELS_GROUP group: sudo dscl . -delete /Groups/$MODELS_GROUP"
+        fi
+    fi
+    # The removal app, only ours (its recorded prefix is this one).
+    if [ -f "$RECEIPTS/mac-app.txt" ]; then
+        APP=$(cat "$RECEIPTS/mac-app.txt")
+        case "$APP" in */Applications/"Remove Eugene Plexus"*.app)
+            if [ -f "$APP/Contents/Resources/prefix.txt" ] && [ "$(cat "$APP/Contents/Resources/prefix.txt")" = "$PREFIX" ]; then rm -rf -- "$APP"; fi ;;
+        esac
+    fi
+    # The old per-user install a move kept beside the prefix: a copy of
+    # this machine's keys from before the move, root's alone. Removing
+    # Eugene deletes it -- only a real folder of root's with that name.
+    for OLD_COPY in "$PREFIX".moved-[0-9]*; do
+        [ -d "$OLD_COPY" ] && [ ! -L "$OLD_COPY" ] || continue
+        if [ "$(ls -lden "$OLD_COPY" 2>/dev/null | awk 'NR == 1 {print $3, $4}')" != "0 0" ]; then
+            warn "Kept $OLD_COPY: it is not root's, so it was not deleted."
+            continue
+        fi
+        if rm -rf -- "$OLD_COPY"; then
+            echo "Deleted the copy kept from before Eugene moved to its own account: $OLD_COPY"
+        else
+            warn "Could not delete $OLD_COPY: sudo rm -rf '$OLD_COPY'"
+        fi
+    done
+    [ "$ACE_LEFT" = 1 ] || rm -f "$RECEIPTS/models-ace.txt"
+    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/move-report.txt" "$RECEIPTS/remove.sh"
+    rmdir "$RECEIPTS" 2>/dev/null || true
+    echo "Eugene's removal finished. It no longer starts at boot."
+    if [ -d "$KEEP" ]; then
+        echo "Its settings and logs are kept, readable by administrators only: $KEEP"
+        echo "Delete them when you are sure: sudo rm -rf '$KEEP'"
+    fi
+    echo 'Your model folders were kept.'
+    if [ -s "$WARNINGS" ]; then echo 'Items to review:'; cat "$WARNINGS"; rm -f "$WARNINGS"; exit 1; fi
+    rm -f "$WARNINGS"
+    exit 0
+fi
+# A per-user install is removed by its person: as root this would run the
+# Python in their folder as root.
+if [ "$PLATFORM" = Darwin ] && [ "$(id -u)" = 0 ]; then
+    echo "The install at $PREFIX belongs to a person's own account. Run its removal as that person, without sudo. Nothing was removed." >&2
+    exit 1
+fi
 if [ ! -f "$PREFIX/agent.yaml" ] && [ ! -f "$PREFIX/node.yaml" ] && [ ! -f "$PREFIX/bin/uv" ] && [ ! -f "$PREFIX/uninstall/receipt/inventory.json" ]; then
     echo "No Eugene installation or removal receipt at $PREFIX. Nothing was removed." >&2; exit 1
 fi

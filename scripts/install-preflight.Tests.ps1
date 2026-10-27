@@ -217,6 +217,44 @@ Describe 'Windows installer migration preflight' {
     }
 }
 
+Describe 'How a joining machine is shown (-Label)' {
+    # Row 8. Refused before anything is looked at or written, and before
+    # the elevated window, which would only refuse it again.
+    BeforeEach {
+        Mock Start-Process { throw 'TEST: elevation must not be reached' }
+        Mock Write-Host {}
+        $script:Untouched = Join-Path $TestDrive 'never made'
+    }
+
+    It 'is refused without -Join, and says where the first machine is named' {
+        { & $preflight -Prefix $script:Untouched -Label 'Studio PC' -NoElevate } |
+            Should Throw 'The first machine''s name is asked on its setup page'
+        Test-Path $script:Untouched | Should Be $false
+    }
+
+    It 'is refused when it holds a double quote, which PowerShell 5.1 passes on wrongly' {
+        { & $preflight -Prefix $script:Untouched -Join 'http://h:8083' -Token 't' -Label 'The "big" one' -NoElevate } |
+            Should Throw 'double quote'
+        Test-Path $script:Untouched | Should Be $false
+    }
+
+    It 'is refused when it ends in a backslash, which PowerShell 5.1 also passes on wrongly' {
+        { & $preflight -Prefix $script:Untouched -Join 'http://h:8083' -Token 't' -Label 'Studio PC\' -NoElevate } |
+            Should Throw 'backslash'
+    }
+
+    It 'is a label a job site''s join uses before -NodeName and the computer name' {
+        $source | Should Match '\$siteLabel = if \(\$Label\) \{ \$Label \} elseif \(\$NodeName\) \{ \$NodeName \} else \{ \$env:COMPUTERNAME \}'
+    }
+}
+
+Describe 'install.ps1 stays ASCII' {
+    It 'has no byte at or above 0x80, so Windows PowerShell 5.1 reads it without a BOM' {
+        $bytes = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'install.ps1'))
+        @($bytes | Where-Object { $_ -ge 0x80 }).Count | Should Be 0
+    }
+}
+
 # 2026-09-24: `%ProgramData%` hands every folder under it Users read and
 # Users add, so on a service install every local account could read the
 # install's signing key and plant code the service runs. These run on
@@ -657,6 +695,41 @@ Describe 'A join takes over whatever is here' {
         Assert-MockCalled Restore-EugeneInstall -Scope It -Times 0 -Exactly
         Assert-MockCalled Copy-EngineBuilds -Scope It -Times 1 -Exactly -ParameterFilter {
             $Source -eq (Join-Path $Root 'old.replaced-1\engines') }
+    }
+
+    It 'hands -Label to the join as one argument, through Windows PowerShell''s own native call' {
+        # Row 8. A real program, so the argument is split by the same rules
+        # every native program uses, after PowerShell 5.1 quoted it.
+        $exe = Join-Path $Root 'record-args.exe'
+        New-Item -ItemType Directory -Force -Path $Root | Out-Null
+        Add-Type -OutputType ConsoleApplication -OutputAssembly $exe -TypeDefinition @'
+public static class RecordArgs {
+    public static int Main(string[] args) {
+        System.IO.File.WriteAllLines(System.Environment.GetEnvironmentVariable("EP_RECORD_ARGS"), args);
+        return 0;
+    }
+}
+'@
+        $record = Join-Path $Root 'args.txt'
+        [Environment]::SetEnvironmentVariable('EP_RECORD_ARGS', $record, 'Process')
+        try {
+            foreach ($shown in @('Studio PC', "Troy's `$HOME box", 'plain')) {
+                $Join = 'http://192.168.16.252:8283'; $Token = 't'; $Config = Join-Path $Root 'agent.yaml'
+                $AgentEx = $exe; $Label = $shown; $NodeName = $null; $Advertise = $null
+                $JoinCommitted = $false
+                $SetAside = $null
+                . $runJoin
+                $got = @([IO.File]::ReadAllLines($record))
+                $at = [array]::IndexOf($got, '--label')
+                $at | Should Not Be -1
+                $got[$at + 1] | Should BeExactly $shown
+                $got.Count | Should Be ($at + 2)
+            }
+            $Label = $null
+            . $runJoin
+            @([IO.File]::ReadAllLines($record)) -contains '--label' | Should Be $false
+        }
+        finally { [Environment]::SetEnvironmentVariable('EP_RECORD_ARGS', $null, 'Process') }
     }
 
     It 'sets installs aside after the trap that restores them and before anything is written' {
