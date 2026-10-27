@@ -479,6 +479,11 @@ jobs:
       - name: A stolen worker key tried against every other process, then revoked
         if: matrix.shard == 'L2' || matrix.shard == 'W2'
         run: python specs/scripts/row3-per-node-keys-acceptance.py --lan
+      # Row 46: with its root stopped past its limit, a machine refuses another
+      # machine's stop request and still answers; the refusal sabotaged must fail.
+      - name: A machine cut off from its root refuses other machines' changes and still answers (row 46)
+        if: matrix.shard == 'L1' || matrix.shard == 'W2'
+        run: python specs/scripts/row46-frozen-trust-acceptance.py --sabotage
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
@@ -947,6 +952,10 @@ jobs:
         run: bash scripts/r37-install-sh-checks.sh
       - name: Verify the regressions detect broken architecture selection
         run: python3 scripts/r37-sabotage.py
+      # Row 8: --label, and the Mac's system layout on stand-ins for its tools
+      # (the real Mac run is a4-macos.yml's row8-daemon job).
+      - name: Check --label and the Mac daemon layout, its move and its rollback
+        run: bash scripts/row8-install-sh-checks.sh
 
   system-update:
     name: Linux system install updates itself through its root helper

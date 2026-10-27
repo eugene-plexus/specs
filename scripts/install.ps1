@@ -109,6 +109,8 @@ param(
     [string]$Join,
     [string]$Token,
     [string]$NodeName,
+    # Row 8: how people see this machine ("Studio PC"), given to the join.
+    [string]$Label,
     [string]$Advertise,
     [switch]$JobSite,
     [string]$Owner,
@@ -133,14 +135,14 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
-    "agent"            = "919a01c119d30a4882950e74d5a4396bd3a8478f"
+    "agent"            = "e00c4ecabe1fd78232d5b510a0b7328af304bf73"
     "control"          = "c25e467304e5daaa4d7213ab74b94478fde35f24"
     "gateway"          = "02b30ac0a699dbe7e8e6c65902666a0de1275132"
     "inference-driver" = "7fb4c875ef86ae65b601249818212b2934d8b506"
     "library"          = "1b015632de2dddde6139719916b77128a9019869"
     "store"            = "92d59cb4f703c9564b0f41203d2d36f95feb9460"
     "tool-driver"      = "a9c8b03439b60d2ba24275bf9f17da02c245190e"
-    "ui"               = "ec6bc5f3d02fc5b2751d249afd918f2bb8735207"  # branch `dist`, not `main`
+    "ui"               = "fd7149b2df87ed70b8834b0b701c11a6d351c17e"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -207,6 +209,23 @@ if ($Isolated) {
     }
     if (Test-Path -LiteralPath $Prefix) {
         Die "-Isolated requires a new prefix; the target already exists"
+    }
+}
+
+# **-Label names this machine when it joins** (row 8), and nothing else
+# reads it. Refused before anything is looked at: Windows PowerShell 5.1
+# hands a native program an argument holding a double quote, or ending in
+# a backslash, wrongly, so the join would get a different name or none.
+# The agent and the control root check the rest of it.
+if ($Label) {
+    if (-not $Join) {
+        Die "-Label names this machine when it joins an install. The first machine's name is asked on its setup page."
+    }
+    if ($Label.Contains('"')) {
+        Die "-Label cannot hold a double quote: Windows PowerShell would not pass it on as typed. Choose a name without one."
+    }
+    if ($Label.EndsWith('\')) {
+        Die "-Label cannot end with a backslash: Windows PowerShell would not pass it on as typed. Choose a name without one."
     }
 }
 
@@ -1826,7 +1845,7 @@ this machine is not a node yet.
        again. A machine that is only a job site waits for the standalone install.
 "@
     }
-    $siteLabel = if ($NodeName) { $NodeName } else { $env:COMPUTERNAME }
+    $siteLabel = if ($Label) { $Label } elseif ($NodeName) { $NodeName } else { $env:COMPUTERNAME }
     $siteArgs = @("site", "join", "--url", $Join, "--token", $Token, "--owner", $Owner, "--label", $siteLabel)
     if ($RootKey) { $siteArgs += @("--root-key", $RootKey) }
     if ($SiteAccount) { $siteArgs += @("--site-account", $SiteAccount) }
@@ -3489,6 +3508,7 @@ if ($Join) {
     $joinArgs = @("join", "--control", $Join, "--token", $Token)
     Say "joining $Join as a worker node"
     if ($NodeName) { $joinArgs += @("--name", $NodeName) }
+    if ($Label) { $joinArgs += @("--label", $Label) }
     if ($Advertise) { $joinArgs += @("--advertise", $Advertise) }
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @joinArgs

@@ -128,3 +128,62 @@ jobs:
             a4-report.json
             agent-log-tail.txt
           if-no-files-found: warn
+
+  # Row 8 (docs/design/rows/row-08.md, section 5): the LaunchDaemon in its own
+  # account, the move from a LaunchAgent install, its rollback and removal.
+  # A runner of its own, because it installs and removes for real with sudo.
+  row8-daemon:
+    name: Row 8 daemon on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.platforms || '["macos-14","macos-15","macos-26"]') }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # The daemon asks GitHub for llama.cpp's releases anonymously, as A4's
+      # agent does; this build is used only when GitHub refuses it.
+      - name: A llama.cpp macOS build, in case GitHub refuses the agent
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dest="$RUNNER_TEMP/llama"
+          mkdir -p "$dest"
+          for tag in $(gh release list --repo ggml-org/llama.cpp --limit 8 --json tagName --jq '.[].tagName'); do
+            if gh release download "$tag" --repo ggml-org/llama.cpp --pattern '*bin-macos-arm64*' --dir "$dest"; then
+              echo "fetched $tag"
+              break
+            fi
+          done
+          cd "$dest"
+          for archive in *; do
+            case "$archive" in
+              *.zip) unzip -q "$archive" ;;
+              *.tar.gz) tar xzf "$archive" ;;
+            esac
+          done
+          server=$(find "$dest" -name llama-server -type f | head -1)
+          if [ -n "$server" ]; then
+            echo "EP_LLAMA_FALLBACK_DIR=$(dirname "$server")" >> "$GITHUB_ENV"
+          fi
+      - name: The daemon, the move from a LaunchAgent, and removal
+        env:
+          EP_PIN_AGENT: ${{ inputs.agent_ref }}
+          EP_PIN_LIBRARY: ${{ inputs.library_ref }}
+          EP_PIN_GATEWAY: ${{ inputs.gateway_ref }}
+          EP_PIN_DRIVER: ${{ inputs.driver_ref }}
+        run: python scripts/row8-macos-daemon-acceptance.py --report row8-report.json
+      - name: Keep the report and the agent logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: row8-${{ matrix.os }}
+          path: |
+            row8-report.json
+            agent-log-tail-a.txt
+            agent-log-tail-b.txt
+          if-no-files-found: warn
