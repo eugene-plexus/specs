@@ -947,6 +947,10 @@ jobs:
         run: bash scripts/r37-install-sh-checks.sh
       - name: Verify the regressions detect broken architecture selection
         run: python3 scripts/r37-sabotage.py
+      # Row 8: --label, and the Mac's system layout on stand-ins for its tools
+      # (the real Mac run is a4-macos.yml's row8-daemon job).
+      - name: Check --label and the Mac daemon layout, its move and its rollback
+        run: bash scripts/row8-install-sh-checks.sh
 
   system-update:
     name: Linux system install updates itself through its root helper

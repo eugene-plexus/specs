@@ -451,6 +451,13 @@ The session that wrote this was **unelevated**, which is the same sentence
   *the promise is the requirement*, the wizard's sentence is untrue on
   all three platforms and only one has been fixed.** Named here so it is
   a decision rather than an oversight.
+  *Since then (2026-10-21):* Linux's default has been a system unit in
+  Eugene's own account since alpha.3, and row 8
+  ([rows/row-08.md](rows/row-08.md)) makes a Mac's default a LaunchDaemon
+  in its own account, `_eugeneplexus`, which starts at boot before anyone
+  signs in. The sentence is now true on all three platforms' defaults; it
+  is still false on `--user` and `-NoService` installs, which the wizard
+  does not yet tell apart (a ui issue, filed from row 8).
 * **`_RESTART_PACES` sums to ~37 s against a `SvcStop` that allows 90.**
   A stop that takes longer than the last pacer leaves the service
   stopped, and the helper's output goes nowhere. Bounded on purpose —

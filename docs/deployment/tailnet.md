@@ -154,7 +154,9 @@ says plainly that **this agent's own socket has not moved yet** — a
 listening socket is fixed for the life of a process, so the agent has to
 be restarted before it answers anywhere new. The card offers to do that
 where something would start it again (a service, a logon task, a systemd
-unit, a launchd agent) and prints the command where nothing would.
+unit, a launchd job) and prints the command where nothing would. A Mac's
+daemon cannot ask launchd to restart a system job, so it ends itself and
+launchd starts it again.
 
 Use the switch for a single machine you want to open to your own
 network. Keep reading this section for a tailnet, a container, or a
@@ -223,8 +225,19 @@ an install):
 
 ```bash
 tailscale up
-curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/edge/scripts/install.sh | sh -s -- --join http://100.64.0.1:8083 --token <the token> --name gpu-box --advertise http://100.64.0.2:8079
+curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/edge/scripts/install.sh | sh -s -- --join http://100.64.0.1:8083 --token <the token> --name gpu-box --label "GPU box" --advertise http://100.64.0.2:8079
 ```
+
+`--label` (`-Label` on Windows) is how people see the machine on Machines,
+spaces allowed; `--name` stays its identity. Both are optional, and the
+label can be changed later from Machines. The form on Add a machine
+("Shown as") puts it in the command for you. `install.ps1` refuses a label
+with a double quote or a final backslash, which Windows PowerShell 5.1
+would pass on wrongly.
+
+On a Mac, the installer runs Eugene as a LaunchDaemon in its own account,
+`_eugeneplexus`, so a joined Mac starts at boot, before anyone signs in, as
+a Linux machine does. It asks for your password once.
 
 By hand, from a checkout, it is the same two steps the installer performs:
 
