@@ -41,6 +41,8 @@ PINNED_STEPS = {
     "row57-responses-tools-acceptance.py": (EVERY, "linux"),
     # Row 53 (2026-10-23): files kept for one owner each, through the store.
     "row53-store-acceptance.py": (EVERY, "both"),
+    # Row 54 (2026-10-26): stored responses and conversations, for their owners only.
+    "row54-stored-responses-acceptance.py": (EVERY, "both"),
     # Row 24 (2026-10-22): rotating a client key under a running stream.
     "ck-rotate-acceptance.py": (EVERY, "both"),
     "row70c-workbench-groups-acceptance.py": (EVERY, "both"),
@@ -54,6 +56,8 @@ PINNED_STEPS = {
     "ls5-preparation-acceptance.py": (FULL, "both"),
     "runtime-stop-acceptance.py": (EVERY, "both"),
     "row43-cards-left-acceptance.py": (EVERY, "linux"),
+    # Row 36 (2026-10-26): why a machine's announcement was refused.
+    "row36-announcement-acceptance.py": (EVERY, "linux"),
     "ls6-fit-acceptance.py": (FULL, "both"),
     "ls7-copy-acceptance.py": (FULL, "both"),
     "ls7b-facts-acceptance.py": (FULL, "both"),

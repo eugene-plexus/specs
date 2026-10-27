@@ -130,3 +130,121 @@ review. Risks:
 
 **Calls:** R54-DEFAULT answered (Troy, 2026-10-23): kept when apps ask,
 on by default, as part of full OpenAI API compatibility.
+
+## 8. What building found (2026-10-26)
+
+- **OpenAI answers a missing `previous_response_id` with a 400, not a 404**
+  (`previous_response_not_found`, param `previous_response_id`), and Codex
+  shows a 400 at once where it retries a 404 five times. Built as OpenAI's
+  400 (full compatibility, the standing rule), with one message for a
+  missing, ended or other owner's id. `GET` and `DELETE` of such an id are
+  OpenAI's 404 ("Response with id '...' not found."). A conversation that
+  is not the caller's is a 404 on the Responses door too (OpenAI's shape
+  here is not documented; chosen to match `GET /v1/conversations/{id}`).
+- **The owner is row 53's, by `files_door.owner_for`.** It is one more
+  check of the key or person with the admission authority, made only when
+  the answer may be kept or a chain is read (never for Codex, which sends
+  `store: false`).
+- **Whether the store keeps responses is asked before the answer**, so a
+  stream's head can name `store` as ignored when it is off; the store's
+  word is believed 15 seconds (`GET /v1/store/status`, `parts.responses`).
+  A store that cannot be asked keeps nothing for that while and never
+  delays an answer more than the status read's 3 seconds once.
+- **Kept before the last event.** The answer is kept after it ends and
+  before `response.completed` (or the JSON body) is sent, so the Agents
+  SDK's next request, sent the moment it reads the last event, finds it.
+  The response's `store` says whether it was kept.
+- **A chain lives as long as its newest response.** Each link ends 30 days
+  after it is kept, and keeping one moves every earlier link's end to its
+  own; otherwise a chain in daily use would lose its first answers after
+  30 days and could not be rebuilt.
+- **A conversation is kept until it is deleted, as OpenAI keeps one**
+  (settled 2026-10-26 by Troy's standing rule, full OpenAI compatibility by
+  default, as row 53's files were; this replaces the 30 days after last use
+  in section 2, built first). An expert may set "Delete a conversation
+  after (days)" (`conversationDays`, 0 = never, the default) in Settings ->
+  Store: each conversation then ends that many days after its last use (an
+  item added, a response kept in it, its metadata changed), counted with
+  the setting in effect now, the ones kept before the setting too. Lookups
+  read the end from the last use and the setting; the sweep writes it
+  before row 53's clauses delete what ended. Stored responses keep 30 days
+  (OpenAI's), and a removed person's conversations still follow
+  R53-REMOVE.
+- **Deleting a response in the middle of a chain breaks the chain**, and
+  the next request from a later link is a 400 naming the deleted one,
+  rather than a conversation with a hole in it the model cannot know about.
+- **Only a request's own input is kept with its answer**; the chain's
+  earlier items are its earlier links. `input_items` lists what the model
+  was given (OpenAI: conversation items "are prepended"): the chain before
+  it, or the conversation's items before it, then its own input.
+- **`store: false` in a conversation** keeps no response and still adds the
+  request's input and output to the conversation.
+- **A chat's own id is its affinity key only where it opens.** OpenAI's
+  `store` defaults to true, and many clients resend their whole history
+  instead of chaining: keyed by each response's own id, every one of their
+  turns was a new conversation and could land on another replica. So a
+  kept response's own id keys it only when its input opens a conversation
+  (messages from the user and the instructions, nothing of an earlier
+  turn); a chained request keys by its chain's first response, a
+  conversation by its id, and a client resending its history by the key
+  that history gives it, after its opening turn.
+- **Not built: `affinityKey` in the metrics row.** The request row's schema
+  moves to v14 with row 11 (branch `ld1`), and two rows bumping one schema
+  in parallel would collide; the chain key itself is built and tested
+  (`affinity.key_for(..., chain=...)`, the acceptance's two lookalike
+  chats). A follow-up adds the column after row 11 merges (gateway#19).
+- **CI: the row 23 job checked out Workbench at the row's branch name**
+  on every specs branch push, and failed for a row Workbench has no branch
+  for. Its checkout now falls back to Workbench's `main`, as the
+  acceptance scripts already did.
+- **The console shows the new counts only through the existing owner
+  list**: `/v1/owners` gains `responses` and `conversations` per owner, and
+  their bytes count in `bytes`; Settings -> Store shows the two new
+  settings through the generic config page. The UI does not yet name the
+  two counts.
+
+### The review (2026-10-26)
+
+A second model (Codex) reviewed the branch (store `ac2719e`, gateway
+`cf26d28`, specs `7aab62b`) and found owner isolation, chains, `store:
+false`, removal, expiry, DELETE, the 1-to-2 migration and the 400
+`previous_response_not_found` clean. It found, and building fixed, each
+with a test that fails without the fix:
+
+- **Blocker: reading could exhaust the store.** A page of a conversation
+  near the quota read and decoded every item under the shared lock, and a
+  continuation checked its 32 MiB only after loading it all. A page is now
+  a page in SQL, and a chain or a conversation is summed (`item_bytes`,
+  `bytes`) before a row of it is read, the chain's first link included
+  (sabotaged once).
+- **Every byte written takes room under the quota**: a response kept in a
+  conversation counts its copy there too, and metadata that grows counts.
+- **Keeping an answer is one operation, started once**: by the last event,
+  which waits for it (shielded), or by the client leaving, which does not.
+  A client that leaves after the store has the answer finds it as kept; no
+  second save races it with a 409 (sabotaged once).
+- **Item ids have OpenAI's shape** (a prefix and hex digits): the gateway
+  gives a new id to an item whose id has another shape, the store refuses
+  one, and no error repeats an id or a cursor.
+- **Turning responses off stops a conversation's metadata update** too.
+- **`input` is optional** with `conversation` or `previous_response_id`,
+  as on OpenAI.
+- **Continuing a response kept in a conversation keeps the conversation's
+  items before it** (a deleted conversation is a broken history, a 400).
+- **A turn is given the conversation as it read it**: its context says the
+  position it was read at, and the response kept sends it back
+  (`conversationPosition`), so a turn that finished second lists only what
+  it was given. A `store: false` turn's items go in one call, one
+  transaction.
+- **Checked, no change (8): older readers of the new count fields.** No
+  component parses the store's status, owner counts or sweep reports with
+  a generated model: the console reads them as TypeScript types (no check
+  at run time), the agent passes them through its proxy, and the gateway
+  reads `parts.responses` from raw JSON. A gateway on another machine that
+  is older than the store reads none of them.
+- **Not in this row (1):** a rotated key loses what its old key kept until
+  the authority sends `lineage` (row 53's finding); the orchestrator files
+  it.
+- **CI, not this row:** `folder-tools / C6 on windows-latest` failed once
+  ("Client-key authority unavailable" at Workbench install, before any
+  row 54 code runs), specs#116.
