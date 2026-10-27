@@ -42,7 +42,7 @@ it qualifies).
 | Release | When these rows are merged | Why it is a pause point |
 |---|---|---|
 | v0.4.0 | 4 and 5 | The trust work that must reach installs before a stable release carries TLS between machines (rows 3-6) is complete. The first stable release with LT1 and LT2, and everything merged since v0.3.0 |
-| v0.5.0 | 8, 10, 24 and 70 | Everything row 11 needs is in, and the gateway's queue changes next. The Mac system service, the speed sweep, client key rotation and group policies reach stable before routing changes under them |
+| v0.5.0 | 8, 10, 24, 70 and 75 (Eugene's version in the console) | Everything row 11 needs is in, and the gateway's queue changes next. The Mac system service, the speed sweep, client key rotation and group policies reach stable before routing changes under them |
 | v0.6.0 | 11, 12 and 13 | Part 1 is complete: one fair queue, metric names that last, checked engine updates |
 | v0.7.0 | the rest of part 2 (14, 15, 18, 20) | Speed work complete |
 | next minor | the end of each later part (3, 4, 5, 6) | Each part is a set of features a person can name |
@@ -60,6 +60,7 @@ between machines). The next release, v0.4.0, comes after rows 4 and 5.
 
 | # | Slice | From | Size | Risk | Who | Why here, and what it needs |
 |---|---|---|---|---|---|---|
+| 75 | **Show Eugene's version in the console.** Each machine's card on Machines says the version it runs (`v0.4.0`; an Edge install says "Edge" and the date of its build), and the bottom of the resource tree says the version of the machine serving the console. The agent works the version out from the seven commits it already records, matched against the published release manifests the update check reads, and keeps the answer, so it shows offline too. An install that matches no release says so, with its commits on demand | Troy, 2026-10-27 | S-M | cross | everyone; support and bug reports | First, at Troy's request: v0.4.0 is not easy to find anywhere in the console. A field on the agent's node report, read by Machines and the tree. No installer change |
 | 1 | **Contract cleanup in one regeneration.** Cover four things: the decision backend's model revision (the contract promises a field the gateway drops), the dead `uiTheme`/`uiFontSize` settings, client `cache_control` carried to hosted Claude, and a check that every consumer's codegen lists each `openapi/*.yaml` | B2-REV, SET-1, PC6, codegen audit | S | cross | everyone; PC6 cuts hosted-Claude cost | Every consumer regenerates once, not four times, before rows 10-11 change contracts again. Call B2-REV (add the field, or fix the sentence) |
 | 2 | **The shared acceptance harness behaves like the real server.** It needs the console log copy, the machine port and the client doors | memory `project_acceptance_and_instrument_traps` | M | cross | developers | Every later acceptance run goes through it. Today a check through it tests the harness, which is the project's recurring failure |
 | 3 | **Rotate a machine's TLS key.** Two pins across an overlap | LT-ROT (`tls-between-machines.md`, later) | M | high | multi-machine | Today a changed root key strands every node. It needs a short design |
