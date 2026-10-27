@@ -462,6 +462,12 @@ jobs:
       - name: Files kept for their owners only, ended, removed and sabotaged (row 53)
         if: matrix.shard == 'L3' || matrix.shard == 'W3'
         run: python specs/scripts/row53-store-acceptance.py --sabotage
+      # Row 54: stored responses and conversations, chained and continued for their
+      # owner only on two replicas; with the chain read's owner check sabotaged,
+      # the isolation check must fail.
+      - name: Stored responses and conversations for their owners only, sabotaged (row 54)
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
+        run: python specs/scripts/row54-stored-responses-acceptance.py --sabotage
       - name: Rotate the root's token key across two live agents
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
@@ -516,6 +522,11 @@ jobs:
       - name: Verify hardware readout and restart on the cards left with stub NVIDIA devices (row 43)
         if: matrix.shard == 'L1'
         run: python specs/scripts/row43-cards-left-acceptance.py
+      # Row 36: a real root and one enrolled agent; the agent's retry timers are
+      # shortened in its own process.
+      - name: Verify Machines says why an announcement was refused, and re-enrollment clears it (row 36)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/row36-announcement-acceptance.py
       - name: Verify each engine owns its fit model, from declaration to judge to admission (LS6)
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls6-fit-acceptance.py
