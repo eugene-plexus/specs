@@ -445,8 +445,12 @@ prose.
   need a proof per hop.
 - **Node keys can be exported.** A TPM or DPAPI-backed non-exportable
   key would stop the file leak outright. Recorded, not built.
-- **Freeze.** A node cut off from the root keeps its last bundle. The
-  age is reported, not enforced (D3).
+- **Freeze.** A node cut off from the root keeps its last bundle. Since
+  row 46 the age is enforced too: past `maxTrustBundleAgeHours` (default
+  24) the agent refuses changes signed by other machines' keys, and
+  answers, reads and the root's own tokens keep working
+  (`rows/row-46.md`). Left: the root's sessions, including one signed
+  out after the cut, work there until they expire.
 - **The standby follower has no production credential,** a
   pre-existing gap. Replication stays session-only until a standby
   identity is designed.
