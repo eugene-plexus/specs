@@ -77,6 +77,7 @@
    67
   ],
   "WEB": [
+   75,
    33,
    62,
    31,
@@ -93,6 +94,36 @@
   "DESIGN": []
  },
  "rows": [
+  {
+   "row": 75,
+   "part": 1,
+   "title": "Show Eugene's version in the console",
+   "summary": "Show Eugene's version in the console. Each machine's card on Machines says the version it runs (`v0.4.0`; an Edge install says \"Edge\" and the date of its build), and the bottom of the resource tree says the version of the machine serving the console. The agent works the version out from the seven commits it already records, matched against the published release manifests the update check reads, and keeps the answer, so it shows offline too. An install that matches no release says so, with its commits on demand",
+   "from": "Troy, 2026-10-27",
+   "size": "S-M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "everyone; support and bug reports",
+   "notes": "First, at Troy's request: v0.4.0 is not easy to find anywhere in the console. A field on the agent's node report, read by Machines and the tree. No installer change",
+   "lane": "WEB",
+   "lane_order": 0,
+   "repos": [
+    "specs",
+    "agent",
+    "ui"
+   ],
+   "contract": "agent.yaml",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/updates.py",
+    "ui/src/components/ResourceTree.tsx",
+    "ui/src/app/nodes/page.tsx"
+   ],
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [],
+   "calls": [],
+   "issue": 119
+  },
   {
    "row": 1,
    "part": 1,
