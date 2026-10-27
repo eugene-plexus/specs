@@ -1200,6 +1200,90 @@ paths:
 
   # -------- engines: what we know how to start --------
 
+  /v1/exec-approvals:
+    get:
+      tags: [engines]
+      operationId: listExecApprovals
+      summary: The programs an owner approved for Eugene's own account.
+      description: |
+        Row 8, part 8c (call R8-EXEC-TRUST). Run as an account of its
+        own (the Mac's daemon, a Linux system install), the agent runs a
+        program that one other account can change only after an owner
+        approves it here; see `ExecTrust`. An approval lapses, and is
+        dropped from this list, the first time a check finds the file or
+        any folder or link on its way different from what was approved.
+        A person's own install never needs one, and lists none. Approvals
+        never cross a move to the Mac's daemon: the owner approves again
+        there.
+      responses:
+        "200":
+          description: The approvals.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecApprovalList"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    post:
+      tags: [engines]
+      operationId: approveExec
+      summary: Let Eugene's own account run a program one other account can change.
+      description: |
+        Row 8, part 8c. The agent checks `path` again now. It approves
+        only when the check says `needs_approval` and the file's SHA-256
+        is the one the console showed (`ExecTrust.sha256`); otherwise 409
+        with the cause named: anyone else can change it (`refused`),
+        Eugene runs it already (`ok`), or the file changed since it was
+        shown. Approving a file again replaces its earlier approval.
+
+        **An approval trusts that account.** The hash and the chain catch
+        a change made after the approval; they are not a boundary against
+        the account that owns the file, which can act as Eugene's account
+        once its program runs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecApprovalRequest"
+      responses:
+        "201":
+          description: Approved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecApproval"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          description: Not a program to approve, or not the file that was shown.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+
+  /v1/exec-approvals/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    delete:
+      tags: [engines]
+      operationId: removeExecApproval
+      summary: Take an approval back.
+      description: |
+        The program is refused again from its next start; a process
+        already running keeps running.
+      responses:
+        "204":
+          description: Taken back.
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
   /v1/engines:
     get:
       tags: [engines]
@@ -6527,8 +6611,73 @@ components:
           $ref: "#/components/schemas/NodeInstall"
         update:
           $ref: "#/components/schemas/NodeUpdate"
+        version:
+          $ref: "#/components/schemas/NodeVersion"
 
     # -------- Updates: what this install is, and what is newer --------
+
+    NodeVersion:
+      type: object
+      description: |
+        What a person calls the version this machine runs (row 75).
+
+        The agent works it out from the seven commits `install` reports,
+        matched against the published release manifests and the Edge
+        marker's pins. It is never a guess: **a version is named only when
+        every installed commit equals the one a release (or Edge) pins.**
+        An install that matches nothing says so (`unmatched`), and the
+        commits stay on `install` for whoever wants them.
+
+        The answer is kept on disk, keyed by the installed commits, so it
+        shows offline and after a restart, and is worked out again when the
+        commits change. `GET /v1/node` never calls GitHub for it: the lookup
+        runs with the update check (a minute after start, then every six
+        hours, and on `POST /v1/node/update/check`), and until the first
+        match the kind is `unknown`, with `error` naming the cause when the
+        lookup failed.
+
+        Absent on an agent from before this field. A reader treats absence
+        as `unknown`; nothing refuses it.
+      required: [kind]
+      properties:
+        kind:
+          $ref: "#/components/schemas/NodeVersionKind"
+        release:
+          type: string
+          description: The release tag (`v0.4.0`). Only for kind `release`.
+        publishedAt:
+          type: string
+          format: date-time
+          description: |
+            When the release was published, or, for `edge`, when the Edge
+            build was made (the date of its specs commit).
+        specsCommit:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+          description: The specs commit of the Edge build. Only for kind `edge`.
+        checkedAt:
+          type: string
+          format: date-time
+          description: When the commits were last matched.
+        error:
+          type: string
+          description: |
+            Why the lookup could not finish, and what it was trying to
+            reach. For `unknown`, the reason no version is known yet; for
+            `unmatched`, why the last recheck failed (the answer stands).
+
+    NodeVersionKind:
+      type: string
+      enum: [release, edge, development, unmatched, unknown]
+      description: |
+        - `release`: every commit is the one a published release pins.
+        - `edge`: every commit is the one the Edge marker pins.
+        - `development`: a git checkout; it has no version to match.
+        - `unmatched`: the commits match no release and not Edge: "not a
+          published release".
+        - `unknown`: not matched yet (the first lookup has not run, GitHub
+          could not be read, or the install's commits changed since the
+          last match and the new ones are not matched yet).
 
     NodeInstall:
       type: object
@@ -8170,6 +8319,124 @@ components:
           items:
             $ref: "#/components/schemas/EngineDescriptor"
 
+    ExecTrustKind:
+      type: string
+      enum: [needs_approval, refused]
+      description: |
+        Why Eugene's own account did not run a program (row 8, part 8c).
+        The check walks the program's path from `/`: every folder, every
+        link and where it points, the file, a script's interpreter and
+        the Python environment it belongs to.
+
+        - `needs_approval`: everything is owned by root, by Eugene's
+          account, or by one other account, and nothing can be changed
+          by a group or by others. It runs once an owner approves it
+          (`POST /v1/exec-approvals`).
+        - `refused`: a group or others can change something on the way
+          (mode bits, a macOS ACL entry, a volume that ignores
+          ownership), two or more other accounts own parts of it, or it
+          cannot be checked. It never runs; the error names the path and
+          who can change it.
+
+        A program owned by root and Eugene's account alone runs, and is
+        not reported.
+
+    ExecTrust:
+      type: object
+      required: [kind, path]
+      description: |
+        A program Eugene's own account did not run, and what an owner can
+        do about it (row 8, part 8c). Present only when the agent runs as
+        an account of its own (the Mac's daemon, a Linux system install).
+      properties:
+        kind:
+          $ref: "#/components/schemas/ExecTrustKind"
+        path:
+          type: string
+          description: |
+            The path the program is looked up by: the setting's path made
+            absolute, its links kept (`/Users/troy/current/llama-server`,
+            not where `current` points). What `POST /v1/exec-approvals`
+            takes and what an approval is kept by, so the folders and links
+            approved are the ones every later check walks.
+        account:
+          type: string
+          description: |
+            `needs_approval`: the one account other than root and
+            Eugene's that can change the program. A console says that
+            approving it lets this account act as Eugene.
+        sha256:
+          type: string
+          description: |
+            `needs_approval`: the program file's SHA-256 now, which an
+            approval must name.
+
+    ExecApprovalRequest:
+      type: object
+      required: [path, sha256]
+      properties:
+        path:
+          type: string
+          description: "`ExecTrust.path`."
+        sha256:
+          type: string
+          description: "`ExecTrust.sha256`: the file as it was shown."
+
+    ExecChainItem:
+      type: object
+      required: [path, uid, mode]
+      description: One file, folder or link the check walked, as it was approved.
+      properties:
+        path:
+          type: string
+        uid:
+          type: integer
+        mode:
+          type: integer
+          description: "`st_mode`: the type and permission bits."
+
+    ExecApproval:
+      type: object
+      required: [id, path, account, accountUid, sha256, chain, approvedAt]
+      description: |
+        An owner's approval of one program for Eugene's own account (row
+        8, part 8c). It holds while the path, the other account, the
+        file's SHA-256 and every item of the chain are what they were;
+        the first check that finds any of them different drops it, and
+        the program asks again.
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+          description: The program approved, by the path it is looked up by (`ExecTrust.path`).
+        account:
+          type: string
+          description: The other account that can change it.
+        accountUid:
+          type: integer
+        sha256:
+          type: string
+        chain:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecChainItem"
+        approvedAt:
+          type: string
+          format: date-time
+        approvedBy:
+          type: string
+          description: Who approved it, as their session named them.
+
+    ExecApprovalList:
+      type: object
+      required: [approvals]
+      properties:
+        approvals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecApproval"
+
     EngineDescriptor:
       type: object
       description: |
@@ -8337,6 +8604,11 @@ components:
         error:
           type: string
           description: "Populated when `available: false`."
+        execTrust:
+          $ref: "#/components/schemas/ExecTrust"
+          description: |
+            Present when `error` is Eugene's own account not running the
+            binary it found (row 8, part 8c).
         managed:
           $ref: "#/components/schemas/ManagedEngine"
         acquisition:
@@ -8951,6 +9223,25 @@ components:
             Most recent failure for this runtime — a spawn error, a
             non-zero exit, or a readiness probe that never passed.
             Cleared on a successful start.
+        refusedBinary:
+          type: string
+          description: |
+            The program this runtime's `binary` names, when the agent runs
+            in Eugene's own account and will not run it because someone
+            other than root or that account could change it (row 8):
+            `lastError` says who. The way out a console offers is to clear
+            `binary` (`PATCH /v1/runtimes/{name}` with the spec without it),
+            so the runtime runs Eugene's own build of the engine, installed
+            first with `POST /v1/engines/{engine}/install` when there is
+            none. Absent otherwise; cleared on a successful start.
+        execTrust:
+          $ref: "#/components/schemas/ExecTrust"
+          description: |
+            Present when the last start failed because Eugene's own account
+            did not run the engine's program, whether a runtime's `binary`
+            or one the agent found (row 8, part 8c). `needs_approval`: a
+            console asks the owner, and `POST /v1/exec-approvals` lets it
+            run. Cleared on a successful start.
         lastDevices:
           type: array
           readOnly: true

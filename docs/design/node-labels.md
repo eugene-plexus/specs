@@ -234,6 +234,11 @@ rather than a fallback repeated at each site.
 - **Installers do not take `--label` yet** (decision #2's last part). The
   agent's `join --label` does; a worker can also be renamed from Machines
   after it joins. Installers are high-risk changes and were left for their
-  own slice.
+  own slice. *Done in row 8 (2026-10-21):* `install.sh --label` and
+  `install.ps1 -Label` pass it to the join, and a job site's join uses it
+  before `--name`; without `--join` both refuse it. `install.ps1` refuses a
+  label holding a double quote or ending in a backslash, which Windows
+  PowerShell 5.1 hands to a program wrongly. Add a machine has "Shown as
+  (optional)", which puts the flag in both commands.
 - **An older standby refuses `labelNode`** as an unknown op and
   re-snapshots until it updates; on Edge both machines update together.
