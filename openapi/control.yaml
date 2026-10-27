@@ -5164,6 +5164,14 @@ components:
           $ref: '#/components/schemas/MachineUrl'
         tlsPin:
           $ref: '#/components/schemas/TlsPin'
+        machineError:
+          type: string
+          maxLength: 300
+          description: |
+            Why the node's machine port does not answer yet, when it joins
+            with it still binding (agent#38): the same words as
+            `NodeAddressAnnouncement.machineError`, so its link says why
+            (`door_down`) from the join, before its first announcement.
         agentVersion:
           type: string
         os:

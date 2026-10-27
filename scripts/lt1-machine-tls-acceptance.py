@@ -1089,7 +1089,7 @@ def hold_the_race(
     got = pair.call("root", "GET", f"{local}:{CONTROL_PORT}/v1/nodes/agent-b", root_session)
     node = got.get("body") or {}
     worker_log = log_of("worker", worker_dir)
-    still_binding = f"port {MACHINE_PORT} is in use" in worker_log
+    still_binding = f"port {MACHINE_PORT} is held by" in worker_log
     record.add(
         "automatic: a worker whose machine port is still binding registers it at the join",
         str(node.get("machineUrl") or "").rstrip("/") == f"https://{worker_ip}:{MACHINE_PORT}"
@@ -1099,6 +1099,14 @@ def hold_the_race(
         machineUrl=node.get("machineUrl"),
         tlsPins=len(node.get("tlsPins") or []),
         portStillBinding=still_binding,
+    )
+    # agent#38 review: the owner sees why on the root, in one place.
+    link = node.get("machineTls") or {}
+    record.add(
+        "automatic: the root's card says the worker's machine port is held, and by what",
+        link.get("state") == "door_down"
+        and f"port {MACHINE_PORT} is held by" in str(link.get("detail") or ""),
+        machineTls=link,
     )
     root_log = log_of("root", root_dir)
     held_back = f"held back a request to http://{worker_ip}:{AGENT_PORT}" in root_log

@@ -661,17 +661,17 @@ a container root, one adversarial review, and `ship.py`.
     announcement carries none; only a new enrolment replaces it. **A node
     moved back to a version from before machine ports is therefore
     unreachable** until it is removed and joined again; its card says so
-    (`door_down`: "It announced no machine port").
+    (`door_down`: "it announced no machine port").
   - **A null route let plain HTTP through to every port on its host**,
     another machine behind the same name included. It is that address only,
     plus the drivers its own agent listed on its host. **An entry that does
     not hold together** (a TLS address with no key here, an address or door
     two machines claim, a door claimed with the root's address and other
     keys) is refused outright; it used to read as an older version.
-  - **The holder of a machine port shows on the root.** A node announces
-    `machineError` (signed) while its port does not answer, and the root's
-    card reads `door_down` with the node's words: "port 8083 is held by
-    <program>". A key that does not load, or an IPv6 advertise address the
+  - **The holder of a machine port shows on the root.** A node says why its
+    port does not answer (`machineError`) when it joins and in every signed
+    announcement while it does not, and the root's card reads `door_down`
+    with the node's words: "Not reachable: port 8083 is held by <program>". A key that does not load, or an IPv6 advertise address the
     IPv4 port does not answer at, announces the door all the same, with the
     reason; never an older version.
   - **The row 3 check judges the whole 20 s hold**: nothing the held gateway
