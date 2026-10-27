@@ -216,6 +216,7 @@ After the last step, one acceptance run and one adversarial review come before t
 - **TIER-SPILL: Choice 1, built as rules.** Tier moves are a list of rules, each a condition and an action, stored as data. The first and only rule today is "waited more than 60 seconds: move to the next tier". Administrators get more conditions later. The Metrics page counts every move.
 - **CB-C2: Choice 3.** Each request holds back the length of its conversation's recent long answers (95 of 100 are shorter), or 4,096 tokens for a new conversation, but never less than a floor the owner sets (a gateway setting, default 1,024). The Metrics page counts each answer that ran out of room.
 - **GROUP-POLICY: Choice 2.** All group policies come first, in row 70. This row reads the queue band from row 70's policies; part 11e is dropped from this row, and row 11 needs row 70.
+- **R11-ORDER: Choice 1 (Troy, 2026-10-27).** Within a band, people take turns: the person served longest ago goes first, and each person's own requests go in arrival order. This is what was built; "first come, first served" in "Order" above is read as within one person.
 
 ## What building found (2026-10-26)
 
