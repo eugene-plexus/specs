@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import secrets
 import socket
 import subprocess
@@ -99,9 +98,53 @@ def serve(kind: str, directory: Path, port: int, host: str) -> None:
 
         # agent#38: what its `_http` held back is said at INFO.
         logging.basicConfig(level=logging.INFO)
-    # agent#38: which requests reached agent-b, and how they were answered.
-    heard = kind == "agent-b"
-    uvicorn.run(app, host=host, port=port, log_level="info" if heard else "error", access_log=heard)
+    if kind == "agent-b":
+        # agent#38: every request that reaches agent-b, its answer, and whose
+        # token it carried (`sub`), so a check can tell the gateway's calls
+        # from control's, which reach this older machine in plain HTTP by
+        # design.
+        app = _heard(app)
+    uvicorn.run(app, host=host, port=port, log_level="error", access_log=False)
+
+
+def _token_subject(scope: dict[str, Any]) -> str:
+    import base64
+
+    for name, value in scope.get("headers") or []:
+        if name.lower() != b"authorization":
+            continue
+        token = value.decode("latin-1").split(" ", 1)[-1]
+        try:
+            payload = token.split(".")[1]
+            claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+            return str(claims.get("sub") or "unknown")
+        except (IndexError, ValueError, TypeError, AttributeError):
+            return "not-a-token"
+    return "none"
+
+
+def _heard(inner: Any) -> Any:
+    async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await inner(scope, receive, send)
+            return
+        status: dict[str, int] = {}
+
+        async def tap(message: dict[str, Any]) -> None:
+            if message.get("type") == "http.response.start":
+                status["code"] = int(message["status"])
+            await send(message)
+
+        try:
+            await inner(scope, receive, tap)
+        finally:
+            print(
+                f"HEARD {scope.get('method')} {scope.get('path')} {status.get('code')} "
+                f"sub={_token_subject(scope)}",
+                flush=True,
+            )
+
+    return app
 
 
 def child_environment(agent_dir: Path, kind: str, agent_url: str) -> dict[str, Any]:
@@ -493,12 +536,10 @@ def write_table(path: Path, *, local: str, older: str | None) -> None:
 #: joined. Its gateway reads its machines every second, so about this many
 #: refreshes try agent-b while it is held.
 HOLD_SECONDS = 20
-#: What agent-b may be asked while the gateway's table is held: control's own
-#: calls. Control's table names agent-b (an older machine) all along, so its
-#: poll goes in plain HTTP by design; nothing else may arrive.
-CONTROL_CALLS = frozenset({"/v1/node", "/v1/node/trust-bundle", "/v1/node/machine-list"})
-#: A request line in uvicorn's access log.
-ACCESS_LINE = re.compile(r'"([A-Z]+) (\S+?)(?:\?\S*)? HTTP/1\.[01]"')
+#: The `sub` of the gateway's token to agent-b. Control's own calls (its poll,
+#: its topology reads) reach agent-b in plain HTTP by design, since control's
+#: table names agent-b as an older machine all along; they carry its token.
+GATEWAY_SUB = "gateway"
 
 
 def plain_token_check(directory: Path, pins_file: Path, advertised: Any, wait: Any) -> None:
@@ -513,10 +554,10 @@ def plain_token_check(directory: Path, pins_file: Path, advertised: Any, wait: A
     new worker in clear (agent#38). **The whole window is judged, whatever
     the path** (agent#38 review): the gateway's own log of every request it
     completed (httpx's `HTTP Request:` lines) names none to agent-b, it says
-    it held them back, and agent-b's access log holds only control's own
-    calls. Then the table names agent-b as an older machine, as agent-a
-    writes it once it knows, and the gateway's reads reach agent-b and are
-    answered 200, which only a request with its token gets."""
+    it held them back, and agent-b heard no request with the gateway's token
+    (`_heard`; control's calls carry control's). Then the table names
+    agent-b as an older machine, as agent-a writes it once it knows, and the
+    gateway's reads reach agent-b with its token and are answered 200."""
     target = advertised("agent-b")
     gateway_log = directory / "gateway-a" / "process.log"
     agent_b_log = directory / "agent-b" / "process.log"
@@ -532,11 +573,14 @@ def plain_token_check(directory: Path, pins_file: Path, advertised: Any, wait: A
     sent = [
         line for line in gateway_window.splitlines() if "HTTP Request:" in line and target in line
     ]
-    asked = sorted({m.group(2) for m in ACCESS_LINE.finditer(agent_b_window)} - CONTROL_CALLS)
+    heard = [
+        line for line in agent_b_window.splitlines() if line.startswith("HEARD ")
+    ]
+    from_gateway = [line for line in heard if line.endswith(f"sub={GATEWAY_SUB}")]
     held_back = f"held back a request to {target}" in gateway_window
     assert held_back, "gateway-a never tried agent-b while its table was held (nothing was seen)"
     assert not sent, f"gateway-a sent agent-b requests while it was held back: {sent[:3]}"
-    assert not asked, f"agent-b was asked {asked} while gateway-a's table was held"
+    assert not from_gateway, f"agent-b heard the gateway while it was held: {from_gateway[:3]}"
     ok(
         f"agent#38: for {HOLD_SECONDS} s nothing went to a machine the table does not name yet, "
         "whatever the path"
@@ -544,7 +588,7 @@ def plain_token_check(directory: Path, pins_file: Path, advertised: Any, wait: A
 
     write_table(pins_file, local=advertised("agent-a"), older=target)
     wait(
-        lambda: '"GET /v1/runtimes HTTP/1.1" 200' in text(agent_b_log),
+        lambda: f"HEARD GET /v1/runtimes 200 sub={GATEWAY_SUB}" in text(agent_b_log),
         "gateway-a to read agent-b in plain HTTP once the table names it",
         30,
     )
