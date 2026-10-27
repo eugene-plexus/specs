@@ -607,18 +607,27 @@ def step_review_findings(run: Run) -> None:
             f"C's change through B's proxy to its driver: {changed.status_code} "
             f"{changed.text[:300]}"
         )
-    generated = run.call(
-        "POST",
-        "agent-b",
-        "/api/proxy/r46-driver/v1/generate",
-        run.from_c(),
-        json={"model": MODEL, "messages": [{"role": "user", "content": "r46"}]},
-    )
+    answered: dict[str, httpx.Response] = {}
+
+    def generate() -> bool:
+        # B restarted a moment ago, and its driver with it: until the driver
+        # listens, the proxy answers 502 after the freeze check has passed.
+        answered["last"] = run.call(
+            "POST",
+            "agent-b",
+            "/api/proxy/r46-driver/v1/generate",
+            run.from_c(),
+            json={"model": MODEL, "messages": [{"role": "user", "content": "r46"}]},
+        )
+        return answered["last"].status_code != 502
+
+    run.wait(generate, "B's driver to answer through B's proxy", 90)
+    generated = answered["last"]
     if "Root not heard" in generated.text:
         raise Failed(f"C's generate request through B's proxy was refused: {generated.text[:300]}")
     run.ok(
         f"C's change through B's proxy to B's driver is refused (403); its generate request "
-        f"the same way reaches the driver ({generated.status_code})"
+        f"the same way reaches the driver, which answers {generated.status_code}"
     )
 
 
@@ -640,7 +649,8 @@ def step_frozen(run: Run, session_b: str) -> None:
     if status != {"level": "warning", "text": REFUSAL}:
         raise Failed(f"B's setting says {status}")
     run.ok(
-        f"the root stopped and B restarted on a bundle kept {age} s ago: B says it refuses "
+        f"the root stopped and B restarted with its last word from the root {age} s ago: B "
+        "says it refuses "
         f"changes from other machines under a {LIMIT_HOURS}-hour limit, and so does the setting"
     )
 
