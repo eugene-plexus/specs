@@ -549,10 +549,11 @@ class Install:
             for t, names in EXTRA_COLUMNS.items()
             for n in names
         )
+        # 33 is row 27a's own step; a later row's migration (34, row 32) runs on after it.
         check(
             "1",
-            "populated schema 32 migrates to 33 intact",
-            old_version == "32" and version == "33" and intact and nullable,
+            "populated schema 32 migrates to 33 and on, intact",
+            old_version == "32" and int(version) >= 33 and intact and nullable,
             {
                 "schema": f"{old_version}->{version}",
                 "rows": {t: len(v["rows"]) for t, v in before.items()},
