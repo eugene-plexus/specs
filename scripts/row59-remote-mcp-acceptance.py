@@ -52,6 +52,12 @@ from typing import Any
 import httpx
 import yaml
 
+# Module level, not inside the apps: with `from __future__ import annotations`
+# FastAPI resolves an endpoint's annotations in this module's globals, and a
+# `Request` imported inside a function reads as a query field (HTTP 422).
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+
 HERE = Path(__file__).resolve().parent
 MODEL = "row59-fixture"
 MCP_TOKEN = "row59-mcp-token-" + secrets.token_hex(12)
@@ -110,8 +116,6 @@ def answer(body: dict) -> tuple[str | None, list[dict] | None]:
 
 
 def fixture_app():
-    from fastapi import FastAPI, Request
-    from fastapi.responses import StreamingResponse
 
     app = FastAPI()
     seen: list[dict] = []
@@ -211,8 +215,6 @@ def fixture_app():
 
 def mcp_app():
     """A Streamable HTTP MCP server with two tools, refusing a wrong token."""
-    from fastapi import FastAPI, Request
-    from fastapi.responses import JSONResponse, Response
 
     app = FastAPI()
     seen: list[dict] = []
@@ -482,6 +484,12 @@ def exercise(directory: Path, *, sabotage: bool) -> None:
         write("gateway", "bootstrap.json", bootstrap("gateway"))
         write("gateway", "gateway.yaml", {"routingRefreshSeconds": 1})
         start("gateway")
+        # Listed, so the console's path -- the agent's proxy, by name -- reaches it.
+        client.post(
+            base("agent") + "/v1/components",
+            headers=as_operator,
+            json={"name": "gateway", "kind": "gateway", "url": base("gateway")},
+        ).raise_for_status()
 
         # --- 1. Tavily, set up as the console does ---------------------------
         patched = proxy(

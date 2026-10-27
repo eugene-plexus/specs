@@ -515,7 +515,7 @@ def exercise(directory: Path, *, live: bool) -> None:
         assert proxy("google", "GET", "/v1/config", operator).json()["apiKey"] == "<redacted>"
         info = proxy("google", "GET", "/v1/info", operator).json()
         assert info["provider"] == "google" and info.get("billing") == "per_search", info
-        assert info["tools"] == ["web_search"] and info["egress"] == "internet", info
+        assert info["tools"] == ["web_search", "mcp"] and info["egress"] == "internet", info
         proxy("brave", "PATCH", "/v1/config", operator, json={
             "provider": "brave", "baseUrl": url("fixture") + "/brave", "apiKey": BRAVE_KEY}).raise_for_status()
         leaked = [p for p in directory.rglob("*") if p.is_file() and p.suffix in (".yaml", ".json")

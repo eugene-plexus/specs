@@ -254,8 +254,9 @@ info:
     `input`, the items become the history the model reads.
 
     **Limits:** 20 MCP calls per response (`max_tool_calls` lowers it),
-    after which the model is told none are left; 30 s per call, 8 MiB per
-    answer and 64 tools per server, each enforced by the tool-driver and
+    after which the model is told none are left; 30 s per call, 8 MiB for
+    all a server sends in one call (a listing's pages together) and 64
+    tools per server, each enforced by the tool-driver and
     named when hit. Failover ends at the first call, as for a search.
 
     **The caller's credential** (`headers`, `authorization`) goes to the

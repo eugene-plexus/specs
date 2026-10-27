@@ -166,6 +166,9 @@ M in total, about 2 days; 59b gets one adversarial review. Risks:
 - **Tavily's country boost takes a country's English name**, not the code a
   request carries; a location is named as ignored. There is no Tavily key
   on the development box: the provider follows Tavily's API reference.
+- **"8 MiB per answer" is per call.** Counted per HTTP answer, a server
+  that split its tool list over 32 pages could make the tool-driver hold
+  256 MiB; every answer of one call now counts against one 8 MiB.
 - **The metrics row gains `mcpCalls`.** Split on "not an image", MCP calls
   would have been counted as web searches. A row names neither the server
   nor the tool: they are the caller's words.

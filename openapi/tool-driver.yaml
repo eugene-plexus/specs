@@ -183,7 +183,8 @@ paths:
         `scheme_refused`.
 
         **Limits** (each names itself when hit): 30 s for the whole call;
-        8 MiB for each answer the server sends; at most 64 tools after
+        8 MiB for all the server sends in the call (a list split over
+        pages is one answer; 502 `too_large`); at most 64 tools after
         `allowedTools` (413 `too_many_tools`), and at most 32 pages.
 
         **The caller's headers** go only to this server, and only for
