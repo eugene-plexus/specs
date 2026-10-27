@@ -622,17 +622,18 @@ a container root, one adversarial review, and `ship.py`.
   machine port (its route is null) and the install is not `required`. A
   machine the table does not name yet is refused with nothing sent, and the
   caller's next try goes over TLS. A machine on an older version is still
-  reached in plain HTTP, its drivers too: the null route marks its host. A
+  reached in plain HTTP at its own address, and at a driver its own agent
+  listed on its own host (the gateway's driver clients name that agent). A
   request with no token of this install (a model server on the LAN), loopback
-  and this machine's own address are not the rule's business. A process with
-  no table at all (no agent of an LT1 version started it) behaves as before.
+  and this machine's own address are not the rule's business.
 - **The intent, not the listener.** A node announces its machine port, and
   registers it at the join, whenever it has one, listening or still binding.
   The address is the one being registered, not the record's (it has none
   before the first join). `join` sends the door the agent will open. So the
   root never records such a node as an older version. A port another program
   holds for good leaves the node unreachable from the other machines until it
-  is freed, where before it was reached in clear; its agent logs the holder.
+  is freed, where before it was reached in clear (call A38-PORT, default
+  built).
 - **The check of record.** The pair's `automatic` run holds the window open
   for 20 s: the worker joins with its 8083 held by another process, and the
   root's agent cannot write its children's table. The worker must register its
@@ -641,11 +642,56 @@ a container root, one adversarial review, and `ship.py`.
   Windows, `row3-per-node-keys-acceptance.py --lan` holds a real gateway's
   table from before a worker joined, then names the worker as an older
   machine: no read reaches it while held, and it answers 200 after.
-- **Not changed.** A worker that joined before LT1 and has no list yet
-  treats the root as an older machine until its first pull, as its agent
+- **The second model's review (2026-10-26), and what changed.**
+  - **The site host's report to the root used the egress client** when the
+    root's address is a dotted name, so its Bearer went out with no machine
+    routing, under `required` too. `client_for` now gives any address the
+    table names the machine transport, and every call to the root takes it.
+  - **The console's proxy forwarded a sign-in to a machine not known yet**:
+    a passphrase in a body or a cookie is no token, so the rule let it
+    through. The proxy, the forwarded `/oidc` steps and the `/link` steps use
+    a *machine hop* client: a request for another machine goes by its route
+    alone, whatever it carries.
+  - **A downgrade by answers nobody signed.** A worker with no key for the
+    root (upgraded in place, before its first list) reaches it in plain HTTP.
+    A party in the middle answered its list request 404 and its announcement
+    401, and the worker then signed an announcement of its address alone,
+    which cleared its key at the root. Now a node never announces less
+    because of an answer, and the root keeps a recorded machine port when an
+    announcement carries none; only a new enrolment replaces it. **A node
+    moved back to a version from before machine ports is therefore
+    unreachable** until it is removed and joined again; its card says so
+    (`door_down`: "It announced no machine port").
+  - **A null route let plain HTTP through to every port on its host**,
+    another machine behind the same name included. It is that address only,
+    plus the drivers its own agent listed on its host. **An entry that does
+    not hold together** (a TLS address with no key here, an address or door
+    two machines claim, a door claimed with the root's address and other
+    keys) is refused outright; it used to read as an older version.
+  - **The holder of a machine port shows on the root.** A node announces
+    `machineError` (signed) while its port does not answer, and the root's
+    card reads `door_down` with the node's words: "port 8083 is held by
+    <program>". A key that does not load, or an IPv6 advertise address the
+    IPv4 port does not answer at, announces the door all the same, with the
+    reason; never an older version.
+  - **The row 3 check judges the whole 20 s hold**: nothing the held gateway
+    completed went to the worker, and the worker heard only control's calls.
+- **Where the rule does not reach** (review notes, 2026-10-26). A process
+  with no table at all behaves as before LT1: a gateway run on its own, a
+  child that an agent older than LT1 started, `eugene-plexus-agent join` (no
+  agent runs yet; a join token with the root's key goes over pinned TLS, one
+  without it does not), and a site host that runs on its own. **Job Sites are
+  a designed exception, `required` included** (§2): a site host's enrolment
+  over an `http` invitation sends the invitation and the person's password in
+  plain HTTP (`site-host` `join.py`), and its channel polls the root with a
+  Bearer token at that address (`channel.py`); over the root's HTTPS nodes
+  name they are encrypted. A node whose stored machine key cannot be read at
+  all, certificate and key both, has no door to announce, and is taken for an
+  older version as before. A worker that joined before LT1 and has no list
+  yet treats the root as an older machine until its first pull, as its agent
   starts, brings the list. The copies in library, inference-driver,
-  tool-driver, site-host and store are not re-vendored: none sends a token of
-  this install to another machine's plain address.
+  tool-driver and store are not re-vendored; their calls with a token go to
+  their own agent on this machine.
 
 **Not built, or not measured.**
 - **Key rotation** (two pins over an overlap): built in row 3

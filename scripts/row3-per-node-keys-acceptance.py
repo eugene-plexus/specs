@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -488,6 +489,18 @@ def write_table(path: Path, *, local: str, older: str | None) -> None:
     os.replace(tmp, path)
 
 
+#: How long `plain_token_check` holds gateway-a's table from before agent-b
+#: joined. Its gateway reads its machines every second, so about this many
+#: refreshes try agent-b while it is held.
+HOLD_SECONDS = 20
+#: What agent-b may be asked while the gateway's table is held: control's own
+#: calls. Control's table names agent-b (an older machine) all along, so its
+#: poll goes in plain HTTP by design; nothing else may arrive.
+CONTROL_CALLS = frozenset({"/v1/node", "/v1/node/trust-bundle", "/v1/node/machine-list"})
+#: A request line in uvicorn's access log.
+ACCESS_LINE = re.compile(r'"([A-Z]+) (\S+?)(?:\?\S*)? HTTP/1\.[01]"')
+
+
 def plain_token_check(directory: Path, pins_file: Path, advertised: Any, wait: Any) -> None:
     """agent#38 on real processes, on Linux and Windows: no token of this
     install goes to another machine in plain HTTP while this machine's table
@@ -495,12 +508,15 @@ def plain_token_check(directory: Path, pins_file: Path, advertised: Any, wait: A
     still reached in plain HTTP, with its token (mixed versions, LT1).
 
     The install is `automatic` (no machine here opens a machine port).
-    gateway-a's table is held from before agent-b joined, the window in which
-    the root's gateway read a new worker in clear (agent#38). It must hold its
-    reads of agent-b back: none reaches agent-b, and it says why. Then the
-    table names agent-b as an older machine, as agent-a writes it once it
-    knows, and the gateway's reads reach agent-b and are answered 200, which
-    only a request with its token gets."""
+    gateway-a's table is held from before agent-b joined, for `HOLD_SECONDS`
+    from the gateway's start: the window in which the root's gateway read a
+    new worker in clear (agent#38). **The whole window is judged, whatever
+    the path** (agent#38 review): the gateway's own log of every request it
+    completed (httpx's `HTTP Request:` lines) names none to agent-b, it says
+    it held them back, and agent-b's access log holds only control's own
+    calls. Then the table names agent-b as an older machine, as agent-a
+    writes it once it knows, and the gateway's reads reach agent-b and are
+    answered 200, which only a request with its token gets."""
     target = advertised("agent-b")
     gateway_log = directory / "gateway-a" / "process.log"
     agent_b_log = directory / "agent-b" / "process.log"
@@ -508,13 +524,23 @@ def plain_token_check(directory: Path, pins_file: Path, advertised: Any, wait: A
     def text(path: Path) -> str:
         return path.read_text(encoding="utf-8", errors="replace")
 
-    wait(
-        lambda: f"held back a request to {target}" in text(gateway_log),
-        "gateway-a to hold back its reads of agent-b",
-        30,
+    # agent-b's log already holds its own enrolment; the gateway's starts
+    # with the gateway, whose table was held from its first request.
+    before = len(text(agent_b_log))
+    time.sleep(HOLD_SECONDS)
+    gateway_window, agent_b_window = text(gateway_log), text(agent_b_log)[before:]
+    sent = [
+        line for line in gateway_window.splitlines() if "HTTP Request:" in line and target in line
+    ]
+    asked = sorted({m.group(2) for m in ACCESS_LINE.finditer(agent_b_window)} - CONTROL_CALLS)
+    held_back = f"held back a request to {target}" in gateway_window
+    assert held_back, "gateway-a never tried agent-b while its table was held (nothing was seen)"
+    assert not sent, f"gateway-a sent agent-b requests while it was held back: {sent[:3]}"
+    assert not asked, f"agent-b was asked {asked} while gateway-a's table was held"
+    ok(
+        f"agent#38: for {HOLD_SECONDS} s nothing went to a machine the table does not name yet, "
+        "whatever the path"
     )
-    assert "/v1/runtimes" not in text(agent_b_log), "a read reached agent-b while it was held back"
-    ok("agent#38: a machine the table does not name yet is sent no token in plain HTTP")
 
     write_table(pins_file, local=advertised("agent-a"), older=target)
     wait(
