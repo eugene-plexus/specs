@@ -20,17 +20,26 @@ Checks, in order:
 1. In time, C's stop request for `r46` on B is taken, and B says it heard
    from the root a moment ago, under the default limit of 24 hours.
 2. The root is stopped. B's limit is set to 1 hour (`PATCH /v1/config`), B is
-   stopped, its kept bundle's time is set back 2 hours, and B is started
+   stopped, its record of the root's last word (`trust_heard.json`) is set
+   back 2 hours while its bundle file is touched now, and B is started
    again with the root still stopped. B says it refuses changes from other
    machines (`trustBundleFrozen`), and so does the setting's status line.
    C's stop request is refused with 403, naming the 2 hours. A prompt
    through B's gateway is still answered. The root's own session, and a
    token B's key signs for itself, still stop `r46` on B.
-3. The root is started again. Within B's next pull (every minute) B hears
+3. Review findings. B's held bundle, posted again to its push door (which
+   takes no bearer), and B restarted: C's request is still refused. A change
+   C sends through B's proxy to B's inference-driver (its config) is
+   refused, while a generate request C's gateway sends the same way passes.
+4. The root is started again. Within B's next pull (every minute) B hears
    from it, and C's stop request is taken again.
-4. `--sabotage`: the root is stopped again, and B is started with the age
+5. `--sabotage`: the root is stopped again, and B is started with the age
    check in `refuse_when_frozen` skipped, in B's process only (no file
    changes, so nothing needs restoring). Step 2's refusal check must fail.
+
+The root is reached at a loopback address here, which only the root can
+answer, so the limit is kept. In plain HTTP across a network it is not kept,
+and the agent says so; the agent's unit tests cover that case.
 
 Needs the agent, control, gateway and inference-driver installed in this
 interpreter (the Pinned integration job has them). Run:
@@ -550,17 +559,67 @@ def step_in_time(run: Run, session_b: str) -> None:
     )
 
 
+def restart_b(run: Run, *, sabotage: bool = False) -> dict[str, Any]:
+    run.stop_agent("b")
+    run.wait_released(["agent-b", "machine-b", "gateway", "driver"])
+    run.start_agent("b", sabotage=sabotage)
+    return run.node("b")
+
+
 def silence_b(run: Run, session_b: str, *, sabotage: bool = False) -> dict[str, Any]:
-    """The root stopped, B restarted on a kept bundle 2 hours old."""
+    """The root stopped, B restarted with its last word from the root 2 hours
+    ago. The record of that word is its own file; the bundle file is touched
+    now, which the agent must not read as word."""
     if "control" in run.processes:
         run.stop_control()
     run.stop_agent("b")
     run.wait_released(["agent-b", "machine-b", "gateway", "driver"])
-    kept = run.dirs["b"] / "trust_bundle.json"
     then = time.time() - SILENT_HOURS * 3600
-    os.utime(kept, (then, then))
+    record = run.dirs["b"] / "trust_heard.json"
+    record.write_text(json.dumps({"wordAt": then, "pulledAt": then}), encoding="utf-8")
+    os.utime(run.dirs["b"] / "trust_bundle.json", None)
     run.start_agent("b", sabotage=sabotage)
     return run.node("b")
+
+
+def step_review_findings(run: Run) -> None:
+    """The second-model review's two cheap cases, in real processes."""
+    kept = json.loads((run.dirs["b"] / "trust_bundle.json").read_text(encoding="utf-8"))
+    replayed = run.call("POST", "agent-b", "/v1/node/trust-bundle", json={"jws": kept["jws"]})
+    if replayed.status_code != 200:
+        raise Failed(f"the replay to B's push door: {replayed.status_code} {replayed.text[:300]}")
+    check_refused(run)
+    node = restart_b(run)
+    if node.get("trustBundleFrozen") is not True:
+        raise Failed(f"after a replay and a restart B says {_said(node)}")
+    check_refused(run)
+    run.ok(
+        "B's held bundle posted again to its push door, and B restarted: it still refuses "
+        "C's stop request"
+    )
+
+    as_agent = run.trust_of("c").mint_service(sub="agent", audience="node:agent-b")[0]
+    changed = run.call(
+        "PATCH", "agent-b", "/api/proxy/r46-driver/v1/config", as_agent, json={"modelId": "x"}
+    )
+    if changed.status_code != 403 or "Root not heard" not in changed.text:
+        raise Failed(
+            f"C's change through B's proxy to its driver: {changed.status_code} "
+            f"{changed.text[:300]}"
+        )
+    generated = run.call(
+        "POST",
+        "agent-b",
+        "/api/proxy/r46-driver/v1/generate",
+        run.from_c(),
+        json={"model": MODEL, "messages": [{"role": "user", "content": "r46"}]},
+    )
+    if "Root not heard" in generated.text:
+        raise Failed(f"C's generate request through B's proxy was refused: {generated.text[:300]}")
+    run.ok(
+        f"C's change through B's proxy to B's driver is refused (403); its generate request "
+        f"the same way reaches the driver ({generated.status_code})"
+    )
 
 
 def step_frozen(run: Run, session_b: str) -> None:
@@ -668,13 +727,14 @@ def main() -> int:
     if args.serve_stub:
         serve_stub(args.port)
         return 0
-    checks = 6 + (1 if args.sabotage else 0)
+    checks = 8 + (1 if args.sabotage else 0)
     with tempfile.TemporaryDirectory(prefix="ep-r46-", ignore_cleanup_errors=True) as tmp:
         run = Run(Path(tmp))
         try:
             session_b = install(run)
             step_in_time(run, session_b)
             step_frozen(run, session_b)
+            step_review_findings(run)
             step_root_returns(run, session_b)
             if args.sabotage:
                 step_sabotage(run, session_b)

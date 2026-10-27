@@ -125,14 +125,51 @@ the cause, and the limit is a setting.
   the root dead an app's key is refused at the gateway whatever this
   limit says. Operator sessions and the machine's own tokens answer. The
   acceptance's prompt uses a session.
-- **The acceptance** sets the limit to 1 hour and the kept bundle's time
-  back 2 hours, then restarts the agent with the root stopped. The
+- **The acceptance** sets the limit to 1 hour and the record of the last
+  word back 2 hours, then restarts the agent with the root stopped. The
   setting is in whole hours, so a 60 s limit is not possible.
 - **Mixed versions.** `NodeIdentity` gains two optional fields
   (`trustBundleMaxAgeSeconds`, `trustBundleFrozen`). The root reads
   `GET /v1/node` as a plain mapping and the push answer is not parsed,
   so no root needs deploying first. No request any machine sends
   changes. An older agent has no limit; an older UI shows no second line.
+
+## Review (2026-10-27)
+
+The second-model review found two blockers and one should-fix, each
+reproduced. All three are built, each with a test that fails on the
+reviewed head (agent `ec4ed73`).
+
+- **A replay, then a restart.** The held bundle posted again was saved,
+  and the next start read the bundle file's time as the last contact.
+  Built: the time of the last word is its own record (`trust_heard.json`
+  beside the bundle), written only when there is word. Without a record it
+  is the held bundle's signing time, never the file's time. A record that
+  cannot be written leaves the older one, so a restart can only count a
+  longer silence.
+- **A pull in plain HTTP.** A party in the middle of the pull could answer
+  with the held bundle. Built: a pull is word now only over a channel only
+  the root can answer: machine TLS pinned to the root's key (a pinned
+  `https` URL, or a plain address the machine table carries to one) or
+  loopback. In plain HTTP it counts as a push does. **Without such a
+  channel the limit is not enforced**, because a live root reached in
+  plain HTTP whose bundle does not change would freeze its machines after
+  a day. The setting says "Not enforced: this machine reaches the root
+  without encryption.", `trustBundleFrozen` stays false and
+  `trustBundleMaxAgeSeconds` is 0. This covers a root older than LT1 (no
+  machine key on record), and an install with encryption between machines
+  off, where the root's address is not carried over TLS. There the
+  reported age is since the root's address last answered, as before.
+- **Changes through the browser proxy.** A component on this machine checks
+  its token itself, so another machine's token could change it through
+  `/api/proxy` past the limit (a Library report). Built: the proxy refuses
+  another machine's change to a component here past the limit.
+  `FROZEN_TRUST_PROXY_QUESTIONS` names, by kind, the answers and questions
+  that pass (driver inference, the gateway's doors, the Library's
+  eligibility, catalogue search and keep-file state). A kind or path not
+  named is a change. Left: the machine port's `/drivers/<name>` route
+  reaches a driver without the agent; a driver takes config changes only
+  from an operator session, which the root signs.
 
 ## Calls answered by Troy (2026-10-22)
 
