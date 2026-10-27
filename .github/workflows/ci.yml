@@ -161,12 +161,12 @@ jobs:
       tool_driver_ref: ${{ steps.select.outputs.tool_driver_ref }}
       site_host_ref: ${{ steps.select.outputs.site_host_ref }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
           fetch-depth: 0
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: python -m pip install PyYAML==6.0.3
@@ -227,7 +227,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Wait for the previous push's CI run, and require that it passed
         env:
           GH_TOKEN: ${{ github.token }}
@@ -252,11 +252,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Check shared bandwidth cap and installer isolation guards
@@ -316,12 +316,12 @@ jobs:
           - os: windows-latest
             shard: W3
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
           path: specs
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Read the installer consumer pins
@@ -336,37 +336,37 @@ jobs:
                   pin = re.search(rf"^PIN_{name}=([0-9a-f]{{40}})$", text, re.M)
                   assert pin, name
                   out.write(f"{name.lower()}={pin.group(1)}\n")
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/agent
           ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/control
           ref: ${{ needs.plan.outputs.control_ref || steps.pins.outputs.control }}
           path: control
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/gateway
           ref: ${{ needs.plan.outputs.gateway_ref || steps.pins.outputs.gateway }}
           path: gateway
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/library
           ref: ${{ needs.plan.outputs.library_ref || steps.pins.outputs.library }}
           path: library
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/inference-driver
           ref: ${{ needs.plan.outputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/tool-driver
           ref: ${{ needs.plan.outputs.tool_driver_ref || steps.pins.outputs.tool_driver }}
           path: tool-driver
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/store
           ref: ${{ needs.plan.outputs.store_ref || steps.pins.outputs.store }}
@@ -384,7 +384,7 @@ jobs:
           assert pin
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"commit={pin.group(1)}\n")
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/site-host
           ref: ${{ needs.plan.outputs.site_host_ref || steps.site_host.outputs.commit }}
@@ -405,7 +405,7 @@ jobs:
         run: python specs/scripts/di7-same-answer-acceptance.py --output .codex-tmp/di7
       - name: Keep row 20 CPU evidence
         if: always() && matrix.shard == 'L2'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: di7-cpu-evidence
           path: .codex-tmp/di7
@@ -602,7 +602,7 @@ jobs:
         run: python specs/scripts/genui-inference-sabotage.py
       - name: Keep UI inference prerequisite evidence
         if: always() && (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: genui-inference-${{ matrix.os }}
           path: genui-inference.json
@@ -697,7 +697,7 @@ jobs:
     # Row 3's key changes add about 12 minutes on a pair of their own.
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
@@ -714,27 +714,27 @@ jobs:
                   pin = re.search(rf"^PIN_{name}=([0-9a-f]{{40}})$", text, re.M)
                   assert pin, name
                   out.write(f"{name.lower()}={pin.group(1)}\n")
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/agent
           ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/control
           ref: ${{ needs.plan.outputs.control_ref || steps.pins.outputs.control }}
           path: control
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/gateway
           ref: ${{ needs.plan.outputs.gateway_ref || steps.pins.outputs.gateway }}
           path: gateway
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/library
           ref: ${{ needs.plan.outputs.library_ref || steps.pins.outputs.library }}
           path: library
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/inference-driver
           ref: ${{ needs.plan.outputs.inference_driver_ref || steps.pins.outputs.driver }}
@@ -757,7 +757,7 @@ jobs:
         run: >-
           python3 specs/scripts/lt1-machine-tls-acceptance.py --sources .
           --output "$RUNNER_TEMP/lt1-key-change" --labels key-change,root-key-change,key-schedule
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: lt1-machine-tls
@@ -817,12 +817,12 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-24.04]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
           path: specs
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/agent
           ref: ${{ needs.plan.outputs.agent_ref }}
@@ -841,12 +841,12 @@ jobs:
             ref=main
           fi
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/workbench
           ref: ${{ steps.workbench.outputs.ref }}
           path: workbench
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install acceptance dependencies
@@ -864,7 +864,7 @@ jobs:
         run: python -u specs/scripts/row23-folder-access-acceptance.py --report row23-report.json
       - name: Keep folder access evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: row23-${{ matrix.os }}
           path: row23-report.json
@@ -885,12 +885,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
           path: specs
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Read the installer consumer pins
@@ -905,12 +905,12 @@ jobs:
                   pin = re.search(rf"^PIN_{name}=([0-9a-f]{{40}})$", text, re.M)
                   assert pin, name
                   out.write(f"{name.lower()}={pin.group(1)}\n")
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/agent
           ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/inference-driver
           ref: ${{ needs.plan.outputs.inference_driver_ref || steps.pins.outputs.driver }}
@@ -944,7 +944,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
@@ -967,7 +967,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install, request an update to this commit, and check what root did
         # This commit's own installer is what the helper downloads, so the
         # target must be one raw.githubusercontent.com can serve: a pull
@@ -990,11 +990,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - name: Check task ownership and topology health
@@ -1028,11 +1028,11 @@ jobs:
         os: [ubuntu-latest, macos-14, macos-15, macos-26, windows-latest]
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: python -m pip install PyYAML==6.0.3
@@ -1043,7 +1043,7 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
@@ -1059,13 +1059,13 @@ jobs:
     name: Validate (openapi-spec-validator)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -1128,12 +1128,12 @@ jobs:
     name: Lint (Redocly)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
 
@@ -1162,7 +1162,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Check the actual PR commits, not the synthetic merge ref.
@@ -1202,11 +1202,11 @@ jobs:
     if: inputs.ui_ref != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/ui
           ref: ${{ inputs.ui_ref }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -1221,12 +1221,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
           path: specs
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/agent
           ref: ${{ needs.plan.outputs.agent_ref || 'main' }}
@@ -1254,7 +1254,7 @@ jobs:
             esac
           fi
           echo "ref=${ref:-main}" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/workbench
           ref: ${{ steps.workbench.outputs.ref }}
@@ -1272,7 +1272,7 @@ jobs:
         run: |
           sudo install -d -o "$(id -un)" /var/lib/eugene-plexus-mv5b/.codex-tmp
           .codex-tmp/acceptance-venv/bin/python specs/scripts/mv5b-hindsight-acceptance.py --output /var/lib/eugene-plexus-mv5b/.codex-tmp/acceptance
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mv5b-hindsight-linux
@@ -1282,11 +1282,11 @@ jobs:
     if: inputs.workbench_ref != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/workbench
           ref: ${{ inputs.workbench_ref }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
