@@ -134,8 +134,44 @@ components:
             forwards what the app prints. Any other key gets it when the
             operator turns it on, so a tool outside the registry sends its
             logs the same way ours do.
-        maxConcurrentRequests: {type: integer, minimum: 1, maximum: 64, default: 2}
+        maxConcurrentRequests:
+          type: integer
+          minimum: 1
+          maximum: 64
+          default: 2
+          description: |
+            How many of this key's requests run at once, across every
+            gateway. A request past it waits in the gateway's queue (row 11)
+            while `maxQueuedRequests` allows, and is refused when it does not.
         requestsPerMinute: {type: integer, minimum: 1, maximum: 10000, default: 60}
+        band:
+          $ref: '#/components/schemas/QueueBand'
+          description: |
+            The key's queue band (row 11): which of its requests wait or are
+            turned away first when the machines are busy. Absent means
+            `interactive`. A verified person's band from their permission
+            groups (`ClientAdmissionResult.queueBand`) replaces it, and a
+            request's `X-Eugene-Band` header can only lower it. Not part of
+            the policy a running request is bound to: changing it never cuts
+            a request that is already running.
+        maxQueuedRequests:
+          type: integer
+          minimum: 0
+          maximum: 64
+          description: |
+            How many of this key's requests may wait in one gateway's queue
+            for each person (row 11): Workbench's one app key serves
+            everyone, so each verified person has a line of their own. A
+            request past it is refused with `key_queue_full` and
+            `Retry-After`. `0` refuses at once, as before the queue. Not part
+            of the policy a running request is bound to.
+
+            **Absent means 8**, and no default is declared here on purpose:
+            a declared default is filled into every answer a generated model
+            writes, and a reader a release behind refuses the field
+            (`extra='forbid'`), so the authority and the agent send it only
+            when it was set to something else, as `band` and row 70's
+            `queueBand`.
     ClientKeyUpdateRequest:
       type: object
       additionalProperties: false
@@ -146,6 +182,17 @@ components:
       type: object
       additionalProperties: false
       required: [action, keyId, requestId]
+      description: |
+        Since row 11 the gateway sends `check` when a request arrives and
+        `acquire` when the request leaves its queue, so a request that waits
+        holds no lease. A `check` that names a `model` applies the key's
+        `allowedModels` as `acquire` does, and takes nothing.
+
+        An `acquire` refused for the key's limits is a 429 with
+        `Retry-After` and `X-Eugene-Refusal-Reason`: `concurrency` when the
+        key already runs `maxConcurrentRequests` requests (on any gateway;
+        the gateway keeps the request's place and asks again), `rate` when
+        its `requestsPerMinute` are used (the gateway refuses the request).
       properties:
         action: {type: string, enum: [check, acquire, renew, release]}
         keyId: {type: string, minLength: 1, maxLength: 128}
@@ -200,6 +247,16 @@ components:
             groups sets a band. Absent for a key with no person, a release, or
             a person whose groups set none: the key's own band, or the
             install's default, applies. Never taken from the caller.
+    AdmissionRefusalReason:
+      type: string
+      enum: [concurrency, rate]
+      description: |
+        Why an `acquire` was refused with a 429, in its
+        `X-Eugene-Refusal-Reason` header (row 11): `concurrency`, the key
+        already runs `maxConcurrentRequests` requests; `rate`, its
+        `requestsPerMinute` are used. An agent that forwards the root's
+        answer passes the header on, and a standalone agent sets it the same
+        way.
     QueueBand:
       type: string
       enum: [interactive, background, sheddable]
