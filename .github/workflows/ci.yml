@@ -456,6 +456,13 @@ jobs:
       - name: Responses client tools and compact through the OpenAI SDK and fixture backend (row 57)
         if: matrix.shard == 'L1'
         run: python specs/scripts/row57-responses-tools-acceptance.py
+      # Row 59: Tavily, and remote MCP on the Responses door through real
+      # processes: the address rule per reach, a round trip, approvals, the
+      # caller's credential kept to its server; then the address check
+      # sabotaged inside the tool-driver, which must fail the run.
+      - name: Tavily, and remote MCP refused by address, round-tripped, approved and sabotaged (row 59)
+        if: matrix.shard == 'L3' || matrix.shard == 'W3'
+        run: python specs/scripts/row59-remote-mcp-acceptance.py --sabotage
       # Row 53: files kept for one owner each, through a real root, its agent,
       # the store it starts and the gateway; with the owner filter sabotaged,
       # the isolation check must fail.

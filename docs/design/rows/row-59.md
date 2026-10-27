@@ -116,3 +116,56 @@ M in total, about 2 days; 59b gets one adversarial review. Risks:
 - **R59-MCP: Choice 1.** Remote MCP servers named by API clients are
   allowed to internet addresses only; the owner can turn it off, or (expert)
   also allow this network.
+
+## What building found (2026-10-26)
+
+- **`is_global` alone is not a safe predicate.** On Python 3.12 it is True
+  for `224.0.0.1` and `ff02::1` (multicast), `fec0::1` (site-local) and
+  `64:ff9b::7f00:1` (NAT64's spelling of 127.0.0.1). The tool-driver's
+  `egress_guard` checks metadata, unspecified, link-local, multicast,
+  loopback and reserved first, and judges an IPv6 address that carries an
+  IPv4 one (mapped, NAT64, 6to4, Teredo) by the IPv4 address too.
+- **One pooled client per (reach, scheme).** A connection pool keyed by
+  origin would otherwise hand a connection checked under the expert reach
+  to a request under the default one.
+- **Defaults built where the design was silent:**
+  - *This network* does not include this machine: loopback is refused
+    under every reach, because this install's own services listen there and
+    some trust a loopback caller. The acceptance therefore puts its MCP
+    server on the runner's own private address.
+  - Plain `http` is allowed under the expert reach, to this network only;
+    `https` stays required for the internet. A LAN MCP server rarely has a
+    certificate.
+  - Remote MCP never uses the user's proxy: through a proxy the proxy
+    resolves the name and the address check means nothing. An install that
+    reaches the internet only through a proxy cannot reach a remote MCP
+    server (call R59-PROXY).
+  - Remote MCP runs in a search account's process (every tool-driver lists
+    `mcp`, set up or not). An install with no search account refuses it,
+    saying to add one (call R59-HOME).
+  - A local-only key is refused, as for search: the model's arguments leave
+    the machine.
+  - MCP calls have their own budget, 20 a response, which `max_tool_calls`
+    lowers; the install's search default (5) does not apply to them.
+  - `require_approval` in its object form: a tool neither filter names
+    needs approval, unless only `always` was given.
+  - A redirect is followed only as a 307 or 308 to the same origin.
+  - Only the Streamable HTTP transport; a server that answers with
+    neither JSON nor an event stream is named as not one.
+- **The caller's credential is scrubbed, not only unlogged.** A server that
+  echoes the caller's token in an error, a tool description or an output
+  gets it back as `[redacted]` (values of 8 characters or more), so it
+  cannot reach a log, a metrics row or a stored response that way.
+- **httpx logged every request's URL at INFO** in the tool-driver: a
+  SearXNG search's query text, and an MCP server's path and query, which
+  can carry a key. `__main__` sets httpx and httpcore to WARNING.
+- **An approval's id is checked for consistency, not authenticity.**
+  Without a stored response the caller sends the request item back itself;
+  a caller who forges one can only make Eugene call the caller's own server
+  with the caller's own credential, which it could do directly.
+- **Tavily's country boost takes a country's English name**, not the code a
+  request carries; a location is named as ignored. There is no Tavily key
+  on the development box: the provider follows Tavily's API reference.
+- **The metrics row gains `mcpCalls`.** Split on "not an image", MCP calls
+  would have been counted as web searches. A row names neither the server
+  nor the tool: they are the caller's words.

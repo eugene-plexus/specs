@@ -10774,6 +10774,13 @@ components:
         their Responses `item`, including the complete action or operation
         on done. Internal function-adapter arguments are not exposed as
         function-call events for these client-run tools.
+
+        Remote MCP (row 59b): a tool list read is
+        `response.mcp_list_tools.in_progress` then `.completed`; a call is
+        `response.mcp_call.in_progress`, `response.mcp_call_arguments.done`
+        (`arguments`), then `response.mcp_call.completed` or `.failed`; each
+        with `item_id` and `output_index`, between its item's added and
+        done. An `mcp_approval_request` is an item added and done.
       additionalProperties: true
       required:
         - type
@@ -10799,6 +10806,12 @@ components:
             - response.shell_call_command.added
             - response.shell_call_command.delta
             - response.shell_call_command.done
+            - response.mcp_list_tools.in_progress
+            - response.mcp_list_tools.completed
+            - response.mcp_call.in_progress
+            - response.mcp_call_arguments.done
+            - response.mcp_call.completed
+            - response.mcp_call.failed
             - response.completed
             - response.incomplete
             - response.failed
@@ -10822,6 +10835,9 @@ components:
           type: string
         command:
           type: string
+        arguments:
+          type: string
+          description: An MCP call's arguments, as a JSON string, on `response.mcp_call_arguments.done`.
 
     SystemOneRequest:
       type: object
