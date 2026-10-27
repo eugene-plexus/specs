@@ -59,6 +59,13 @@ capture judged in checks 3 to 6 holds them too:
   (an install upgraded from before LT1). Once the worker has a key on record
   and answers on its machine port, the root switches to required by itself
   (LT-C2). Changes the setup, so run it on its own.
+  **agent#38, the race held open:** the worker joins while another process
+  holds its machine port, and the root's agent cannot write its children's
+  machine table, for 20 s. The worker must register its machine port at the
+  join all the same, and the root's gateway must hold back its reads of the
+  worker rather than send its token in clear; the capture, judged at the
+  end, holds every byte of that window. Before the fix this run put `Bearer`
+  and a JWT on the wire every time, not one run in six.
 
 **A machine key change** (row 3, `docs/design/rows/row-03.md` section 5), by
 `--labels key-change,root-key-change`. Each changes keys, so run them on a
@@ -267,6 +274,24 @@ def inside(command: str, argument: dict) -> object:
     if command == "load":
         load(argument)
         return {}
+
+    if command == "hold-port":
+        # agent#38: another process holds this port, so the agent's machine
+        # port keeps trying to bind. Every connection is taken and closed
+        # with nothing read or written: a TLS handshake to it fails at once.
+        import socket
+
+        server = socket.create_server(("0.0.0.0", int(argument["port"])))
+        record = Path(argument["record"])
+        taken = 0
+        record.write_text(json.dumps({"listening": True, "connections": taken}), encoding="utf-8")
+        while True:
+            connection, _ = server.accept()
+            connection.close()
+            taken += 1
+            record.write_text(
+                json.dumps({"listening": True, "connections": taken}), encoding="utf-8"
+            )
 
     if command == "age-key":
         # Part 3b: this machine's key as one made `days` ago. The same key,
@@ -894,12 +919,20 @@ def bring_up(
 
     enroll("root", f"{local}:{CONTROL_PORT}", join_token(["gateway"]), "agent-a")
     worker_token = join_token([])
+    # agent#38: in `automatic`, the window between a machine joining and the
+    # root's children knowing its key is held open (`hold_the_race`).
+    held = "automatic" in labels
+    if held:
+        hold_children_table(pair, root_dir)
 
     # ---- the worker, captured from its first packet ---------------------------
     pair.up("worker")
     if capture:
         pair.capture()
     worker_dir = "/data/b"
+    holder: dict | None = None
+    if held:
+        holder = hold_machine_port(pair)
     pair.exec(
         "worker",
         "spawn",
@@ -946,6 +979,11 @@ def bring_up(
     enroll("worker", f"http://{root_ip}:{CONTROL_PORT}", worker_token, "agent-b")
 
     operator = login("root", f"{local}:{AGENT_PORT}")
+    if holder is not None:
+        hold_the_race(
+            pair, record, holder, root_dir=root_dir, worker_dir=worker_dir,
+            root_session=root_session, operator=operator,
+        )  # fmt: skip
 
     def listed() -> bool:
         got = pair.call("root", "GET", f"{local}:{GATEWAY_PORT}/v1/models", operator)
@@ -975,6 +1013,139 @@ def bring_up(
         login=login,
         listed=listed,
     )
+
+
+#: How long `hold_the_race` keeps the window open. The root's gateway reads
+#: its machines every second here, so it tries the new worker about this
+#: many times; before agent#38 the first try sent two tokens in clear.
+HOLD_SECONDS = 20
+
+
+def hold_children_table(pair: Pair, root_dir: str) -> None:
+    """agent#38, the window held open on the root: its agent cannot write the
+    machine table its children read (a directory stands where the file was),
+    so its gateway keeps the table from before the worker joined, the way it
+    did for the second or two the agent took to write it. The agent's own
+    table, and control's, are in-process and move as before."""
+    docker(
+        "exec", pair.name("root"), "sh", "-c",
+        f"mv {root_dir}/machine_pins.json {root_dir}/machine_pins.held"
+        f" && mkdir {root_dir}/machine_pins.json",
+    )  # fmt: skip
+
+
+def hold_machine_port(pair: Pair) -> dict:
+    """agent#38, the window held open on the worker: another process holds
+    its machine port before its agent starts, so it joins with the port
+    still binding. Returns the stand-in's pid and record file."""
+    record = "/tmp/hold-port.json"
+    started = pair.exec(
+        "worker",
+        "spawn",
+        {
+            "argv": [PYTHON, "/instruments/" + HERE.name, "--inside", "hold-port", "--argument",
+                     json.dumps({"port": MACHINE_PORT, "record": record})],
+            "log": "/tmp/hold-port.log",
+        },
+    )  # fmt: skip
+    wait_for(
+        lambda: "listening" in docker("exec", pair.name("worker"), "cat", record, check=False),
+        "a stand-in on the worker's machine port",
+        20,
+    )
+    return {"pid": started["pid"], "record": record}  # type: ignore[index]
+
+
+def hold_the_race(
+    pair: Pair,
+    record: Record,
+    holder: dict,
+    *,
+    root_dir: str,
+    worker_dir: str,
+    root_session: str,
+    operator: str,
+) -> None:
+    """agent#38: in `automatic`, no token goes to the new worker in plain
+    HTTP while the root's side does not know yet that it takes TLS.
+
+    Both halves of the window are held open for `HOLD_SECONDS` after the
+    worker joins: its machine port is still binding (another process holds
+    8083), and the root's gateway reads a machine table from before the
+    worker joined. The worker must register its machine port at the join
+    all the same, so the root does not take it for an older version; and
+    the root's gateway must hold back its reads of the worker, not send
+    them in clear. Before the fix both sent the worker's agent tokens in
+    plain HTTP (`Bearer`, `eyJ` and plain flows in the capture, judged at
+    the end). Then both are released, and the install goes on to switch to
+    required by itself (LT-C2)."""
+    local = "http://127.0.0.1"
+    worker_ip = pair.ip["worker"]
+    time.sleep(HOLD_SECONDS)
+
+    def log_of(role: str, directory: str) -> str:
+        return docker("exec", pair.name(role), "cat", f"{directory}/agent.log", check=False)
+
+    got = pair.call("root", "GET", f"{local}:{CONTROL_PORT}/v1/nodes/agent-b", root_session)
+    node = got.get("body") or {}
+    worker_log = log_of("worker", worker_dir)
+    still_binding = f"port {MACHINE_PORT} is held by" in worker_log
+    record.add(
+        "automatic: a worker whose machine port is still binding registers it at the join",
+        str(node.get("machineUrl") or "").rstrip("/") == f"https://{worker_ip}:{MACHINE_PORT}"
+        and bool(node.get("tlsPins"))
+        and still_binding
+        and "machine port listening" not in worker_log,
+        machineUrl=node.get("machineUrl"),
+        tlsPins=len(node.get("tlsPins") or []),
+        portStillBinding=still_binding,
+    )
+    # agent#38 review: the owner sees why on the root, in one place.
+    link = node.get("machineTls") or {}
+    record.add(
+        "automatic: the root's card says the worker's machine port is held, and by what",
+        link.get("state") == "door_down"
+        and f"port {MACHINE_PORT} is held by" in str(link.get("detail") or ""),
+        machineTls=link,
+    )
+    root_log = log_of("root", root_dir)
+    held_back = f"held back a request to http://{worker_ip}:{AGENT_PORT}" in root_log
+    unwritten = "could not write the machine table" in root_log
+    record.add(
+        "automatic: the root's gateway held back its reads of a worker its table did not "
+        "name yet, and sent no token in clear",
+        held_back and unwritten,
+        heldBack=held_back,
+        tableHeldFromTheGateway=unwritten,
+    )
+
+    # Release both: the table file is written again at the agent's next
+    # list, and the worker's port binds at its next try (15 s).
+    docker("exec", pair.name("root"), "rm", "-rf",
+           f"{root_dir}/machine_pins.json", f"{root_dir}/machine_pins.held")  # fmt: skip
+    docker("exec", pair.name("worker"), "kill", str(holder["pid"]))
+    # Once the worker answers over TLS the install requires encryption by
+    # itself, and the worker restarts its driver on loopback: the prompts
+    # below come after that, not in the middle of it.
+    wait_for(
+        lambda: "encryption between machines is required now" in log_of("worker", worker_dir),
+        "the install to switch to required and the worker to rebind its driver",
+        180,
+    )
+    time.sleep(3)
+
+    def answers() -> bool:
+        got = pair.call(
+            "root",
+            "POST",
+            f"{local}:{GATEWAY_PORT}/v1/chat/completions",
+            operator,
+            json={"model": MODEL, "messages": [{"role": "user", "content": "ready?"}]},
+            timeout=30,
+        )
+        return got["status"] == 200
+
+    wait_for(answers, "the worker's model to answer again after the switch", 120)
 
 
 def impostor_check(

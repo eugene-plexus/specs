@@ -18,6 +18,13 @@ agent's own account and reads `node.yaml`, `agent.yaml`, the control root's
 files, the other app's key and the keyring. After C1 each of those is
 refused and the app still has its own directory and its key.
 
+**agent#34 adds** checks 36-41: an app whose launcher is ended by force (a
+crash) and which Eugene then stops stays stopped -- Windows' own restart of
+a crashed service, 5 s later, does not start it again -- and nothing its
+launcher started outlives the launcher. Before agent#34, on Windows, the
+restart came anyway and ran whatever spec was on disk; during C4's Go back
+that was the version being replaced.
+
 Try a candidate before pinning it: EP_PIN_AGENT (and the other EP_PIN_*)
 take a full SHA, substituted into a copy of the installer.
 """
@@ -377,6 +384,8 @@ def phase_service(token: str, apps: dict[str, dict]) -> None:
 
     check("34", f"starting {app_id} again brings it back", status == 200 and bool(wait_for(running, 120, 2)))
 
+    phase_crash_then_stop(token, app_id)
+
     say("uninstall removes the app's service")
     other = APPS[1]
     status, _ = api("DELETE", f"{AGENT}/v1/apps/{other}?purge=true", token, timeout=120)
@@ -390,6 +399,130 @@ def phase_service(token: str, apps: dict[str, dict]) -> None:
         removed = "ActiveState=active" not in out.stdout
         detail = out.stdout.strip()
     check("35", f"uninstalling {other} leaves no service running it", status == 204 and removed, detail)
+
+
+def service_name(app_id: str) -> str:
+    return f"EugenePlexusApp-{app_id}" if WINDOWS else f"eugene-plexus-app@{app_id}.service"
+
+
+def service_state(app_id: str) -> tuple[str, int]:
+    """What the service manager says of the app's service: its state and its
+    process, read the way an administrator would."""
+    if WINDOWS:
+        out = subprocess.run(["sc.exe", "queryex", service_name(app_id)], capture_output=True,
+                             text=True, check=False).stdout
+        state = re.search(r"STATE\s*:\s*\d+\s+(\w+)", out)
+        pid = re.search(r"PID\s*:\s*(\d+)", out)
+        return (state.group(1).lower() if state else "missing"), int(pid.group(1)) if pid else 0
+    out = subprocess.run(["systemctl", "show", service_name(app_id),
+                          "--property=ActiveState,SubState,MainPID"],
+                         capture_output=True, text=True, check=False).stdout
+    props = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    return (f"{props.get('ActiveState', 'missing')}/{props.get('SubState', '')}",
+            int(props.get("MainPID") or 0))
+
+
+def descendants(pid: int) -> set[int]:
+    """Every process under `pid`, `pid` itself not included."""
+    if WINDOWS:
+        out = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_Process | ForEach-Object "
+             "{ [string]$_.ProcessId + ' ' + [string]$_.ParentProcessId }"],
+            capture_output=True, text=True, check=False).stdout
+    else:
+        out = subprocess.run(["ps", "-e", "-o", "pid=,ppid="], capture_output=True, text=True,
+                             check=False).stdout
+    children: dict[int, list[int]] = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+    found: set[int] = set()
+    todo = [pid]
+    while todo:
+        for child in children.get(todo.pop(), []):
+            if child not in found and child != pid:
+                found.add(child)
+                todo.append(child)
+    return found
+
+
+def still_running(pids: set[int]) -> set[int]:
+    if not pids:
+        return set()
+    if WINDOWS:
+        listed = ",".join(str(p) for p in sorted(pids))
+        out = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command",
+             f"Get-Process -Id {listed} -ErrorAction SilentlyContinue | ForEach-Object {{ $_.Id }}"],
+            capture_output=True, text=True, check=False).stdout
+    else:
+        out = subprocess.run(["ps", "-o", "pid=", "-p", ",".join(str(p) for p in sorted(pids))],
+                             capture_output=True, text=True, check=False).stdout
+    return {int(p) for p in out.split() if p.isdigit()} & pids
+
+
+def phase_crash_then_stop(token: str, app_id: str) -> None:
+    """agent#34: an app that crashes, then is stopped by Eugene, stays stopped.
+
+    Windows starts a crashed app's service again 5 s after it stops, from the
+    launch spec on disk, and a stop of a service that has already stopped does
+    not cancel that. During C4's Go back that restart ran the version being
+    replaced. Ending the app's launcher by force is the crash; Eugene's stop
+    comes inside the 5 s; the service must still be stopped after them. Linux
+    is checked the same way: `systemctl stop` cancels the restart there.
+    """
+    say("a crash, then Eugene's stop: nothing starts the app again")
+    state, launcher = service_state(app_id)
+    tree = descendants(launcher) if launcher else set()
+    fact(f"{app_id} before the crash", f"{state}, launcher {launcher}, its processes {sorted(tree)}")
+    if not check("36", f"{app_id}'s service runs, with the app under its launcher",
+                 launcher > 0 and bool(tree), (state, launcher, sorted(tree))):
+        return
+    if WINDOWS:
+        killed = subprocess.run(["taskkill", "/F", "/PID", str(launcher)], capture_output=True,
+                                text=True, check=False)
+    else:
+        killed = subprocess.run(["sudo", "kill", "-9", str(launcher)], capture_output=True,
+                                text=True, check=False)
+    crashed_at = time.perf_counter()
+    if not check("37", f"{app_id}'s launcher is ended by force (the crash)", killed.returncode == 0,
+                 (killed.stdout + killed.stderr).strip()):
+        return
+    down = wait_for(lambda: service_state(app_id)[1] != launcher or None, 3, 0.1)
+    before = service_state(app_id)
+    status, body = api("POST", f"{AGENT}/v1/apps/{app_id}/stop", token, timeout=120)
+    took = round(time.perf_counter() - crashed_at, 1)
+    after = service_state(app_id)
+    fact(f"{app_id} after the crash, before and after Eugene's stop", f"{before} -> {after}")
+    fact("seconds from the crash to the end of Eugene's stop", took)
+    # Decisive only if the stop came first: Windows' restart is due 5 s after
+    # the crash, and nothing of the app may run before or right after the stop.
+    check("38", f"Eugene stops {app_id} after its crash, before the service manager's restart is due",
+          bool(down) and status == 200 and took < 4.5 and not before[1] and not after[1]
+          and not after[0].startswith(("running", "active")),
+          {"status": status, "seconds": took, "before": before, "after": after,
+           "answer": body if status != 200 else (body or {}).get("status")})
+    left = wait_for(lambda: not still_running(tree) or None, 10, 0.5)
+    check("39", f"nothing {app_id}'s launcher started outlives it", bool(left), sorted(still_running(tree)))
+    # Past Windows' 5 s recovery delay, with room to spare.
+    time.sleep(max(0.0, 10 - (time.perf_counter() - crashed_at)))
+    state, pid = service_state(app_id)
+    _, view = api("GET", f"{AGENT}/v1/apps/{app_id}", token)
+    stopped = state in ("stopped", "inactive/dead", "failed/failed") and not pid
+    check("40", f"10 s after the crash {app_id} is still stopped: the service manager did not start it again",
+          stopped and (view or {}).get("status") == "exited",
+          {"service": state, "pid": pid, "status": (view or {}).get("status")})
+    status, _ = api("POST", f"{AGENT}/v1/apps/{app_id}/start", token, timeout=120)
+
+    def running():
+        _, app = api("GET", f"{AGENT}/v1/apps/{app_id}", token)
+        return app if (app or {}).get("status") == "running" else None
+
+    back = wait_for(running, 120, 2)
+    check("41", f"Eugene's start brings {app_id} back", status == 200 and bool(back),
+          api("GET", f"{AGENT}/v1/apps/{app_id}", token)[1])
 
 
 def main() -> int:
