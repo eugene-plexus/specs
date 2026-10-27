@@ -319,14 +319,164 @@ def paint(app_url: str, token: str | None) -> tuple[int | None, object]:
                {"prompt": "a red fox in snow", "n": 1, "size": "512x512"}, timeout=180)
 
 
-def wait_running(token: str) -> dict | None:
-    time.sleep(3)
+def app_view(token: str) -> dict:
+    _, app = api("GET", f"{AGENT}/v1/apps/{APP}", token)
+    return app if isinstance(app, dict) else {}
+
+
+def wait_running(token: str, number: str, claim: str, *, settle: float = 3,
+                 seconds: float = 600) -> dict:
+    """The app's page once it says `running`. On a timeout: why not, as the agent,
+    the service manager and the ports say it, then FAIL `number` and stop the run.
+    Going on to a sign-in only hid the cause (agent#34: three runs ended on a
+    RemoteDisconnected that said nothing)."""
+    time.sleep(settle)
+    last: dict = {}
 
     def running():
-        _, app = api("GET", f"{AGENT}/v1/apps/{APP}", token)
-        return app if (app or {}).get("status") == "running" else None
+        status, app = api("GET", f"{AGENT}/v1/apps/{APP}", token)
+        last.update(status=status, body=app, at=time.strftime("%H:%M:%S"))
+        return app if isinstance(app, dict) and app.get("status") == "running" else None
 
-    return wait_for(running, 600, 3)
+    found = wait_for(running, seconds, 3)
+    if found:
+        return found
+    diagnose(token, last)
+    body = last.get("body")
+    detail = ({k: body.get(k) for k in ("version", "status", "lastError", "detail")}
+              if isinstance(body, dict) else {"answer": body})
+    must(number, claim, False, {"lastStatus": last.get("status"), **detail})
+    raise Abort(f"{number}: {claim}")
+
+
+def _shell(argv: list[str], timeout: float = 60) -> str:
+    try:
+        out = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+        return (out.stdout + out.stderr).strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"({' '.join(argv[:2])} failed: {exc})"
+
+
+def _powershell(script: str) -> str:
+    return _shell(["powershell.exe", "-NoProfile", "-Command", script])
+
+
+def launch_spec() -> dict:
+    """The app's launch.json: what its service starts from. It holds no secret."""
+    path = c1.PREFIX / "apps" / APP / "launch.json"
+    text = (path.read_text(encoding="utf-8") if WINDOWS
+            else _shell(["sudo", "cat", str(path)]))
+    try:
+        spec = json.loads(text)
+    except ValueError:
+        return {"unreadable": text[:300]}
+    return spec if isinstance(spec, dict) else {}
+
+
+def process_table() -> dict[int, tuple[int, str]]:
+    """Every process: its parent and its command line."""
+    if WINDOWS:
+        out = _powershell("Get-CimInstance Win32_Process | ForEach-Object "
+                          "{ [string]$_.ProcessId + ' ' + [string]$_.ParentProcessId + ' ' + $_.CommandLine }")
+    else:
+        out = _shell(["ps", "-e", "-o", "pid=,ppid=,args="])
+    table: dict[int, tuple[int, str]] = {}
+    for line in out.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+            table[int(parts[0])] = (int(parts[1]), parts[2] if len(parts) > 2 else "")
+    return table
+
+
+def listener_pids(port: int) -> set[int]:
+    if WINDOWS:
+        out = _powershell(f"Get-NetTCPConnection -LocalPort {port} -State Listen "
+                          "-ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess }")
+        return {int(p) for p in out.split() if p.isdigit()}
+    out = _shell(["sudo", "ss", "-ltnpH", f"sport = :{port}"])
+    return {int(p) for p in re.findall(r"pid=(\d+)", out)}
+
+
+def runs(app_url: str, version: str) -> tuple[bool, dict]:
+    """What runs, not what the agent's record says (agent#34's review): Open
+    WebUI's own version through its door, and the process that listens behind
+    the door -- under the app's service, started from `version`'s folder."""
+    _, said = api("GET", f"{app_url}/api/version")
+    said_version = said.get("version") if isinstance(said, dict) else said
+    spec = launch_spec()
+    env, values = spec.get("env") or {}, spec.get("values") or {}
+    port = int(env.get("EUGENE_PLEXUS_APP_BIND_PORT") or values.get("port") or 0)
+    _, service = c1.service_state(APP)
+    table = process_table()
+    folder = f"versions{os.sep}{version}{os.sep}"
+    owners = []
+    for pid in sorted(listener_pids(port)) if port else []:
+        chain, seen = [], pid
+        while seen and seen in table and seen not in chain and len(chain) < 20:
+            chain.append(seen)
+            seen = table[seen][0]
+        owners.append({
+            "pid": pid,
+            "underService": bool(service) and service in chain,
+            "fromVersion": any(folder.lower() in table[p][1].lower() for p in chain if p in table),
+        })
+    ok = (said_version == version and bool(owners)
+          and all(o["underService"] and o["fromVersion"] for o in owners))
+    return ok, {"apiVersion": said_version, "port": port, "service": service, "listeners": owners}
+
+
+def who_listens(port: int) -> str:
+    if WINDOWS:
+        return _powershell(
+            f"Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | "
+            "ForEach-Object { $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $_.OwningProcess); "
+            "[string]$_.OwningProcess + ' ' + $p.Name + ' ' + $p.CommandLine }") or "nothing"
+    return _shell(["sudo", "ss", "-ltnpH", f"sport = :{port}"]) or "nothing"
+
+
+def diagnose(token: str, last: dict) -> None:
+    """Everything that says why the app does not run, printed before the run stops."""
+    try:
+        say(f"why {APP} does not run")
+        print(f"  last GET /v1/apps/{APP} at {last.get('at')}: {last.get('status')} "
+              f"{json.dumps(last.get('body'), default=str)[:4000]}", flush=True)
+        print(f"  its page now: {json.dumps(app_view(token), default=str)[:4000]}", flush=True)
+        for source, tail in ((f"app: {APP}", 120), ("agent", 200)):
+            status, page = api("GET", f"{AGENT}/v1/logs?source={urllib.parse.quote(source)}"
+                                      f"&tail={tail}", token)
+            print(f"\n--- the log of '{source}' (last {tail}; {status})", flush=True)
+            for line in (page.get("lines") or []) if isinstance(page, dict) else []:
+                text = str(line.get("text"))
+                if "GET /ready" in text or "/healthz" in text:
+                    continue  # the health polls drown the rest
+                print(f"  {line.get('time')} {text[:500]}", flush=True)
+        state, pid = c1.service_state(APP)
+        print(f"\n--- the service {c1.service_name(APP)}: {state}, process {pid}", flush=True)
+        if WINDOWS:
+            print(_shell(["sc.exe", "queryex", c1.service_name(APP)]), flush=True)
+            print(_shell(["sc.exe", "qc", c1.service_name(APP)]), flush=True)
+            print(_powershell(
+                "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and "
+                f"$_.CommandLine -like '*apps\\{APP}*' }} | ForEach-Object "
+                "{ [string]$_.ProcessId + ' parent ' + [string]$_.ParentProcessId + ': ' + $_.CommandLine }"),
+                flush=True)
+        else:
+            print(_shell(["systemctl", "status", "--no-pager", "-n", "30", c1.service_name(APP)]),
+                  flush=True)
+        spec = launch_spec()
+        env = spec.get("env") or {}
+        values = spec.get("values") or {}
+        print(f"\n--- launch.json: version {spec.get('version')}, launch {spec.get('generation')}, "
+              f"argv[0] {(spec.get('argv') or ['?'])[0]}, port {values.get('port')}, "
+              f"bind {env.get('EUGENE_PLEXUS_APP_BIND_HOST')}:{env.get('EUGENE_PLEXUS_APP_BIND_PORT')}, "
+              f"TLS {env.get('EUGENE_PLEXUS_APP_TLS_PORT')}", flush=True)
+        ports = {int(p) for p in (app_view(token).get("port"), values.get("port"),
+                                  env.get("EUGENE_PLEXUS_APP_BIND_PORT"),
+                                  env.get("EUGENE_PLEXUS_APP_TLS_PORT")) if str(p or "").isdigit()}
+        for port in sorted(ports):
+            print(f"  port {port}: {who_listens(port)}", flush=True)
+    except Exception as exc:  # noqa: BLE001 - diagnostics never hide the failure they explain
+        print(f"  (the diagnostics stopped: {exc!r})", flush=True)
 
 
 # --- the update run: the catalogue file is edited, so one install can hold two versions ---
@@ -445,10 +595,15 @@ def update_run(token: str) -> None:
         put_catalogue(variant(shipped, broken=True) if WINDOWS else shipped)
         token = restart_agent()
         if not WINDOWS:
-            # The agent shows an app it adopted after its own restart as "starting" for good
-            # (eugene-plexus/agent, filed from this run); a plain restart clears it.
-            api("POST", f"{AGENT}/v1/apps/{APP}/restart", token)
-            wait_running(token)
+            # The agent showed an app it kept across its own restart as "starting" for good
+            # (eugene-plexus/agent#32): its door led to fresh ports. Said here, and a plain
+            # restart still clears it, so the run goes on either way.
+            kept = wait_for(lambda: app_view(token).get("status") == "running" or None, 90, 3)
+            fact("after the agent's restart, the app it kept runs without a restart (agent#32)",
+                 bool(kept))
+            if not kept:
+                api("POST", f"{AGENT}/v1/apps/{APP}/restart", token)
+            wait_running(token, "94b", "after the agent's restart, Open WebUI runs")
         entry = catalogue_entry(token)
         check("95", "the catalogue says the update resets Open WebUI's settings",
               entry.get("installedVersion") == OLD_VERSION and entry.get("resetsSettings") is True,
@@ -460,7 +615,7 @@ def update_run(token: str) -> None:
             text = json.dumps(state)
             check("97", "on a Linux system install the update is refused and names its cause",
                   state.get("state") == "failed" and "systemd account of its own" in text, text[:500])
-            wait_running(token)
+            wait_running(token, "98", "and nothing changed: the old version still runs")
             _, now = api("GET", f"{AGENT}/v1/apps/{APP}", token)
             check("98", "and nothing changed: the old version still runs",
                   (now or {}).get("version") == OLD_VERSION and (now or {}).get("status") == "running",
@@ -497,9 +652,12 @@ def update_run(token: str) -> None:
             fact("database damaged before Go back", f"no: {exc}")
         status, body = api("POST", f"{AGENT}/v1/apps/{APP}/rollback", token, timeout=300)
         must("100", "Go back is accepted", status == 200, body)
-        back = wait_running(token)
+        back = wait_running(token, "101", "the old version runs again")
         check("101", "the old version runs again", bool(back) and back.get("version") == OLD_VERSION,
               {k: (back or {}).get(k) for k in ("version", "status")})
+        live, detail = runs(app_url, OLD_VERSION)
+        check("101b", f"and it is {OLD_VERSION} that runs: Open WebUI says so, and what listens "
+              "behind its door is under its service, from that version's folder", live, detail)
         owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
         check("102", "and the earlier chat is back",
               "C4 before update" in chat_titles(app_url, owner.get("token")), owner.get("error"))
@@ -510,9 +668,11 @@ def update_run(token: str) -> None:
         must("103", "the update, with nothing broken, starts", status in (200, 202), body)
         state = wait_for(finished, 1800, 5) or {}
         must("104", "it installs", state.get("state") == "done", state)
-        now = wait_running(token)
+        now = wait_running(token, "105", f"it runs on {new_version}")
         check("105", f"it runs on {new_version}", bool(now) and now.get("version") == new_version,
               {k: (now or {}).get(k) for k in ("version", "status")})
+        live, detail = runs(app_url, new_version)
+        check("105b", f"and it is {new_version} that runs, under its service", live, detail)
         owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
         check("106", "the chat made on the old version is there after the update",
               "C4 before update" in chat_titles(app_url, owner.get("token")), owner.get("error"))
@@ -537,14 +697,10 @@ def install_app(token: str) -> dict:
     fact("install seconds", round(time.perf_counter() - started, 1))
     must("32", "it installs from PyPI at the pinned version", state.get("state") == "done", state)
 
-    def ready():
-        _, app = api("GET", f"{AGENT}/v1/apps/{APP}", token)
-        return app if (app or {}).get("status") == "running" else None
-
     started = time.perf_counter()
-    app = wait_for(ready, 600, 3)
+    app = wait_running(token, "33", "it runs and answers /ready", settle=0)
     fact("seconds to ready", round(time.perf_counter() - started, 1))
-    must("33", "it runs and answers /ready", bool(app), api("GET", f"{AGENT}/v1/apps/{APP}", token)[1])
+    check("33", "it runs and answers /ready", True, app)
     return app
 
 
@@ -712,7 +868,7 @@ def main() -> int:
                            timeout=180)
         if WINDOWS:
             must("59", "Reset restarts it once", status == 200, body)
-            wait_running(token)
+            wait_running(token, "59b", "after Reset it runs again")
             owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
             after = images_config(app_url, owner.get("token"))
             check("66", "after Reset the image model is on",
@@ -734,9 +890,7 @@ def main() -> int:
         status, _ = api("POST", f"{app_url}/api/v1/configs/banners", owner["token"], {"banners": [banner]})
         must("60", "its admin sets a banner", status == 200, status)
         api("POST", f"{AGENT}/v1/apps/{APP}/restart", token)
-        time.sleep(3)
-        wait_for(lambda: api("GET", f"{AGENT}/v1/apps/{APP}", token)[1].get("status") == "running" or None,
-                 300, 3)
+        wait_running(token, "60b", "after a plain restart it runs again", seconds=300)
         owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
         _, banners = api("GET", f"{app_url}/api/v1/configs/banners", owner.get("token"))
         check("61", "a restart with nothing changed keeps it",
