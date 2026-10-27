@@ -44,6 +44,8 @@ PINNED_STEPS = {
     # Row 24 (2026-10-22): rotating a client key under a running stream.
     "ck-rotate-acceptance.py": (EVERY, "both"),
     "row70c-workbench-groups-acceptance.py": (EVERY, "both"),
+    # Row 32 (2026-10-26): skills through the model's tools, hostile archives, removal.
+    "row32-skills-acceptance.py": (EVERY, "both"),
     "r8-profile-acceptance.py": (EVERY, "both"),
     "row48b-library-down-acceptance.py": (EVERY, "both"),
     "ls1-eligibility-acceptance.py": (EVERY, "both"),
