@@ -32,6 +32,8 @@ PINNED_STEPS = {
     "r7-rotation-acceptance.py": (FULL, "both"),
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
     "row46-frozen-trust-acceptance.py": (EVERY, "both"),
+    # Row 35 (2026-10-27): pause a machine's models from the console.
+    "row35-tray-pause-acceptance.py": (EVERY, "linux"),
     # Row 70 (2026-10-21): group policies at the root and through an agent.
     "row70-group-policy-acceptance.py": (EVERY, "both"),
     "row29-tool-pictures-acceptance.py": (EVERY, "both"),
@@ -123,6 +125,22 @@ class WiringTests(unittest.TestCase):
             "row23-folder-access-acceptance.py" in step.get("run", "")
             for step in job["steps"]
         ))
+
+    def test_row35_tray_pause_runs_on_a_real_windows_service(self) -> None:
+        job = workflow("ci.yml")["jobs"]["tray-pause-service"]
+        self.assertEqual(job["runs-on"], "windows-latest")
+        self.assertEqual(job["needs"], "plan")
+        self.assertIn("needs.plan.outputs.launch", job["if"])
+        self.assertEqual(job["defaults"]["run"]["shell"], "bash")
+        runs = [step.get("run", "") for step in job["steps"]]
+        acceptance = [r for r in runs if "row35-tray-pause-acceptance.py" in r]
+        self.assertEqual(len(acceptance), 2)
+        self.assertTrue(all("--windows-service" in r for r in acceptance))
+        self.assertTrue(any("--sabotage" in r for r in acceptance))
+        for step in job["steps"]:
+            if "row35-tray-pause-acceptance.py" in step.get("run", ""):
+                self.assertEqual(step["env"]["EP_ROW35_SERVICE"], "1")
+        self.assertTrue(any('-e "./agent[service,tray]"' in r for r in runs))
 
     def test_app_units_load_private_memory_link_credentials(self) -> None:
         installer = (WORKFLOWS.parents[1] / "scripts/install.sh").read_text(encoding="utf-8")

@@ -479,6 +479,13 @@ jobs:
       - name: A machine cut off from its root refuses other machines' changes and still answers (row 46)
         if: matrix.shard == 'L1' || matrix.shard == 'W2'
         run: python specs/scripts/row46-frozen-trust-acceptance.py --sabotage
+      # Row 35: the console pauses a machine's models; a chat through the gateway
+      # names the pause, a restart keeps it, only an operator's session resumes;
+      # with the start guard removed, the chat check must fail. The tray's
+      # channel on a real Windows service is the tray-pause-service job.
+      - name: Pause a machine's models from the console and keep serving, sabotaged (row 35)
+        if: matrix.shard == 'L3'
+        run: python specs/scripts/row35-tray-pause-acceptance.py --sabotage
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
@@ -931,6 +938,66 @@ jobs:
         run: python specs/scripts/r7-launch-boundary-checks.py --current-python
       - name: Check benchmark children and detect deliberately broken guards
         run: python specs/scripts/r6-benchmark-checks.py
+
+  # Row 35: the tray's channel on a real service install. A service of its own
+  # name and ports, two standard accounts (one granted stop with sc sdset, as
+  # install.ps1 does, one not), the tray's own call as each, unelevated; the
+  # remote path, a removed grant, a program holding the pipe's name, and the
+  # identity check sabotaged.
+  tray-pause-service:
+    needs: plan
+    if: needs.plan.outputs.launch == 'true'
+    name: Row 35 tray pause on a real Windows service
+    runs-on: windows-latest
+    timeout-minutes: 25
+    # bash for every step, Windows included (see S10 acceptance instruments).
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+          path: specs
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Read the installer's agent pin
+        id: pins
+        shell: python {0}
+        run: |
+          import os, re
+          from pathlib import Path
+          text = Path("specs/scripts/install.sh").read_text(encoding="utf-8")
+          pin = re.search(r"^PIN_AGENT=([0-9a-f]{40})$", text, re.M)
+          assert pin
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"agent={pin.group(1)}\n")
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/agent
+          ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
+          path: agent
+      - name: Install locked runtime and build dependencies
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r specs/release/requirements.lock
+      - name: Install the acceptance runner and editable build support
+        run: python -m pip install -c specs/release/constraints.txt -r specs/scripts/requirements-acceptance.txt
+      - name: Install the agent with its service and tray extras
+        run: python -m pip install --no-deps --no-build-isolation -e "./agent[service,tray]"
+      - name: Check installed dependency consistency
+        run: python -m pip check
+      - name: The tray's channel on a real service, as two accounts
+        env:
+          EP_ROW35_SERVICE: "1"
+          PYTHONUNBUFFERED: "1"
+        run: python -u specs/scripts/row35-tray-pause-acceptance.py --windows-service
+      - name: The identity check sabotaged to admit everyone must fail
+        env:
+          EP_ROW35_SERVICE: "1"
+          PYTHONUNBUFFERED: "1"
+        run: python -u specs/scripts/row35-tray-pause-acceptance.py --windows-service --sabotage
 
   posix-installers:
     needs: plan

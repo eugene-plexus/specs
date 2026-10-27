@@ -196,3 +196,18 @@ Pause as a lever for someone allowed to stop the service is accepted: that accou
 ## Calls answered by Troy (2026-10-21)
 
 - **TRAY-1 to TRAY-4: Choice 1 each.** The tray holds no key and asks over a local channel; a pause survives a reboot; it stops answers in progress; it cancels a running benchmark.
+
+## What building found (2026-10-27)
+
+- **`NodeIdentity.pause` is present on every agent from row 35 on**, with `paused: false` when the machine is not paused, rather than absent. It carries `trayChannel` either way, and it tells the console which machines can pause: an older agent has no `pause`, and its card offers no button that would 404.
+- **The per-connection check is Windows' own `AccessCheck`**, against the service's DACL read at that moment and the caller's token, not a comparison of the user's SID with a list. Groups and deny ACEs count as Windows counts them. The pipe's DACL is the outer gate: SYSTEM, Administrators, and each named account or group (`S-1-5-21-…`, `S-1-12-1-…`) the service lets stop it; never a broad group (`WD`, `AU`, `BU`, `IU`, `SU`, …), whatever the service grants; every deny of the stop right copied; `NETWORK` denied. Clients get read and `FILE_WRITE_DATA` only, never `FILE_APPEND_DATA` (`FILE_CREATE_PIPE_INSTANCE`). One instance, `FILE_FLAG_FIRST_PIPE_INSTANCE`, `PIPE_REJECT_REMOTE_CLIENTS`. The DACL is refreshed in place (`SetSecurityInfo`) before each connection.
+- **The tray connects at identification level**: the agent learns who asks and cannot act as them. A name another program holds is read over an anonymous connection, so the squatter cannot act as the agent either.
+- **A reboot during a pause holds every runtime the boot would start**, not only those Pause stopped: a runtime the gateway had unloaded (`idle`) would otherwise start at boot, because `autoStart` is all the boot reads. The boot adds them to the pause's list, and Resume starts them, as the boot would have. A damaged `pausedModels` record keeps the machine paused.
+- **The guard refuses a declaration and an edit too**, since both launch. A runtime declared during a pause is refused with the pause's sentence rather than declared stopped.
+- **A runtime Resume could not start stays stopped as a person's stop** (`operator`, remembered), so it reads truly and a reboot does not start it behind the refusal's back.
+- **`paused` belongs to Pause.** A stop request that names it is recorded as `operator`.
+- **The gateway passes the sentence on only for a `startOnDemand` runtime**, the wake path. A request for a model whose only runtime is paused and not `startOnDemand` gets the gateway's own "none of its runtimes asked to be started on demand" (gateway issue filed; `lifecycle.py` and `routing.py` belong to other lanes).
+- **The pause's 409 is a `Problem`** whose `detail` is the sentence; the measurement's 409 stays text, as it was.
+- **Only `build_server` opens the pipe** (`Settings.tray_channel_enabled`, as the machine port): an app built in a test or a harness holds no pipe.
+- **The Windows acceptance's engine is a Kev stand-in** (`kevPython` pointing at an interpreter whose `kev.serve` answers `/v1/models`): a service loads no test adapter. The chat through the gateway runs in the console path, on Linux.
+- **Mixed versions:** no request or report a machine sends gains a field, so the root need not go first. `GET /v1/node` gains `pause`, which consoles read and an older console ignores. `StopReason` gains `paused`; the gateway reads it as text, and an older console shows the word.
