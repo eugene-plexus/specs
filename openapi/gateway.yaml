@@ -243,7 +243,14 @@ info:
     runs before the model is called and comes back as an `mcp_call` item
     carrying `approval_request_id`; a declined one is told to the model.
     A call already answered by an `mcp_call` in `input` is never run
-    again.
+    again, and **one approval runs its call once**: the gateway takes it in
+    a ledger beside its config just before the call runs, and an approval
+    already taken -- answered again against the same
+    `previous_response_id`, or retried -- is a 400. An approved call runs
+    only while this request's `allowed_tools` still offers its tool;
+    otherwise its `mcp_call` says it did not run and why. A `remoteMcp`
+    value the gateway does not know (a hand edit) is refused, never taken
+    for on.
 
     **What the caller gets back:** `mcp_call` items (`id`, `server_label`,
     `name`, `arguments`, `output`, `error`, `approval_request_id`),

@@ -182,3 +182,44 @@ M in total, about 2 days; 59b gets one adversarial review. Risks:
 - **The metrics row gains `mcpCalls`.** Split on "not an image", MCP calls
   would have been counted as web searches. A row names neither the server
   nor the tool: they are the caller's words.
+
+## The second-model review (2026-10-27)
+
+Codex found no SSRF bypass of the address guard (rebinding, TOCTOU,
+happy eyeballs, numeric spellings, redirects, userinfo, `Host`, pooling).
+Each finding below was fixed with a test that failed first:
+
+- **Blocker: cookies were shared between callers.** The tool-driver's one
+  client kept cookies, so a cookie one caller's server set for a domain rode
+  on another caller's call to that domain. Its jar keeps and sends none.
+- **Blocker: ending a session was read whole.** The `DELETE` answer was
+  decompressed outside the byte limit (8 KiB became 8 MiB). It is streamed,
+  asked for uncompressed, and closed unread.
+- **Blocker: a hand-written `remoteMcp: off` meant the internet.** YAML
+  reads a bare `off` as False. It is read as `off`, and a value Eugene does
+  not know is refused with a 400 naming it, with a warning beside the
+  setting -- never taken for on.
+- **A credential could reach the model or an error.** A tool named with
+  the caller's credential refuses the listing; a credential header's value
+  is scrubbed whatever its length; every error is scrubbed whole before it
+  is cut short (Tavily's and Google's words too: cut first, a key's first
+  characters stayed).
+- **An approval could run twice.** Answering it again against the same
+  `previous_response_id` carried no `mcp_call`, so the call ran again. An
+  approval is taken in a ledger beside the gateway's config (SQLite, a
+  primary key, 31 days) just before its call runs; one already taken is a
+  400, after a restart too.
+- **An approved call ignored this request's `allowed_tools`.** It runs only
+  while this request still offers the tool.
+- **Deep JSON was a bare 500.** Nesting deeper than 64 levels is refused by
+  name (`too_deep`).
+- **"This machine's own addresses" claimed too much.** The rule filters
+  address ranges, not machines: a public address of this machine, or of
+  another machine of the install, counts as the internet. Telling them
+  apart would mean reading every interface and every machine's addresses;
+  the setting now says what is refused (loopback and metadata) and that a
+  public address counts as the internet, whichever machine has it. Eugene's
+  own services still ask for their own tokens there.
+- **Kept by design:** an approval request the caller sends back itself is
+  checked for consistency, not authenticity; a forged one can only make
+  Eugene call the caller's own server with the caller's own credential.

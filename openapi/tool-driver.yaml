@@ -189,10 +189,17 @@ paths:
 
         **The caller's headers** go only to this server, and only for
         this call. They are never logged, never stored and never part of
-        an error's words. The words of a failure name the server by its
+        an error's words: every value of eight characters or more, and a
+        credential header's value whatever its length, is scrubbed from
+        errors (before they are cut short), descriptions and outputs, and a
+        tool named with one refuses the listing (502
+        `credential_in_tool_name`). No cookie is kept or sent: callers
+        share one client. The words of a failure name the server by its
         origin (`https://host:port`) only, never its path or query, which
         can carry a key too. The server refusing the caller's credential
-        (401 or 403) is 424 `server_refused_credentials`.
+        (401 or 403) is 424 `server_refused_credentials`. JSON nested
+        deeper than 64 levels is 502 `too_deep`. The `DELETE` that ends the
+        session is sent uncompressed-only and never read.
       requestBody:
         required: true
         content:
