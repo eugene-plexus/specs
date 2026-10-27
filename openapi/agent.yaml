@@ -6611,8 +6611,73 @@ components:
           $ref: "#/components/schemas/NodeInstall"
         update:
           $ref: "#/components/schemas/NodeUpdate"
+        version:
+          $ref: "#/components/schemas/NodeVersion"
 
     # -------- Updates: what this install is, and what is newer --------
+
+    NodeVersion:
+      type: object
+      description: |
+        What a person calls the version this machine runs (row 75).
+
+        The agent works it out from the seven commits `install` reports,
+        matched against the published release manifests and the Edge
+        marker's pins. It is never a guess: **a version is named only when
+        every installed commit equals the one a release (or Edge) pins.**
+        An install that matches nothing says so (`unmatched`), and the
+        commits stay on `install` for whoever wants them.
+
+        The answer is kept on disk, keyed by the installed commits, so it
+        shows offline and after a restart, and is worked out again when the
+        commits change. `GET /v1/node` never calls GitHub for it: the lookup
+        runs with the update check (a minute after start, then every six
+        hours, and on `POST /v1/node/update/check`), and until the first
+        match the kind is `unknown`, with `error` naming the cause when the
+        lookup failed.
+
+        Absent on an agent from before this field. A reader treats absence
+        as `unknown`; nothing refuses it.
+      required: [kind]
+      properties:
+        kind:
+          $ref: "#/components/schemas/NodeVersionKind"
+        release:
+          type: string
+          description: The release tag (`v0.4.0`). Only for kind `release`.
+        publishedAt:
+          type: string
+          format: date-time
+          description: |
+            When the release was published, or, for `edge`, when the Edge
+            build was made (the date of its specs commit).
+        specsCommit:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+          description: The specs commit of the Edge build. Only for kind `edge`.
+        checkedAt:
+          type: string
+          format: date-time
+          description: When the commits were last matched.
+        error:
+          type: string
+          description: |
+            Why the lookup could not finish, and what it was trying to
+            reach. For `unknown`, the reason no version is known yet; for
+            `unmatched`, why the last recheck failed (the answer stands).
+
+    NodeVersionKind:
+      type: string
+      enum: [release, edge, development, unmatched, unknown]
+      description: |
+        - `release`: every commit is the one a published release pins.
+        - `edge`: every commit is the one the Edge marker pins.
+        - `development`: a git checkout; it has no version to match.
+        - `unmatched`: the commits match no release and not Edge: "not a
+          published release".
+        - `unknown`: not matched yet (the first lookup has not run, GitHub
+          could not be read, or the install's commits changed since the
+          last match and the new ones are not matched yet).
 
     NodeInstall:
       type: object
