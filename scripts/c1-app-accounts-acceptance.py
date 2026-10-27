@@ -491,11 +491,19 @@ def phase_crash_then_stop(token: str, app_id: str) -> None:
                  (killed.stdout + killed.stderr).strip()):
         return
     down = wait_for(lambda: service_state(app_id)[1] != launcher or None, 3, 0.1)
-    fact(f"{app_id} after the crash", service_state(app_id))
+    before = service_state(app_id)
     status, body = api("POST", f"{AGENT}/v1/apps/{app_id}/stop", token, timeout=120)
-    fact("seconds from the crash to the end of Eugene's stop", round(time.perf_counter() - crashed_at, 1))
-    check("38", f"Eugene stops {app_id} after its crash", bool(down) and status == 200,
-          (status, body))
+    took = round(time.perf_counter() - crashed_at, 1)
+    after = service_state(app_id)
+    fact(f"{app_id} after the crash, before and after Eugene's stop", f"{before} -> {after}")
+    fact("seconds from the crash to the end of Eugene's stop", took)
+    # Decisive only if the stop came first: Windows' restart is due 5 s after
+    # the crash, and nothing of the app may run before or right after the stop.
+    check("38", f"Eugene stops {app_id} after its crash, before the service manager's restart is due",
+          bool(down) and status == 200 and took < 4.5 and not before[1] and not after[1]
+          and not after[0].startswith(("running", "active")),
+          {"status": status, "seconds": took, "before": before, "after": after,
+           "answer": body if status != 200 else (body or {}).get("status")})
     left = wait_for(lambda: not still_running(tree) or None, 10, 0.5)
     check("39", f"nothing {app_id}'s launcher started outlives it", bool(left), sorted(still_running(tree)))
     # Past Windows' 5 s recovery delay, with room to spare.

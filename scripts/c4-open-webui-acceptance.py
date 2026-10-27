@@ -373,6 +373,58 @@ def launch_spec() -> dict:
     return spec if isinstance(spec, dict) else {}
 
 
+def process_table() -> dict[int, tuple[int, str]]:
+    """Every process: its parent and its command line."""
+    if WINDOWS:
+        out = _powershell("Get-CimInstance Win32_Process | ForEach-Object "
+                          "{ [string]$_.ProcessId + ' ' + [string]$_.ParentProcessId + ' ' + $_.CommandLine }")
+    else:
+        out = _shell(["ps", "-e", "-o", "pid=,ppid=,args="])
+    table: dict[int, tuple[int, str]] = {}
+    for line in out.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+            table[int(parts[0])] = (int(parts[1]), parts[2] if len(parts) > 2 else "")
+    return table
+
+
+def listener_pids(port: int) -> set[int]:
+    if WINDOWS:
+        out = _powershell(f"Get-NetTCPConnection -LocalPort {port} -State Listen "
+                          "-ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess }")
+        return {int(p) for p in out.split() if p.isdigit()}
+    out = _shell(["sudo", "ss", "-ltnpH", f"sport = :{port}"])
+    return {int(p) for p in re.findall(r"pid=(\d+)", out)}
+
+
+def runs(app_url: str, version: str) -> tuple[bool, dict]:
+    """What runs, not what the agent's record says (agent#34's review): Open
+    WebUI's own version through its door, and the process that listens behind
+    the door -- under the app's service, started from `version`'s folder."""
+    _, said = api("GET", f"{app_url}/api/version")
+    said_version = said.get("version") if isinstance(said, dict) else said
+    spec = launch_spec()
+    env, values = spec.get("env") or {}, spec.get("values") or {}
+    port = int(env.get("EUGENE_PLEXUS_APP_BIND_PORT") or values.get("port") or 0)
+    _, service = c1.service_state(APP)
+    table = process_table()
+    folder = f"versions{os.sep}{version}{os.sep}"
+    owners = []
+    for pid in sorted(listener_pids(port)) if port else []:
+        chain, seen = [], pid
+        while seen and seen in table and seen not in chain and len(chain) < 20:
+            chain.append(seen)
+            seen = table[seen][0]
+        owners.append({
+            "pid": pid,
+            "underService": bool(service) and service in chain,
+            "fromVersion": any(folder.lower() in table[p][1].lower() for p in chain if p in table),
+        })
+    ok = (said_version == version and bool(owners)
+          and all(o["underService"] and o["fromVersion"] for o in owners))
+    return ok, {"apiVersion": said_version, "port": port, "service": service, "listeners": owners}
+
+
 def who_listens(port: int) -> str:
     if WINDOWS:
         return _powershell(
@@ -603,6 +655,9 @@ def update_run(token: str) -> None:
         back = wait_running(token, "101", "the old version runs again")
         check("101", "the old version runs again", bool(back) and back.get("version") == OLD_VERSION,
               {k: (back or {}).get(k) for k in ("version", "status")})
+        live, detail = runs(app_url, OLD_VERSION)
+        check("101b", f"and it is {OLD_VERSION} that runs: Open WebUI says so, and what listens "
+              "behind its door is under its service, from that version's folder", live, detail)
         owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
         check("102", "and the earlier chat is back",
               "C4 before update" in chat_titles(app_url, owner.get("token")), owner.get("error"))
@@ -616,6 +671,8 @@ def update_run(token: str) -> None:
         now = wait_running(token, "105", f"it runs on {new_version}")
         check("105", f"it runs on {new_version}", bool(now) and now.get("version") == new_version,
               {k: (now or {}).get(k) for k in ("version", "status")})
+        live, detail = runs(app_url, new_version)
+        check("105b", f"and it is {new_version} that runs, under its service", live, detail)
         owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
         check("106", "the chat made on the old version is there after the update",
               "C4 before update" in chat_titles(app_url, owner.get("token")), owner.get("error"))
