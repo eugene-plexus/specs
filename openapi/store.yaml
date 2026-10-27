@@ -63,12 +63,28 @@ info:
     `secure_delete` is on) and, when the last reference to it goes, its
     blob file.
 
+    **A stored response lives `responseDays` (30, OpenAI's retention)**
+    after it is kept (row 54). A response kept with
+    `previousResponseId` extends the end of every response before it in
+    its chain to its own, so a conversation chained by id lives as long
+    as its newest response. **A conversation is kept until it is
+    deleted**, as OpenAI keeps one, unless the owner set
+    `conversationDays` (0, never, by default): then it ends that many days
+    after its last use (an item added, a response kept in it, its
+    metadata changed), whenever the setting was made. Its items end with
+    it. `DELETE` deletes a response or a
+    conversation for good at once; a response later in a chain whose
+    history passes through a deleted one can no longer be rebuilt
+    (`409`, named).
+
     **The quota bounds the disk.** Room is taken before a byte is
     written: a whole file's size, or a part's against its upload's
     declared size. An upload is joined once at a time (a second
     `complete` is a 409), and its parts are deleted as they are joined.
     An ended file counts until its bytes are deleted; an owner at its
-    quota has its own ended files deleted first.
+    quota has its own ended files deleted first. Stored responses and
+    conversation items count against the same bytes (not against the
+    file count).
 
     **A removed person's objects are hidden, then deleted** (call
     R53-REMOVE, Choice 2: Workbench's rules for a removed person, row 7).
@@ -134,6 +150,12 @@ security:
 tags:
   - name: files
     description: Files and uploads, for the gateway's `/v1/files` and `/v1/uploads` doors.
+  - name: responses
+    description: |
+      Stored responses and conversations (row 54), for the gateway's
+      `/v1/responses` and `/v1/conversations` doors. Items are kept as the
+      gateway sends them, in OpenAI's shapes: the store reads only each
+      item's `id`.
   - name: store
     description: Counts, the sweep and removed people, for the owner's console.
   - name: config
@@ -406,6 +428,338 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
 
+  /v1/responses:
+    post:
+      tags: [responses]
+      operationId: keepStoredResponse
+      summary: Keep one response, after it has ended, with the items it was given and made.
+      description: |
+        The gateway sends this before it gives the client the response's
+        last event, so the client's next request can name it at once.
+        `id` is the gateway's own (the client has already seen it).
+
+        With `previousResponseId`, that response must be the owner's and
+        not have ended: the new one joins its chain (`rootId` is the
+        chain's first response) and every response before it in the chain
+        ends no sooner than this one. With `conversationId`, that
+        conversation must be the owner's: the response's `input` and
+        `output` items are added to it, in the same transaction, and its
+        end moves. A response may name one of the two, not both.
+
+        Answers 403 when the owner turned responses off or the owner is a
+        person Eugene removed, 404 when the previous response or the
+        conversation is not the owner's (the same body as one that does
+        not exist), 409 when the id is already kept, and 413 with the
+        numbers when the owner's quota would be passed.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StoredResponseRequest'}
+      responses:
+        '201':
+          description: The response, kept.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: A response with this id is already kept.
+          content:
+            application/problem+json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+        '413': {$ref: '#/components/responses/OverQuota'}
+
+  /v1/responses/{responseId}:
+    parameters:
+      - $ref: '#/components/parameters/ResponseId'
+    get:
+      tags: [responses]
+      operationId: getStoredResponse
+      summary: One of the owner's stored responses, as the client was given it.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: The response.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [responses]
+      operationId: deleteStoredResponse
+      summary: Delete one of the owner's stored responses, for good.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredObjectDeleted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /v1/responses/{responseId}/input_items:
+    parameters:
+      - $ref: '#/components/parameters/ResponseId'
+    get:
+      tags: [responses]
+      operationId: listStoredResponseInputItems
+      summary: The items the model was given for this response, one page.
+      description: |
+        The conversation as the model received it: for a chained response,
+        each earlier response's input and output items, oldest first, then
+        its own input; for a response in a conversation, the
+        conversation's items before it, then its own input (OpenAI: "items
+        from this conversation are prepended"). Paged by item id in
+        `order`.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/ItemLimit'
+        - $ref: '#/components/parameters/ItemOrder'
+        - $ref: '#/components/parameters/ItemAfter'
+      responses:
+        '200':
+          description: One page of items.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredItemList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/ChainBroken'}
+
+  /v1/responses/{responseId}/context:
+    parameters:
+      - $ref: '#/components/parameters/ResponseId'
+    get:
+      tags: [responses]
+      operationId: getStoredResponseContext
+      summary: The conversation so far, to continue from this response.
+      description: |
+        What a request with `previous_response_id` continues: every
+        response of the chain from its first to this one, oldest first,
+        each one's input items then its output items. Every link is read
+        for the owner only. 403 when responses are off; 404 when the
+        response is not the owner's; 409 when a response earlier in the
+        chain was deleted; 413 when the history is more than one request
+        can carry (`maxContextBytes`).
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: The conversation so far.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredContext'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/ChainBroken'}
+        '413': {$ref: '#/components/responses/ContextTooLarge'}
+
+  /v1/conversations:
+    post:
+      tags: [responses]
+      operationId: createStoredConversation
+      summary: Start a conversation, with up to 20 items.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StoredConversationRequest'}
+      responses:
+        '201':
+          description: The conversation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredConversation'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {$ref: '#/components/responses/OverQuota'}
+
+  /v1/conversations/{conversationId}:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+    get:
+      tags: [responses]
+      operationId: getStoredConversation
+      summary: One of the owner's conversations.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredConversation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [responses]
+      operationId: updateStoredConversation
+      summary: Replace a conversation's metadata (OpenAI updates with POST).
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StoredConversationUpdate'}
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredConversation'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [responses]
+      operationId: deleteStoredConversation
+      summary: Delete a conversation and its items, for good.
+      description: |
+        The responses kept in it stay until their own end, as OpenAI
+        keeps them.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredObjectDeleted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /v1/conversations/{conversationId}/items:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+    get:
+      tags: [responses]
+      operationId: listStoredConversationItems
+      summary: One page of a conversation's items.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/ItemLimit'
+        - $ref: '#/components/parameters/ItemOrder'
+        - $ref: '#/components/parameters/ItemAfter'
+      responses:
+        '200':
+          description: One page of items.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredItemList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [responses]
+      operationId: addStoredConversationItems
+      summary: Add up to 20 items to the end of a conversation.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StoredItemsRequest'}
+      responses:
+        '201':
+          description: The items added, in order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredItemList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: An item with one of these ids is already in the conversation.
+          content:
+            application/problem+json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+        '413': {$ref: '#/components/responses/OverQuota'}
+
+  /v1/conversations/{conversationId}/items/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+      - name: itemId
+        in: path
+        required: true
+        schema: {type: string, maxLength: 128}
+    get:
+      tags: [responses]
+      operationId: getStoredConversationItem
+      summary: One item of a conversation.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: The item, as it was kept.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredItem'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [responses]
+      operationId: deleteStoredConversationItem
+      summary: Delete one item of a conversation, for good.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: The conversation the item was deleted from (OpenAI's answer).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredConversation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /v1/conversations/{conversationId}/context:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+    get:
+      tags: [responses]
+      operationId: getStoredConversationContext
+      summary: Every item of a conversation, oldest first, to continue it.
+      description: |
+        What a Responses request with `conversation` continues. 403 when
+        responses are off; 404 when the conversation is not the owner's;
+        413 when it is more than one request can carry.
+      parameters:
+        - $ref: '#/components/parameters/Owner'
+      responses:
+        '200':
+          description: The conversation so far.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredContext'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/ContextTooLarge'}
+
   /v1/owners:
     get:
       tags: [store]
@@ -413,8 +767,8 @@ paths:
       summary: Counts and bytes per owner, for the owner's console. Never content.
       description: |
         An operator session only. Each owner as the store names it, with
-        how many files and bytes it keeps and how many uploads are in
-        progress. No file name, purpose or byte of content: the install
+        how many files, stored responses and conversations and how many
+        bytes it keeps, and how many uploads are in progress. No file name, purpose or byte of content: the install
         owner does not read people's objects (LD6).
       responses:
         '200':
@@ -460,7 +814,8 @@ paths:
       summary: Delete now, everything a removed person kept here.
       description: |
         An operator session only. The owner's Delete now (MRC27): every
-        file and upload of a hidden person, at once and for good, with
+        file, upload, stored response and conversation of a hidden
+        person, at once and for good, with
         their rows in every copy kept before a migration. Only a person
         Eugene removed (one `/v1/owners` lists with `deleteAt`): a person
         Eugene still has keeps their files.
@@ -604,6 +959,37 @@ components:
       schema:
         type: string
         maxLength: 64
+    ResponseId:
+      name: responseId
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 64
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 64
+    ItemLimit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      description: OpenAI's bounds.
+    ItemOrder:
+      name: order
+      in: query
+      required: false
+      schema: {$ref: '#/components/schemas/StoredListOrder'}
+    ItemAfter:
+      name: after
+      in: query
+      required: false
+      schema: {type: string, maxLength: 128}
+      description: An item id; the page starts after it, in `order`.
 
   responses:
     BadRequest:
@@ -636,6 +1022,20 @@ components:
       description: |
         The owner's quota would be passed. `detail` says the numbers: what
         the owner keeps, what this adds and the quota.
+      content:
+        application/problem+json:
+          schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+    ChainBroken:
+      description: |
+        A response earlier in this chain was deleted, so the conversation
+        cannot be rebuilt. `detail` names it (it is the owner's own).
+      content:
+        application/problem+json:
+          schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
+    ContextTooLarge:
+      description: |
+        The conversation so far is more than one request can carry.
+        `detail` says the numbers.
       content:
         application/problem+json:
           schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
@@ -810,6 +1210,235 @@ components:
           pattern: '^[0-9a-fA-F]{64}$'
           description: Eugene's check of the joined file.
 
+    StoredItem:
+      type: object
+      additionalProperties: true
+      required: [id]
+      description: |
+        One item in OpenAI's shape (a message, a function call, its
+        output, reasoning, ...), as the gateway sent it. The store reads
+        only `id`, which is unique within its response or conversation.
+        An id has OpenAI's shape, a short prefix and hex digits, so no id
+        carries words into a path, a log line or an error: the gateway
+        gives a new one to an item whose id has another shape, and the
+        store refuses one (400, the id not repeated).
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z]{1,16}_[0-9a-f]{16,64}$'
+        type:
+          type: string
+
+    StoredResponseStatus:
+      type: string
+      enum: [completed, incomplete, failed, cancelled]
+      description: |
+        How the response ended. A stream the client left is kept with what
+        was sent, `incomplete`.
+
+    StoredResponseRequest:
+      type: object
+      additionalProperties: false
+      required: [id, model, status, input, output, response]
+      properties:
+        id:
+          type: string
+          pattern: '^resp_[0-9a-f]{32}$'
+          description: The gateway's id for the response, which the client already has.
+        model:
+          type: string
+          maxLength: 512
+        status:
+          $ref: '#/components/schemas/StoredResponseStatus'
+        previousResponseId:
+          type: string
+          maxLength: 64
+          description: The response this one continues (its chain).
+        conversationId:
+          type: string
+          maxLength: 64
+          description: The conversation this response belongs to; its items are added to it.
+        conversationPosition:
+          type: integer
+          minimum: 0
+          description: |
+            With `conversationId`: the conversation's `position` when its
+            context was read for this request (`StoredContext.position`).
+            The items before it are what the response was given, whatever
+            another turn added meanwhile; absent, the conversation's end
+            when the response is kept.
+        input:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/StoredItem'}
+          description: |
+            The items the request itself sent (not the chain's or the
+            conversation's), each with an id.
+        output:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/StoredItem'}
+        response:
+          type: object
+          additionalProperties: true
+          description: |
+            The response object as the client was given it, without
+            `output` (kept once, above). `GET` gives it back whole.
+
+    StoredResponse:
+      type: object
+      additionalProperties: false
+      required: [id, model, status, createdAt, expiresAt, rootId, bytes]
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+        status:
+          $ref: '#/components/schemas/StoredResponseStatus'
+        createdAt:
+          type: integer
+          description: Unix seconds.
+        expiresAt:
+          type: integer
+          description: |
+            Unix seconds: `responseDays` after it was kept, or later when a
+            response after it in its chain was kept later.
+        rootId:
+          type: string
+          description: The first response of its chain; its own id when it starts one.
+        previousResponseId:
+          type: string
+        conversationId:
+          type: string
+        bytes:
+          type: integer
+          description: What it holds, counted against the owner's quota.
+        response:
+          type: object
+          additionalProperties: true
+          description: The response object, `output` included. Present on `GET`.
+
+    StoredObjectDeleted:
+      type: object
+      additionalProperties: false
+      required: [id, deleted]
+      properties:
+        id:
+          type: string
+        deleted:
+          type: boolean
+          const: true
+
+    StoredItemList:
+      type: object
+      additionalProperties: false
+      required: [data, hasMore]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/StoredItem'}
+        hasMore:
+          type: boolean
+
+    StoredItemsRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/StoredItem'}
+          description: |
+            Added at the end, in order, in one transaction. The gateway
+            takes OpenAI's 20 at a time from a client; a turn kept with
+            `store: false` adds all its items in one call.
+
+    StoredContext:
+      type: object
+      additionalProperties: false
+      required: [items, bytes]
+      description: The conversation so far, oldest first.
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/StoredItem'}
+        bytes:
+          type: integer
+        rootId:
+          type: string
+          description: For a chain, its first response.
+        conversationId:
+          type: string
+          description: For a conversation, its id.
+        position:
+          type: integer
+          minimum: 0
+          description: |
+            For a conversation, the place after its last item when it was
+            read: sent back as `conversationPosition` when the response is
+            kept.
+        hadInstructions:
+          type: boolean
+          description: |
+            For a chain, whether the response named was made with
+            `instructions`, which are not carried to the next (OpenAI's
+            rule), so the door can say so.
+
+    StoredMetadata:
+      type: object
+      maxProperties: 16
+      additionalProperties:
+        type: string
+      description: |
+        OpenAI's metadata: 16 pairs at most, a key of at most 64
+        characters and a value of at most 512 (the gateway checks both).
+
+    StoredConversationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        metadata:
+          $ref: '#/components/schemas/StoredMetadata'
+        items:
+          type: array
+          maxItems: 20
+          items: {$ref: '#/components/schemas/StoredItem'}
+
+    StoredConversationUpdate:
+      type: object
+      additionalProperties: false
+      required: [metadata]
+      properties:
+        metadata:
+          oneOf:
+            - $ref: '#/components/schemas/StoredMetadata'
+            - type: 'null'
+
+    StoredConversation:
+      type: object
+      additionalProperties: false
+      required: [id, createdAt, metadata, items]
+      properties:
+        id:
+          type: string
+          pattern: '^conv_[0-9a-f]{48}$'
+        createdAt:
+          type: integer
+        expiresAt:
+          type: integer
+          description: |
+            Unix seconds, `conversationDays` after its last use. Absent,
+            the conversation is kept until it is deleted (the default, as
+            OpenAI keeps one).
+        metadata:
+          $ref: '#/components/schemas/StoredMetadata'
+        items:
+          type: integer
+          description: How many items it holds.
+
     StoreOwner:
       type: object
       additionalProperties: false
@@ -822,10 +1451,18 @@ components:
           type: integer
         bytes:
           type: integer
-          description: The bytes of the owner's files and of its uploads in progress.
+          description: |
+            The bytes of the owner's files, its uploads in progress, its
+            stored responses and its conversations.
         uploads:
           type: integer
           description: Uploads in progress.
+        responses:
+          type: integer
+          description: Stored responses (row 54).
+        conversations:
+          type: integer
+          description: Conversations (row 54).
         removedAt:
           type: integer
           description: |
@@ -919,6 +1556,12 @@ components:
           description: Blob files unlinked.
         freedBytes:
           type: integer
+        responses:
+          type: integer
+          description: Stored responses deleted, ended or removed (row 54).
+        conversations:
+          type: integer
+          description: Conversations deleted, with their items, ended or removed (row 54).
         removal:
           $ref: '#/components/schemas/RemovalCheck'
         error:
@@ -933,6 +1576,12 @@ components:
         files:
           type: boolean
           description: '`/v1/files` and `/v1/uploads` keep files.'
+        responses:
+          type: boolean
+          description: |
+            `/v1/responses` keeps responses when apps ask (`store: true`),
+            and `/v1/conversations` keeps conversations (row 54,
+            `responsesEnabled`).
 
     StoreStatus:
       type: object

@@ -133,14 +133,14 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
-    "agent"            = "1f2a8ff67c52af8c283ec1543a7fb8165d26c572"
-    "control"          = "ec5bcda5f723773d9d1e8aad2088e18e601cda14"
-    "gateway"          = "4cbf56cc90d49740bb9e3b624db400f97edc1bd8"
+    "agent"            = "a4da17230970d41556c400a1b5397a9d23d18919"
+    "control"          = "2a9571a41e23675438e0b3ee2f48817c5e882138"
+    "gateway"          = "ee2de18533e70d08a5b3d417d171c7c9a964bf19"
     "inference-driver" = "7fb4c875ef86ae65b601249818212b2934d8b506"
     "library"          = "1b015632de2dddde6139719916b77128a9019869"
-    "store"            = "845e6803a2af6825eb1ae3fd550076cf9f3d1d0c"
+    "store"            = "92d59cb4f703c9564b0f41203d2d36f95feb9460"
     "tool-driver"      = "a9c8b03439b60d2ba24275bf9f17da02c245190e"
-    "ui"               = "a8adb78b12fd0c6c4ea6fc5cefad5a3cbefb3efb"  # branch `dist`, not `main`
+    "ui"               = "a455320963fc7e3d290c13fdedbe7194893a7c65"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
