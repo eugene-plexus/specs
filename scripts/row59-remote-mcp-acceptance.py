@@ -60,7 +60,9 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 HERE = Path(__file__).resolve().parent
 MODEL = "row59-fixture"
-MCP_TOKEN = "row59-mcp-token-" + secrets.token_hex(12)
+# The stub MCP server is a process of its own, which imports this file again: it
+# is handed the run's token in its environment, and only it is (found by CI).
+MCP_TOKEN = os.environ.get("ROW59_MCP_TOKEN") or "row59-mcp-token-" + secrets.token_hex(12)
 MCP_HEADER = "row59-header-" + secrets.token_hex(8)
 TAVILY_KEY = "tvly-row59-" + secrets.token_hex(8)
 TAVILY_ANSWER = "ROW59-TAVILY-ANSWER: Eugene Plexus is a control plane."
@@ -405,7 +407,7 @@ def exercise(directory: Path, *, sabotage: bool) -> None:
             subprocess.Popen(
                 command,
                 cwd=work,
-                env=env,
+                env={**env, "ROW59_MCP_TOKEN": MCP_TOKEN} if name == "mcp" else env,
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,

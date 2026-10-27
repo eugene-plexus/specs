@@ -117,6 +117,16 @@ M in total, about 2 days; 59b gets one adversarial review. Risks:
   allowed to internet addresses only; the owner can turn it off, or (expert)
   also allow this network.
 
+## Calls answered by Troy (2026-10-27)
+
+- **R59-PROXY: Choice 1, as built.** Remote MCP never goes through the
+  user's proxy, so the address check is the one that applies; an install
+  that reaches the internet only through a proxy cannot reach a remote MCP
+  server.
+- **R59-HOME: Choice 1, as built.** Remote MCP runs in a search account's
+  process; an install with no search account refuses it and says to add
+  one.
+
 ## What building found (2026-10-26)
 
 - **`is_global` alone is not a safe predicate.** On Python 3.12 it is True
