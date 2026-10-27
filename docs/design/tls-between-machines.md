@@ -632,8 +632,9 @@ a container root, one adversarial review, and `ship.py`.
   before the first join). `join` sends the door the agent will open. So the
   root never records such a node as an older version. A port another program
   holds for good leaves the node unreachable from the other machines until it
-  is freed, where before it was reached in clear (call A38-PORT, default
-  built).
+  is freed, where before it was reached in clear. Troy answered A38-PORT
+  (2026-10-27): Choice 1, as built. The machine's card names the program
+  that holds the port.
 - **The check of record.** The pair's `automatic` run holds the window open
   for 20 s: the worker joins with its 8083 held by another process, and the
   root's agent cannot write its children's table. The worker must register its
