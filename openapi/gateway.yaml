@@ -11552,6 +11552,16 @@ components:
             kept, for the same reason. Absent on rows written before P8e.
           items:
             $ref: '#/components/schemas/MetricToolExecution'
+        mcpCalls:
+          type: array
+          description: |
+            Each remote MCP call the install made for the request (row
+            59b), in order: the tool-driver that made it, the outcome and
+            the time. Not the server, the tool's name or its arguments,
+            which are the caller's words, and never its credential. Absent
+            when the request made none.
+          items:
+            $ref: '#/components/schemas/MetricToolExecution'
 
     MetricToolOutcome:
       type: string
