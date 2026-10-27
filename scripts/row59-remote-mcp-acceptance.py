@@ -672,7 +672,11 @@ def exercise(directory: Path, *, sabotage: bool) -> None:
         )
 
         # --- 5. approvals ------------------------------------------------------------
-        before = methods.count("tools/call")
+        # Counted now: the streamed round trip above made a call of its own
+        # after `methods` was read (found by CI).
+        before = [s["method"] for s in client.get(base("mcp") + "/seen").json()].count(
+            "tools/call"
+        )
         waiting = sdk.responses.create(
             model=MODEL, input="Use the tool.", tools=[mcp_tool(lan_url)]
         )
