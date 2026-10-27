@@ -41,12 +41,14 @@ it qualifies).
 
 | Release | When these rows are merged | Why it is a pause point |
 |---|---|---|
-| v0.4.0 | 4 and 5 | The trust work that must reach installs before a stable release carries TLS between machines (rows 3-6) is complete. The first stable release with LT1 and LT2, and everything merged since v0.3.0 |
-| v0.5.0 | 8, 10, 24, 70 and 75 (Eugene's version in the console) | Everything row 11 needs is in, and the gateway's queue changes next. The Mac system service, the speed sweep, client key rotation and group policies reach stable before routing changes under them |
-| v0.6.0 | 11, 12 and 13 | Part 1 is complete: one fair queue, metric names that last, checked engine updates |
+| v0.4.0 | 4 and 5 | **Released 2026-10-27.** The trust work that must reach installs before a stable release carries TLS between machines (rows 3-6) is complete. It also carried rows 10, 24 and 70, first planned for v0.5.0 |
+| v0.5.0 | 8, 32 and 75, with the agent#38 and agent#34 fixes (31i, 36 and 54 are on Edge already) | Everything row 11 needs is in, and the gateway's queue changes next. The Mac system service, Skills and the version in the console reach stable before routing changes under them |
+| v0.6.0 | 11, 12 and 13 (46 and 59 if merged by then) | Part 1 is complete: one fair queue, metric names that last, checked engine updates |
 | v0.7.0 | the rest of part 2 (14, 15, 18, 20) | Speed work complete |
-| next minor | the end of each later part (3, 4, 5, 6) | Each part is a set of features a person can name |
+| v0.7.x | the end of each later part (3, 4, 5, 6), or a week's work | Each part is a set of features a person can name |
 
+- **No version above v0.7** (Troy, 2026-10-27). Release points after v0.7.0
+  are patch releases (v0.7.1, v0.7.2, ...) until Troy decides otherwise.
 - **At least one release a week.** If a week passes with no release point,
   release at the next moment when `main` is green and Edge carries it.
 - **A fix for a stable release** goes out as a patch release from its tag
