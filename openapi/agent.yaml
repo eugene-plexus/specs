@@ -8281,14 +8281,17 @@ components:
         on the old one). `kept`: it could run none of the checked models,
         so the old build stays in use. `failed`: the install failed.
 
+    EngineRolloutChoice:
+      type: string
+      enum: [switch_now, switch_idle, keep]
+
     EngineRolloutAnswer:
       type: object
       additionalProperties: false
       required: [choice]
       properties:
         choice:
-          type: string
-          enum: [switch_now, switch_idle, keep]
+          $ref: "#/components/schemas/EngineRolloutChoice"
 
     EngineSpeed:
       type: object
@@ -8336,6 +8339,14 @@ components:
             it was not measured ("b11800 is 12% slower at generating on
             qwen3-8b here"; "Not measured: the only copy, and in use").
 
+    EngineRolloutRuntimeState:
+      type: string
+      enum: [waiting, draining, measuring, starting, moved, held, skipped]
+      description: |
+        Where one runtime stands in a rollout: `moved` to the new build,
+        `held` on the old one (it could not run there), or `skipped`
+        (removed, stopped, or the rollout ended first).
+
     EngineRolloutRuntime:
       type: object
       additionalProperties: false
@@ -8344,8 +8355,7 @@ components:
         name:
           type: string
         state:
-          type: string
-          enum: [waiting, draining, measuring, starting, moved, held, skipped]
+          $ref: "#/components/schemas/EngineRolloutRuntimeState"
         message:
           type: string
 
