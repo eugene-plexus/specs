@@ -93,7 +93,58 @@ def serve(kind: str, directory: Path, port: int, host: str) -> None:
         )
     else:
         raise SystemExit(f"unknown kind {kind}")
+    if kind.startswith("gateway"):
+        import logging
+
+        # agent#38: what its `_http` held back is said at INFO.
+        logging.basicConfig(level=logging.INFO)
+    if kind == "agent-b":
+        # agent#38: every request that reaches agent-b, its answer, and whose
+        # token it carried (`sub`), so a check can tell the gateway's calls
+        # from control's, which reach this older machine in plain HTTP by
+        # design.
+        app = _heard(app)
     uvicorn.run(app, host=host, port=port, log_level="error", access_log=False)
+
+
+def _token_subject(scope: dict[str, Any]) -> str:
+    import base64
+
+    for name, value in scope.get("headers") or []:
+        if name.lower() != b"authorization":
+            continue
+        token = value.decode("latin-1").split(" ", 1)[-1]
+        try:
+            payload = token.split(".")[1]
+            claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+            return str(claims.get("sub") or "unknown")
+        except (IndexError, ValueError, TypeError, AttributeError):
+            return "not-a-token"
+    return "none"
+
+
+def _heard(inner: Any) -> Any:
+    async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await inner(scope, receive, send)
+            return
+        status: dict[str, int] = {}
+
+        async def tap(message: dict[str, Any]) -> None:
+            if message.get("type") == "http.response.start":
+                status["code"] = int(message["status"])
+            await send(message)
+
+        try:
+            await inner(scope, receive, tap)
+        finally:
+            print(
+                f"HEARD {scope.get('method')} {scope.get('path')} {status.get('code')} "
+                f"sub={_token_subject(scope)}",
+                flush=True,
+            )
+
+    return app
 
 
 def child_environment(agent_dir: Path, kind: str, agent_url: str) -> dict[str, Any]:
@@ -164,13 +215,14 @@ def exercise(directory: Path, lan: str | None) -> None:
             time.sleep(0.1)
         raise AssertionError("timed out: " + label)
 
-    def start(name: str) -> None:
+    def start(name: str, extra: dict[str, str] | None = None) -> None:
         work = directory / name
         work.mkdir(exist_ok=True)
         log = (work / "process.log").open("ab")
         logs.append(log)
         env = {k: v for k, v in os.environ.items() if not k.startswith("EUGENE_PLEXUS_")}
         env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
+        env.update(extra or {})
         processes[name] = subprocess.Popen(
             [
                 sys.executable,
@@ -258,14 +310,33 @@ def exercise(directory: Path, lan: str | None) -> None:
                 assert gone not in identity, (name, gone)
         ok("no node.yaml holds an install signing key; each holds only its own token key")
 
+        # agent#38: the gateway reads the machine table its agent writes for
+        # it. Here the table is held from before agent-b joined (`--lan`).
+        pins_file = directory / "gateway-a" / "machine_pins.json"
         for kind in ("gateway", "library"):
             work = directory / f"{kind}-a"
             work.mkdir(exist_ok=True)
             env = child_environment(directory / "agent-a", kind, url("agent-a"))
             (work / "child.json").write_text(json.dumps(env), encoding="utf-8")
-            start(f"{kind}-a")
+            extra: dict[str, str] = {}
+            if kind == "gateway" and lan:
+                (work / "gateway.yaml").write_text(
+                    yaml.safe_dump({"routingRefreshSeconds": 1}), encoding="utf-8"
+                )
+                write_table(pins_file, local=advertised("agent-a"), older=None)
+                extra["EUGENE_PLEXUS_MACHINE_PINS_FILE"] = str(pins_file)
+            start(f"{kind}-a", extra)
             assert "PRIVATE KEY" not in json.dumps(env) and "tokenPrivateKey" not in json.dumps(env)
         ok("a gateway and a library on agent-a's machine, given a bundle path and a token, no key")
+
+        if lan:
+            plain_token_check(directory, pins_file, advertised, wait)
+        else:
+            print(
+                "SKIP agent#38's check of tokens to a machine not known yet: every address "
+                "here is loopback, which the rule leaves alone; run with --lan",
+                flush=True,
+            )
 
         # ---------------------------------------------------------------- #
         # The paths that must work
@@ -442,6 +513,86 @@ def exercise(directory: Path, lan: str | None) -> None:
         for log in logs:
             log.close()
         client.close()
+
+
+def write_table(path: Path, *, local: str, older: str | None) -> None:
+    """The machine table an agent writes for its children (LT1): this
+    machine under its LAN address, and `older`, when given, as a machine with
+    no machine port (an older version, reached in plain HTTP)."""
+    table = {
+        "version": 1,
+        "required": False,
+        "machines": {},
+        "routes": {older: None} if older else {},
+        "names": {older: "agent-b"} if older else {},
+        "local": [local],
+    }
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(table), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+#: How long `plain_token_check` holds gateway-a's table from before agent-b
+#: joined. Its gateway reads its machines every second, so about this many
+#: refreshes try agent-b while it is held.
+HOLD_SECONDS = 20
+#: The `sub` of the gateway's token to agent-b. Control's own calls (its poll,
+#: its topology reads) reach agent-b in plain HTTP by design, since control's
+#: table names agent-b as an older machine all along; they carry its token.
+GATEWAY_SUB = "gateway"
+
+
+def plain_token_check(directory: Path, pins_file: Path, advertised: Any, wait: Any) -> None:
+    """agent#38 on real processes, on Linux and Windows: no token of this
+    install goes to another machine in plain HTTP while this machine's table
+    does not say that machine runs an older version; and one it says does is
+    still reached in plain HTTP, with its token (mixed versions, LT1).
+
+    The install is `automatic` (no machine here opens a machine port).
+    gateway-a's table is held from before agent-b joined, for `HOLD_SECONDS`
+    from the gateway's start: the window in which the root's gateway read a
+    new worker in clear (agent#38). **The whole window is judged, whatever
+    the path** (agent#38 review): the gateway's own log of every request it
+    completed (httpx's `HTTP Request:` lines) names none to agent-b, it says
+    it held them back, and agent-b heard no request with the gateway's token
+    (`_heard`; control's calls carry control's). Then the table names
+    agent-b as an older machine, as agent-a writes it once it knows, and the
+    gateway's reads reach agent-b with its token and are answered 200."""
+    target = advertised("agent-b")
+    gateway_log = directory / "gateway-a" / "process.log"
+    agent_b_log = directory / "agent-b" / "process.log"
+
+    def text(path: Path) -> str:
+        return path.read_text(encoding="utf-8", errors="replace")
+
+    # agent-b's log already holds its own enrolment; the gateway's starts
+    # with the gateway, whose table was held from its first request.
+    before = len(text(agent_b_log))
+    time.sleep(HOLD_SECONDS)
+    gateway_window, agent_b_window = text(gateway_log), text(agent_b_log)[before:]
+    sent = [
+        line for line in gateway_window.splitlines() if "HTTP Request:" in line and target in line
+    ]
+    heard = [
+        line for line in agent_b_window.splitlines() if line.startswith("HEARD ")
+    ]
+    from_gateway = [line for line in heard if line.endswith(f"sub={GATEWAY_SUB}")]
+    held_back = f"held back a request to {target}" in gateway_window
+    assert held_back, "gateway-a never tried agent-b while its table was held (nothing was seen)"
+    assert not sent, f"gateway-a sent agent-b requests while it was held back: {sent[:3]}"
+    assert not from_gateway, f"agent-b heard the gateway while it was held: {from_gateway[:3]}"
+    ok(
+        f"agent#38: for {HOLD_SECONDS} s nothing went to a machine the table does not name yet, "
+        "whatever the path"
+    )
+
+    write_table(pins_file, local=advertised("agent-a"), older=target)
+    wait(
+        lambda: f"HEARD GET /v1/runtimes 200 sub={GATEWAY_SUB}" in text(agent_b_log),
+        "gateway-a to read agent-b in plain HTTP once the table names it",
+        30,
+    )
+    ok("agent#38: a machine on an older version is still reached in plain HTTP, with its token")
 
 
 def _routable_address() -> str:
