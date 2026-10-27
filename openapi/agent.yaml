@@ -1426,6 +1426,12 @@ paths:
         install never overwrites a build in place — a runtime may be
         executing one right now.
 
+        **An install only stages its build** (row 13). It becomes the
+        build in use at once only when no build is in use; otherwise
+        `ManagedEngine.stagedVersion` names it and
+        `POST /v1/engines/{engine}/rollout` moves the runtimes to it,
+        checked and one at a time.
+
         Returns 409 when an install is already running, and 422 when
         this host has no installable build (see
         `EngineAcquisition.reason`) or when a requested `variant` is not
@@ -1518,6 +1524,133 @@ paths:
             application/problem+json:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
+
+  /v1/engines/{engine}/rollout:
+    parameters:
+      - in: path
+        name: engine
+        required: true
+        schema:
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
+    post:
+      tags: [engines]
+      operationId: startEngineRollout
+      summary: Move this node's runtimes to another build of an engine, checked, one at a time (row 13).
+      description: |
+        Runtimes start from the build **in use** (`ManagedEngine.version`),
+        never the newest on disk, so a fleet is never mixed by accident. A
+        rollout moves them, and is the one way the build in use changes
+        once there is one:
+
+        1. **installing** — the build is installed (staged) when it is not
+           on disk. A build on disk (the previous one: "Use b11719 again")
+           needs no download.
+        2. **checking / switching** — each `llama_cpp` runtime on this node
+           that runs the managed build and is serving, one at a time:
+           drained `when: covered` (it waits until the model's other copies
+           carry the current demand; a model with one copy goes at once,
+           and its requests wait in line), stopped, measured, and started
+           on the new build. **Measured** (at most 4 models; only while
+           other copies carry the load, or the model was idle 600 s, or no
+           gateway routes to it): speed with llama-bench (pp512, tg128, 3
+           repetitions) on both builds, and the same answers with the
+           profile builder's KL-divergence and same-top-token instrument on
+           the bundled text. **The numbers never block** (R13-CHECK).
+           **A build that cannot load a model, crashes, or answers with an
+           error is not used for that model** (R13-CHECK-2): the runtime
+           starts on the old build again and `ManagedEngine.heldRuntimes`
+           says why; the other models move.
+        3. **done** — the build is in use. **kept** — it could run none of
+           the checked models, so the old one stays in use; it stays on
+           disk until the next install. **failed** — the install failed.
+
+        `switch: ask` pauses in **asking** before the first runtime moves,
+        until `.../rollout/answer`. The default, `auto`, is DI-C3b.
+
+        The state is saved: an agent restart resumes it, and a runtime
+        left on a build it could not start is put back. One rollout per
+        engine at a time (409), and only for an engine Eugene manages
+        (422). Operator only.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EngineRolloutRequest"
+      responses:
+        "202":
+          description: The rollout started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngineRollout"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "422":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    get:
+      tags: [engines]
+      operationId: getEngineRollout
+      summary: The current or most recent rollout of this engine on this node.
+      responses:
+        "200":
+          description: Its state, kept until the next rollout starts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngineRollout"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    delete:
+      tags: [engines]
+      operationId: cancelEngineRollout
+      summary: Stop a rollout; each runtime already moved stays where it is.
+      description: |
+        The runtime being moved goes back to the build in use. 409 when
+        nothing is in flight. Operator only.
+      responses:
+        "200":
+          description: The rollout, now `cancelled`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngineRollout"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/engines/{engine}/rollout/answer:
+    parameters:
+      - in: path
+        name: engine
+        required: true
+        schema:
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
+    post:
+      tags: [engines]
+      operationId: answerEngineRollout
+      summary: Answer a rollout that asks before it switches.
+      description: |
+        `switch_now` moves the runtimes as `auto` does; `switch_idle`
+        moves each once it has been idle 600 s; `keep` ends the rollout
+        `kept` with the build in use unchanged. 409 unless the rollout is
+        `asking`. Operator only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EngineRolloutAnswer"
+      responses:
+        "200":
+          description: The rollout after the answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngineRollout"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   # -------- apps: optional spokes this agent installs and supervises --------
 
@@ -3358,6 +3491,126 @@ paths:
         "404":
           $ref: "components/common.yaml#/components/responses/Problem"
 
+  /v1/runtimes/{name}/drain:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [runtimes]
+      operationId: drainRuntime
+      summary: Take a running engine out of routing and let its answers finish (row 13).
+      description: |
+        **The agent holds the drain; every gateway obeys it.** The
+        runtime reports `status: draining` (and `drain` says how far it
+        is), and a gateway routes only to `ready` runtimes, so an older
+        gateway obeys too. No agent calls a gateway.
+
+        Each gateway that read `GET /v1/runtimes` in the last 60 s must
+        report (`.../drain/report`) `running: 0` after the drain began:
+        then the drain is `drained` and `then` runs. A runtime no gateway
+        read is drained at once. A gateway silent for 60 s is no longer
+        waited for, and `message` names it. After `graceSeconds` the
+        drain is `cut` and `then` runs anyway: "2 answers were cut at the
+        120 s limit."
+
+        `when: idle` keeps the runtime `ready` (`drain.state:
+        waiting_idle`) until every gateway reports it idle for
+        `idleSeconds` with nothing running. `when: covered` (DI-C3, Troy
+        2026-10-21) keeps it `ready` (`waiting_covered`) until every
+        gateway reports that the model's other ready copies can carry its
+        current demand, measured from the gateway's queue and slots in
+        use; a model with no other running copy drains at once (DI-C3b).
+
+        `then: restart` restarts the engine on the build in use for it
+        (a gateway counts it as coming up, so a request whose only
+        runtime it is waits in line); `stop` stops it; `hold` keeps it
+        running and out of routing until `DELETE`.
+
+        Accepts the operator or a `gateway` service token, as `stop`
+        does. 409 when the runtime is not running or a drain is already
+        open for it.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeDrainRequest"
+      responses:
+        "202":
+          description: The drain is open.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeDrain"
+        "403":
+          $ref: "#/components/responses/RootNotHeard"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    delete:
+      tags: [runtimes]
+      operationId: cancelRuntimeDrain
+      summary: Cancel an open drain; the runtime goes back to routing.
+      description: |
+        A drain that already ran its `then` cannot be cancelled. 409 when
+        no drain is open. Accepts the operator or a `gateway` token.
+      responses:
+        "200":
+          description: The drain, now `cancelled`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeDrain"
+        "403":
+          $ref: "#/components/responses/RootNotHeard"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/runtimes/{name}/drain/report:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [runtimes]
+      operationId: reportRuntimeDrain
+      summary: A gateway's own count of answers running on a runtime with an open drain.
+      description: |
+        Posted by each gateway on every routing refresh while it sees a
+        drain open (every 2 s then). Only a `gateway` service token: from
+        this machine's own gateway, or from a machine the trust bundle
+        grants `gateway`. The reporter is the token's issuer, which is
+        what the drain waits on. 409 when no drain is open.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeDrainReport"
+      responses:
+        "200":
+          description: The drain as it stands after this report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeDrain"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/RootNotHeard"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
   /v1/runtimes/{name}/start:
     parameters:
       - in: path
@@ -4138,6 +4391,10 @@ paths:
         workers one at a time, each on its own channel. After each machine
         returns, updates its already installed shipped catalogue apps (including
         Workbench) from the new catalogue. Does not install absent or custom apps.
+        Then (row 13) moves the machine's managed llama.cpp to the newest
+        build for it with `POST /v1/engines/llama_cpp/rollout`, and waits for
+        that rollout to end before the next machine starts, so a model's
+        copies on other machines keep serving.
         Existing target verification, anti-downgrade and app isolation guards apply.
         A root that fails or needs a manual container update blocks worker updates.
         Other failures are reported per item and remaining machines continue.
@@ -7273,18 +7530,22 @@ components:
 
     UpdateAllItemKind:
       type: string
-      description: A machine's Eugene installation or an installed catalogue app.
-      enum: [node, app]
+      description: |
+        A machine's Eugene installation, an installed catalogue app, or a
+        managed engine build (row 13: one machine at a time, so a model's
+        copies on other machines keep serving).
+      enum: [node, app, engine]
 
     UpdateAllItem:
       type: object
       additionalProperties: false
-      description: One machine or installed app in the update job.
+      description: One machine, installed app or engine in the update job.
       required: [node, kind, state, detail]
       properties:
         node: {type: string, description: Enrolled machine name.}
         kind: {$ref: '#/components/schemas/UpdateAllItemKind'}
         app: {type: string, description: Catalogue app id for an app item.}
+        engine: {type: string, description: 'The engine of an engine item: llama_cpp.'}
         state: {$ref: '#/components/schemas/UpdateAllItemState'}
         detail: {type: string, description: What happened or what to do next.}
         target: {type: string, description: Verified node ref or app version being installed.}
@@ -7916,10 +8177,27 @@ components:
         version:
           type: string
           description: |
+            The build **in use** (row 13): the one every runtime without a
+            `heldRuntimes` entry starts from. Not the newest on disk: an
+            install stages its build, and a rollout moves the runtimes.
             Upstream build identifier - for llama.cpp a `bNNNN` tag, not
             a semver. Copied verbatim from the release, because the only
             useful thing to do with it is compare it to what upstream
             has.
+        stagedVersion:
+          type: string
+          description: |
+            A build on disk that is not in use yet: installed, and waiting
+            for a rollout, or one a rollout kept (it could run none of the
+            models here). Absent when there is none.
+        heldRuntimes:
+          type: array
+          items:
+            $ref: "#/components/schemas/HeldRuntime"
+          description: |
+            Runtimes that start from another build than `version`, and
+            why (R13-CHECK-2): a build that could not load a model,
+            crashed, or answered with an error is not used for it.
         binaryPath:
           type: string
           description: Absolute path to the executable inside the managed directory.
@@ -7948,10 +8226,184 @@ components:
         previousVersion:
           type: string
           description: |
-            The build retained alongside this one, if any. Retention is
-            current plus previous: keeping every build is not viable at
-            this size, and keeping only the newest leaves a bad upgrade
-            with no way back.
+            The build that was in use before this one, kept so a rollout
+            can go back to it with no download ("Use b11719 again").
+            Retention is the build in use, the previous one, one staged
+            build and any build a runtime is held on: keeping every build
+            is not viable at this size, and keeping only the newest leaves
+            a bad upgrade with no way back.
+
+    HeldRuntime:
+      type: object
+      additionalProperties: false
+      required: [runtime, version, reason]
+      properties:
+        runtime:
+          type: string
+          description: The runtime's name on this node.
+        version:
+          type: string
+          description: The build it starts from.
+        reason:
+          type: string
+          description: |
+            What failed on the build in use: "b11800 cannot load
+            qwen3-8b: unknown tensor type". The next rollout tries it
+            again.
+
+    EngineRolloutSwitch:
+      type: string
+      enum: [auto, ask]
+      description: |
+        `auto` (default; DI-C3b): move each runtime when its other copies
+        carry the load, a model with one copy at once. `ask`: wait for
+        an answer before the first runtime moves.
+
+    EngineRolloutRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: string
+          description: |
+            The build to move to. Absent: the staged build, else the
+            newest upstream build for this host (installed first). A
+            build still on disk is used without a download.
+        switch:
+          $ref: "#/components/schemas/EngineRolloutSwitch"
+
+    EngineRolloutState:
+      type: string
+      enum: [installing, checking, asking, switching, done, kept, failed, cancelled]
+      description: |
+        `checking` and `switching` alternate, one runtime at a time.
+        `done`: the build is in use (runtimes it could not run are held
+        on the old one). `kept`: it could run none of the checked models,
+        so the old build stays in use. `failed`: the install failed.
+
+    EngineRolloutAnswer:
+      type: object
+      additionalProperties: false
+      required: [choice]
+      properties:
+        choice:
+          type: string
+          enum: [switch_now, switch_idle, keep]
+
+    EngineSpeed:
+      type: object
+      additionalProperties: false
+      description: Tokens a second, llama-bench's average over its repetitions.
+      properties:
+        old:
+          type: number
+        new:
+          type: number
+
+    EngineCheckModel:
+      type: object
+      additionalProperties: false
+      description: |
+        What the check measured on one model (R13-CHECK: shown, never a
+        gate). `passes` is whether the build ran it at all (R13-CHECK-2).
+      required: [runtime, model, passes]
+      properties:
+        runtime:
+          type: string
+        model:
+          type: string
+          description: The model as the runtime serves it.
+        promptTps:
+          $ref: "#/components/schemas/EngineSpeed"
+        generationTps:
+          $ref: "#/components/schemas/EngineSpeed"
+        sameTopTokenPercent:
+          type: number
+        standardError:
+          type: number
+        meanKld:
+          type: number
+        passes:
+          type: boolean
+          description: The new build loaded the model and answered.
+        measured:
+          type: boolean
+          description: Whether speed and answers were measured.
+        reason:
+          type: string
+          description: |
+            In a person's words: what the numbers say, what failed, or why
+            it was not measured ("b11800 is 12% slower at generating on
+            qwen3-8b here"; "Not measured: the only copy, and in use").
+
+    EngineRolloutRuntime:
+      type: object
+      additionalProperties: false
+      required: [name, state]
+      properties:
+        name:
+          type: string
+        state:
+          type: string
+          enum: [waiting, draining, measuring, starting, moved, held, skipped]
+        message:
+          type: string
+
+    EngineRolloutCheck:
+      type: object
+      additionalProperties: false
+      required: [models]
+      properties:
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/EngineCheckModel"
+        passes:
+          type: boolean
+          description: Whether the new build ran at least one checked model.
+
+    EngineRollout:
+      type: object
+      additionalProperties: false
+      description: One rollout of one engine on this node (row 13), saved across restarts.
+      required: [id, engine, version, state, switch, startedAt, runtimes, check]
+      properties:
+        id:
+          type: string
+        engine:
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
+        version:
+          type: string
+          description: The build it moves to.
+        from:
+          type: string
+          description: The build in use when it started.
+        state:
+          $ref: "#/components/schemas/EngineRolloutState"
+        switch:
+          $ref: "#/components/schemas/EngineRolloutSwitch"
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        runtimes:
+          type: array
+          items:
+            $ref: "#/components/schemas/EngineRolloutRuntime"
+        check:
+          $ref: "#/components/schemas/EngineRolloutCheck"
+        question:
+          type: string
+          description: |
+            While `asking`: "b11800 is ready. Switch now, or when idle?"
+        message:
+          type: string
+          description: |
+            Where it stands or how it ended, in a person's words: "1 of 3
+            runtimes on b11800", "b11800 did not start qwen3-8b: exit
+            3221225477. Kept b11719."
 
     EngineAcquisition:
       type: object
@@ -8620,6 +9072,12 @@ components:
             binary it found (row 8, part 8c).
         managed:
           $ref: "#/components/schemas/ManagedEngine"
+        rollout:
+          $ref: "#/components/schemas/EngineRollout"
+          description: |
+            The current or most recent rollout of this engine on this node
+            (row 13), so the Engines panel and the Issues list read it with
+            the poll they already make.
         acquisition:
           $ref: "#/components/schemas/EngineAcquisition"
         python:
@@ -9167,6 +9625,13 @@ components:
             when the operator fronts the runtime by hand.
         status:
           $ref: "#/components/schemas/RuntimeStatus"
+        drain:
+          $ref: "#/components/schemas/RuntimeDrain"
+          description: |
+            The drain open on this runtime (row 13): waiting for idleness
+            or for its other copies to carry the load (status still
+            `ready`), or draining (status `draining`). Absent when none
+            is open.
         stopReason:
           $ref: "#/components/schemas/StopReason"
           description: |
@@ -9790,6 +10255,7 @@ components:
         - starting
         - loading
         - ready
+        - draining
         - stopped
         - exited
         - crashed
@@ -9845,6 +10311,11 @@ components:
           and compilation dominate it.
         * `ready` — model loaded and serving. The only state in which
           the gateway will route to it.
+        * `draining` — loaded, and out of routing while the answers it
+          is running finish (row 13): an engine update, a check, or an
+          operator's drain. `drain` says why, how many answers run and
+          how long is left. A gateway routes nothing new to it; one
+          whose `then` is `restart` is counted as coming up.
         * `stopped` — deliberately stopped, or declared with
           `autoStart: false`. Not an error; the respawn loop is
           suppressed.
@@ -9940,6 +10411,157 @@ components:
       properties:
         reason:
           $ref: "#/components/schemas/StopReason"
+
+    RuntimeDrainReason:
+      type: string
+      enum: [update, check, maintenance, operator]
+      description: |
+        Why a runtime drains: an engine `update`, a `check` that measures
+        builds (it stops the runtime, `stopReason: measurement`), the
+        `maintenance` of its machine, or an `operator`'s request.
+
+    RuntimeDrainWhen:
+      type: string
+      enum: [now, idle, covered]
+      description: |
+        * `now` — leave routing at once.
+        * `idle` — once every gateway reports the runtime idle for
+          `idleSeconds` with nothing running.
+        * `covered` — once every gateway reports that the model's other
+          ready copies can carry its current demand (the requests running
+          on every copy and waiting in line, against the other copies'
+          slots). A model with no other running copy drains at once, and
+          its requests wait in line (DI-C3 and DI-C3b, Troy 2026-10-21).
+
+    RuntimeDrainThen:
+      type: string
+      enum: [restart, stop, hold]
+      description: |
+        What happens once the drain ends (`drained` or `cut`): `restart`
+        on the build in use for the runtime, `stop` it, or `hold` it
+        running and out of routing until the drain is cancelled.
+
+    RuntimeDrainState:
+      type: string
+      enum: [waiting_idle, waiting_covered, draining, drained, cut, cancelled]
+      description: |
+        `waiting_idle` and `waiting_covered`: still routed (`status:
+        ready`). `draining`: out of routing, answers finishing.
+        `drained`: every gateway reported none running. `cut`: the grace
+        ran out with answers still running. `cancelled`: `DELETE`.
+
+    RuntimeDrainRequest:
+      type: object
+      additionalProperties: false
+      description: Body for `POST /v1/runtimes/{name}/drain`. Every field has a default.
+      properties:
+        reason:
+          $ref: "#/components/schemas/RuntimeDrainReason"
+        when:
+          $ref: "#/components/schemas/RuntimeDrainWhen"
+        idleSeconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          default: 600
+          description: "For `when: idle`, how long every gateway must report it idle."
+        graceSeconds:
+          type: integer
+          minimum: 0
+          maximum: 900
+          default: 120
+          description: |
+            How long answers may run once it leaves routing. Then the
+            drain is `cut` and `then` runs anyway (R13-DRAIN, Troy
+            2026-10-21: an update must end).
+        then:
+          $ref: "#/components/schemas/RuntimeDrainThen"
+
+    RuntimeDrain:
+      type: object
+      additionalProperties: false
+      description: One drain of one runtime, as the agent holds it.
+      required: [reason, when, then, graceSeconds, state, requestedAt, running]
+      properties:
+        reason:
+          $ref: "#/components/schemas/RuntimeDrainReason"
+        when:
+          $ref: "#/components/schemas/RuntimeDrainWhen"
+        idleSeconds:
+          type: integer
+        graceSeconds:
+          type: integer
+        then:
+          $ref: "#/components/schemas/RuntimeDrainThen"
+        state:
+          $ref: "#/components/schemas/RuntimeDrainState"
+        requestedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          description: When it left routing. Absent while it waits.
+        deadline:
+          type: string
+          format: date-time
+          description: When it is cut. Absent while it waits.
+        running:
+          type: integer
+          minimum: 0
+          description: |
+            Answers still running on it, by the last report of each
+            gateway that reads this agent (0 when none reads it).
+        gateways:
+          type: integer
+          minimum: 0
+          description: How many gateways it waits on.
+        idleFor:
+          type: number
+          minimum: 0
+          description: |
+            When it left routing, the fewest seconds any gateway reported
+            since its last request there. Absent when no gateway reported.
+        otherCopies:
+          type: integer
+          minimum: 0
+          description: |
+            The other running copies of its model the gateways reported
+            when it left routing (the fewest any gateway saw).
+        message:
+          type: string
+          description: |
+            What it waits for, or how it ended, in a person's words:
+            "2 answers were cut at the 120 s limit."
+
+    RuntimeDrainReport:
+      type: object
+      additionalProperties: false
+      description: |
+        A gateway's report for one runtime with an open drain: what it
+        routes there and what it sees of the model's other copies.
+      required: [running]
+      properties:
+        running:
+          type: integer
+          minimum: 0
+          description: Answers this gateway has running on the runtime now.
+        idleSeconds:
+          type: number
+          minimum: 0
+          description: Seconds since this gateway last sent the runtime a request.
+        otherCopies:
+          type: integer
+          minimum: 0
+          description: |
+            The model's other copies this gateway routes to that are
+            running or on their way (not stopped, not crashed).
+        covered:
+          type: boolean
+          description: |
+            Whether the model's other ready copies have free slots for
+            everything running on any copy and waiting in line for the
+            model, on this gateway, now.
 
     RuntimeAutoStart:
       type: object

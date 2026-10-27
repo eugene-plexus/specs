@@ -561,7 +561,7 @@
    "risk": "cross",
    "risk_note": "cross",
    "who": "every install",
-   "notes": "Every install updates engines. The drain is reused by rows 15 and 40. Call DI-C3",
+   "notes": "Every install updates engines. The drain is reused by rows 15 and 44. Call DI-C3",
    "lane": "ENG",
    "lane_order": 3,
    "repos": [
