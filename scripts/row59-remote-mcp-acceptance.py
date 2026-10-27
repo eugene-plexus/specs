@@ -548,6 +548,15 @@ def exercise(directory: Path, *, sabotage: bool) -> None:
 
         wait(found_the_tool_driver, "the gateway reaches the tool-driver for remote MCP")
 
+        def search_available() -> bool:
+            # The gateway reads the account's /v1/info at each refresh: the first
+            # read can predate Tavily's settings, and a search asked then is
+            # removed (found by the first CI run).
+            listed = client.get(base("gateway") + "/v1/models", headers=as_client).json()
+            return listed["x_eugene_plexus"]["web_search"]["available"] is True
+
+        wait(search_available, "the gateway sees the Tavily account set up")
+
         import openai
 
         sdk = openai.OpenAI(
