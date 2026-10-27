@@ -56,15 +56,15 @@ def exercise(args):
     # venv and is refused unless the caller gave its exact resolved prefix.
     if Path(sys.prefix).resolve() != args.disposable_venv.resolve():
         raise ValueError("--disposable-venv must match this interpreter's exact prefix")
-    sockets = [socket.socket() for _ in range(7)]
+    # Every port is the OS's choice, the agents' machine ports too: the default
+    # (8083) is a live install's own machine port on a machine that runs one,
+    # and the release runs this script on such a machine (v0.4.0 evidence).
+    names = ("root", "worker", "control", "gateway", "library", "engine", "driver",
+             "root_machine", "worker_machine")  # fmt: skip
+    sockets = [socket.socket() for _ in names]
     for sock in sockets:
-        sock.bind(("127.0.0.1", 0))
-    ports = dict(
-        zip(
-            ("root", "worker", "control", "gateway", "library", "engine", "driver"),
-            [s.getsockname()[1] for s in sockets],
-        )
-    )
+        sock.bind(("0.0.0.0", 0))
+    ports = dict(zip(names, [s.getsockname()[1] for s in sockets]))
     for sock in sockets:
         sock.close()
     phrase = secrets.token_urlsafe(24)
@@ -121,6 +121,7 @@ def exercise(args):
                 "HIP_VISIBLE_DEVICES": "-1",
                 "ROCR_VISIBLE_DEVICES": "-1",
                 "EUGENE_PLEXUS_AGENT_ENGINE_ROOT": str(directory / "engines"),
+                "EUGENE_PLEXUS_AGENT_MACHINE_PORT": str(ports[name + "_machine"]),
             }
         )
         output = (root / (name + "-process.log")).open("ab")

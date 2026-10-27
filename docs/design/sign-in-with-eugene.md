@@ -267,14 +267,18 @@ Plain words here; the workshop names are Workbench's.
 
 Record: [`../acceptance/c2-sign-in-run.md`](../acceptance/c2-sign-in-run.md).
 
-- **The sign-in key is not rotated yet (D3).** It is made at first need,
-  sealed and replicated, and the log keeps the two newest, so a rotation
-  has somewhere to put the old key while its tokens live. Nothing triggers
-  one: the root token key's rotation does not touch it. A follow-up.
+- **The sign-in key changes (D3; row 5, 2026-10-24).** It is made at first
+  need, and the active root makes a new one every `signInKeyDays` (90; 0
+  is never), or the owner does on People. The log keeps the two newest, so
+  the old key verifies the refresh tokens it signed until they expire; a
+  routine change therefore waits until the newest key is 30 days and 10
+  minutes old. *End every app sign-in now* retires every other key
+  (`retireOidcKeys`). The root token key's rotation still does not touch
+  it. See [`rows/row-05.md`](rows/row-05.md).
 - **Eugene's own passphrase is never changed on the sign-in page (D10).**
-  A person changes theirs there; an owner who tries is told it cannot be
-  changed here. Nothing changes the passphrase anywhere yet, so the page
-  says no more than that.
+  A person changes theirs there; an owner who tries is told to change it
+  on the console, on People (row 5), where the root re-seals every value it
+  keeps and every machine that keeps its own passphrase takes the new one.
 - **A pending request is good until it succeeds (D4)**, not for one post:
   a wrong password shows the page again with the same request, inside its
   10 minutes, and the limiter is what bounds the guesses.
