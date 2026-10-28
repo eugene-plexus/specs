@@ -453,6 +453,11 @@ jobs:
       - name: Measure people served through the shared harness and a two-slot fixture (row 10)
         if: matrix.shard == 'L1'
         run: python specs/scripts/serving-sweep-acceptance.py
+      # Row 11: one fair queue through a real root, agent, driver and two
+      # gateways, with a stand-in llama-server the agent launches (checks 1-10).
+      - name: One fair queue across a real install and two gateways (row 11)
+        if: matrix.shard == 'L2'
+        run: python specs/scripts/ld1-fair-queue-acceptance.py
       - name: Responses client tools and compact through the OpenAI SDK and fixture backend (row 57)
         if: matrix.shard == 'L1'
         run: python specs/scripts/row57-responses-tools-acceptance.py
