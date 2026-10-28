@@ -591,12 +591,23 @@ def console(root: Path, *, sabotage: bool = False) -> None:
 
 
 def check_refused(chat: Any, call: Any, token: str, engine_port: int) -> None:
-    """Step 3, apart so the sabotage run can expect it to fail."""
-    refused = chat()
-    if refused.status_code == 200:
-        raise Failed("a chat was answered while the models were paused")
-    if "paused" not in refused.text or "Resume" not in refused.text:
-        raise Failed(f"the chat's refusal does not name the pause: {refused.text}")
+    """Step 3, apart so the sabotage run can expect it to fail.
+
+    The gateway reads the agent's runtimes once a second, and until it has
+    read the stop it still routes to the driver, which finds the engine
+    gone. So the refusal is waited for, for a few seconds; a chat that is
+    answered at any point fails at once.
+    """
+    deadline = time.perf_counter() + 15
+    while True:
+        refused = chat()
+        if refused.status_code == 200:
+            raise Failed("a chat was answered while the models were paused")
+        if "paused" in refused.text and "Resume" in refused.text:
+            break
+        if time.perf_counter() > deadline:
+            raise Failed(f"the chat's refusal does not name the pause: {refused.text}")
+        time.sleep(0.5)
     started = call("agent", "POST", "/v1/runtimes/fixture/start", token)
     if started.status_code != 409 or "paused" not in detail_of(started):
         raise Failed(f"a Start while paused answered {started.status_code} {started.text}")

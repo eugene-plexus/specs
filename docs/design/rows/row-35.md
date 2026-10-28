@@ -206,7 +206,7 @@ Pause as a lever for someone allowed to stop the service is accepted: that accou
 - **The guard refuses a declaration and an edit too**, since both launch. A runtime declared during a pause is refused with the pause's sentence rather than declared stopped.
 - **A runtime Resume could not start stays stopped as a person's stop** (`operator`, remembered), so it reads truly and a reboot does not start it behind the refusal's back.
 - **`paused` belongs to Pause.** A stop request that names it is recorded as `operator`.
-- **The gateway passes the sentence on only for a `startOnDemand` runtime**, the wake path. A request for a model whose only runtime is paused and not `startOnDemand` gets the gateway's own "none of its runtimes asked to be started on demand" (gateway issue filed; `lifecycle.py` and `routing.py` belong to other lanes).
+- **The gateway passes the sentence on only for a `startOnDemand` runtime**, the wake path. A request for a model whose only runtime is paused and not `startOnDemand` gets the gateway's own "none of its runtimes asked to be started on demand" (gateway#21; `lifecycle.py` and `routing.py` belong to other lanes).
 - **The pause's 409 is a `Problem`** whose `detail` is the sentence; the measurement's 409 stays text, as it was.
 - **Only `build_server` opens the pipe** (`Settings.tray_channel_enabled`, as the machine port): an app built in a test or a harness holds no pipe.
 - **The Windows acceptance's engine is a Kev stand-in** (`kevPython` pointing at an interpreter whose `kev.serve` answers `/v1/models`): a service loads no test adapter. The chat through the gateway runs in the console path, on Linux.
