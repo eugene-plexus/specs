@@ -10556,6 +10556,14 @@ components:
           type: integer
           minimum: 0
           description: Answers this gateway has running on the runtime now.
+        state:
+          $ref: "#/components/schemas/RuntimeDrainState"
+          description: |
+            The drain state this gateway's routing table holds for the
+            runtime. The agent counts `running: 0` toward the drain only
+            from a gateway whose table already shows it `draining` (or
+            later), so a table a moment stale, which could still route a
+            request there, cannot end the drain.
         idleSeconds:
           type: number
           minimum: 0
