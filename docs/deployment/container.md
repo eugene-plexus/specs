@@ -637,7 +637,9 @@ chmod 400 /mnt/user/appdata/eugene-plexus-secret
 #      -e EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE=/run/secrets/passphrase
 
 # 3. Turn it on, once, in the UI: Control root -> Config -> Security mode ->
-#    "Passphrase file auto-unlock". Or over the API:
+#    "Passphrase file auto-unlock", and the same on this machine's agent
+#    (Config -> Security mode), so its drivers' saved keys open too. Or, for
+#    the root, over the API:
 curl -X PATCH http://<control-host>:8083/v1/config \
   -H "Authorization: Bearer <operator token>" \
   -H "Content-Type: application/json" \
@@ -655,9 +657,13 @@ is `EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE=/data/passphrase`. The cost of
 that shortcut is that a backup of Data then carries both the sealed key
 and the passphrase that opens it; a file outside Data keeps them apart.
 
-**Two fields are called Security mode.** Set the Control root's. The
-agent's is a separate field for the agent's own key, read from a
-different variable, and leaves the root sealed.
+**Two fields are called Security mode. Set both to "Passphrase file
+auto-unlock".** The Control root's unlocks the root. The agent's unlocks
+the key that opens your providers' saved API keys: with no passphrase
+file of its own, the agent reads the same file (agent#43). Eugene reads
+that file and never writes it. If only the root's is set, the agent asks
+for the passphrase at every start, so after a restart your provider
+accounts wait for a sign-in; the agent's field warns about this.
 
 **If the root still comes back sealed, the Logs page says which of these
 it was:** the variable is not set; the file does not exist at that path
