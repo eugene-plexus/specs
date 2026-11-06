@@ -34,6 +34,8 @@ PINNED_STEPS = {
     "r7-rotation-acceptance.py": (FULL, "both"),
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
     "row46-frozen-trust-acceptance.py": (EVERY, "both"),
+    # agent#43 (2026-11-06): an agent in the container's shape unlocks from the root's file.
+    "a43-container-unlock-acceptance.py": (EVERY, "both"),
     # Row 70 (2026-10-21): group policies at the root and through an agent.
     "row70-group-policy-acceptance.py": (EVERY, "both"),
     "row29-tool-pictures-acceptance.py": (EVERY, "both"),

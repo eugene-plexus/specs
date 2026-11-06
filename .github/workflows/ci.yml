@@ -484,6 +484,12 @@ jobs:
       - name: A machine cut off from its root refuses other machines' changes and still answers (row 46)
         if: matrix.shard == 'L1' || matrix.shard == 'W2'
         run: python specs/scripts/row46-frozen-trust-acceptance.py --sabotage
+      # agent#43: in the container only the root's passphrase file is named. An
+      # agent restarted so must unlock from it with no sign-in, and its driver
+      # send the account's sealed key; restarted as before the fix, it must not.
+      - name: An agent restarted in the container's shape unlocks from the root's passphrase file, sabotaged (agent#43)
+        if: matrix.shard == 'L3' || matrix.shard == 'W1'
+        run: python specs/scripts/a43-container-unlock-acceptance.py --sabotage
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
