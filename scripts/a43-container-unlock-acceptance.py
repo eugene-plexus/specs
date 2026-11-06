@@ -96,10 +96,16 @@ CHECKS_4 = (
     "4c. the key reaches the provider",
 )
 
-# This machine's live agent sets EUGENE_PLEXUS_AGENT_CONFIG_FILE at user scope,
-# and every process below inherits this process's environment.
-for _key in [k for k in os.environ if k.upper().startswith("EUGENE_PLEXUS_")]:
-    del os.environ[_key]
+
+def clear_install_settings() -> None:
+    """Drop the calling shell's install settings before anything reads them:
+    this machine's live agent sets EUGENE_PLEXUS_AGENT_CONFIG_FILE at user
+    scope. Only in the process that runs the checks. The agent this script
+    serves (`--serve-agent`) keeps what `Run.start_agent` gave it, the root's
+    variable included: clearing it there is the old container shape (the first
+    CI run of this script did that, and every check after 3 failed)."""
+    for key in [k for k in os.environ if k.upper().startswith("EUGENE_PLEXUS_")]:
+        del os.environ[key]
 
 
 class Failed(AssertionError):
@@ -800,6 +806,7 @@ def main() -> int:
     if args.serve_agent:
         serve_agent(args.serve_agent, args.port, args.machine_port, args.revert_fix)
         return 0
+    clear_install_settings()
     expected = 7 + (2 if args.sabotage else 0)
     with tempfile.TemporaryDirectory(prefix="ep-a43-", ignore_cleanup_errors=True) as tmp:
         run = Run(Path(tmp))
