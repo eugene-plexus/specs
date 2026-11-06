@@ -58,30 +58,33 @@ class EdgeTests(unittest.TestCase):
             head,
             marker,
             lambda workflow, commit: self.runs.get((workflow, commit)),
-            lambda receipt: receipt["head_sha"] in self.runtime,
         )
 
-    def test_bootstrap_requires_runtime_and_image_evidence(self) -> None:
+    def test_bootstrap_requires_only_image_evidence(self) -> None:
         self.assertEqual(self.choose(self.base)["specsCommit"], self.base)
         self.runtime.clear()
+        del self.runs["ci.yml", self.base]
+        self.assertEqual(self.choose(self.base)["specsCommit"], self.base)
+        del self.runs["container.yml", self.base]
         self.assertIsNone(self.choose(self.base))
+
+    def test_ci_does_not_hold_edge(self) -> None:
+        """Troy, 2026-10-19 (restated 2026-11-06): no gate on Edge but its image.
+        A change whose CI failed, was cancelled or never ran still publishes once
+        its image is verified; CI's red is the session-start warning's to report."""
+        head = self.change("scripts/install.sh", "echo CI IS RED\n")
+        self.runs["container.yml", head] = {"head_sha": head, "id": 50}
+        receipt = self.choose(head, self.base)
+        self.assertEqual(receipt["specsCommit"], head)
+        self.assertEqual(receipt["imageCommit"], head)
+        self.assertNotIn("ciRun", receipt)
 
     def test_docs_commit_reuses_exact_runtime_and_image_inputs(self) -> None:
         head = self.change("docs/change.md", "Documentation only\n")
         self.receipts(head, runtime=False, image=False)
         receipt = self.choose(head, self.base)
         self.assertEqual(receipt["specsCommit"], head)
-        self.assertEqual(receipt["runtimeCommit"], self.base)
         self.assertEqual(receipt["imageCommit"], self.base)
-
-    def test_canceled_runtime_then_green_docs_cannot_launder_a_change(self) -> None:
-        changed = self.change("scripts/install.sh", "echo UNTESTED\n")
-        self.runs["container.yml", changed] = {"head_sha": changed, "id": 20}
-        head = self.change("docs/change.md", "Does not make the installer tested\n")
-        self.receipts(head, runtime=False, image=False)
-        self.assertIsNone(self.choose(head, self.base))
-        self.receipts(changed)
-        self.assertEqual(self.choose(head, self.base)["runtimeCommit"], changed)
 
     def test_missing_image_keeps_previous_edge(self) -> None:
         head = self.change("scripts/install.sh", "echo NEW\n")
@@ -139,7 +142,7 @@ class EdgeTests(unittest.TestCase):
         self.command("checkout", "-q", "train")
         self.command("merge", "-q", "--no-edit", "main")
         head = self.change("scripts/install.sh", "echo head\n")
-        self.receipts(head, runtime=False)
+        self.receipts(head, image=False)
         self.assertIsNone(self.choose(head, marker))
 
     def test_no_backward_or_divergent_marker_move(self) -> None:
@@ -305,46 +308,6 @@ class EdgeTests(unittest.TestCase):
             {"jobs": [{"name": "build-verify-publish", "conclusion": "skipped"}], "total_count": 1},
         ]
         self.assertIsNone(edge_marker.successful_run("container.yml", self.base))
-
-    @patch("edge_marker.api")
-    def test_skipped_or_partial_runtime_jobs_are_not_evidence(self, api) -> None:
-        for conclusion in ("skipped", "failure", None):
-            api.return_value = {
-                "jobs": [
-                    {"name": "Pinned integration (ubuntu-latest)", "conclusion": "success"},
-                    {"name": "Pinned integration (windows-latest)", "conclusion": conclusion},
-                ],
-                "total_count": 2,
-            }
-            self.assertFalse(edge_marker.runtime_passed({"id": 1}))
-        api.return_value["jobs"][1]["conclusion"] = "success"
-        self.assertTrue(edge_marker.runtime_passed({"id": 1}))
-
-    @patch("edge_marker.api")
-    def test_every_part_of_split_pinned_integration_must_pass(self, api) -> None:
-        def receipt(part_conclusion, aggregates: bool = True) -> dict:
-            jobs = [
-                {"name": f"Pinned integration ({system}, part {part})", "conclusion": "success"}
-                for system, parts in (("ubuntu-latest", "L"), ("windows-latest", "W"))
-                for part in (f"{parts}1", f"{parts}2", f"{parts}3")
-            ]
-            jobs[4]["conclusion"] = part_conclusion
-            if aggregates:
-                jobs += [
-                    {"name": "Pinned integration (ubuntu-latest)", "conclusion": "success"},
-                    {"name": "Pinned integration (windows-latest)", "conclusion": "success"},
-                ]
-            jobs.append({"name": "Secret scan (gitleaks)", "conclusion": "skipped"})
-            return {"jobs": jobs, "total_count": len(jobs)}
-
-        for conclusion in ("skipped", "failure", "cancelled", None):
-            with self.subTest(part=conclusion):
-                api.return_value = receipt(conclusion)
-                self.assertFalse(edge_marker.runtime_passed({"id": 1}))
-        api.return_value = receipt("success", aggregates=False)
-        self.assertFalse(edge_marker.runtime_passed({"id": 1}))
-        api.return_value = receipt("success")
-        self.assertTrue(edge_marker.runtime_passed({"id": 1}))
 
 
 if __name__ == "__main__":

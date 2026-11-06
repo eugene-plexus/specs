@@ -48,11 +48,11 @@ the reduced plan. Markdown fixtures under scripts are not documentation.
   and Windows. Agent/driver pins also select launch-boundary checks; agent pins
   select real Linux system updates. Relevant engine pins select one macOS version,
   run on a push by `macos-push.yml` outside CI so Edge does not wait for it
-  (2026-10-18). A macOS-only failure is a red run, not a held Edge.
+  (2026-10-18). A red run never holds Edge.
 - Full coverage retains every previous CI acceptance command, the three-version
   macOS matrix, app-account isolation, Open WebUI and folder-tool service checks.
 - Full integration runs weekly, and CI's manual `profile=full` remains available.
-  A scheduled failure is visible but does not automatically veto every Edge build.
+  A scheduled failure is visible but does not veto Edge (no CI result does).
   A discovered security or data-loss defect requires the safety hold below.
 
 A push to any branch runs CI (2026-10-21, P1). On `main` the planner's base is
@@ -85,16 +85,17 @@ heal a dropped event, or by manual dispatch. It executes trusted `main`, not
 code or refs supplied by a completion event. One publisher runs at a time.
 
 The publisher walks main's actual first-parent history, newest first, and
-requires a successful push CI receipt plus real Linux/Windows runtime-job
-receipts for identical inputs. A green documentation commit cannot conceal a
-canceled or failed runtime check. Skipped jobs are not evidence.
+requires one thing: a verified container image for identical image inputs
+(`container.yml`'s build-verify-publish). **CI does not gate Edge** (Troy,
+2026-10-19, restated 2026-11-06): Edge is for rapid development and drives the
+maintainer's own testbed, so it publishes as soon as its image is built and
+has passed its own checks. A red CI on `main` is reported at session start
+(the edge-ci warning) and fixed before a release; release qualification keeps
+every gate.
 
 Pinned integration runs in three parts per system side by side (W0.3); each
 acceptance step runs in exactly one part, under the profile condition it had
-before. The runtime receipts keep the unsplit job's names, `Pinned
-integration (ubuntu-latest)` and `(windows-latest)`, and pass only when every
-part on both systems passed; the publisher also requires every job named
-`Pinned integration (...)`, each part included, to have passed.
+before.
 
 Runtime fingerprints include tracked code, contracts, dependency locks,
 workflows, harnesses and configuration. Image fingerprints include installers,

@@ -1,4 +1,4 @@
-"""Publish Edge from named CI receipts and a verified immutable container image."""
+"""Publish Edge from a verified immutable container image; CI does not gate it."""
 
 from __future__ import annotations
 
@@ -69,30 +69,36 @@ def choose(
     head: str,
     marker: str | None,
     run: RunLookup,
-    runtime_passed: Callable[[Receipt], bool],
     *,
     limit: int = 100,
 ) -> Receipt | None:
+    """The newest descendant of the marker whose container image was built and
+    verified (`container.yml`'s build-verify-publish, for the same image inputs).
+
+    **Nothing else gates Edge** (Troy, 2026-10-19, restated 2026-11-06): CI's
+    result does not hold it. Edge is for rapid development and drives the
+    maintainer's own testbed; a red CI is reported by the session-start warning
+    and fixed before a release, whose qualification keeps every gate. The image
+    receipt stays because Edge publishes those bytes: an image that did not
+    build, or did not start in its own checks, has nothing to publish.
+    """
     if not SHA.fullmatch(head) or (marker is not None and not SHA.fullmatch(marker)):
         raise ValueError("Edge candidates must be full commit IDs")
     if marker is not None and not ancestor(root, marker, head):
         raise ValueError("the existing Edge marker is not an ancestor of main; refusing to move it")
     history = git(root, "rev-list", "--first-parent", f"--max-count={limit}", head).splitlines()
-    runtime_hashes: dict[str, str] = {}
     image_hashes: dict[str, str] = {}
-    receipts: dict[tuple[str, str], Receipt | None] = {}
+    receipts: dict[str, Receipt | None] = {}
 
-    def hashed(commit: str, *, image: bool = False) -> str:
-        cache = image_hashes if image else runtime_hashes
-        if commit not in cache:
-            cache[commit] = fingerprint(root, commit, image=image)
-        return cache[commit]
+    def hashed(commit: str) -> str:
+        if commit not in image_hashes:
+            image_hashes[commit] = fingerprint(root, commit, image=True)
+        return image_hashes[commit]
 
-    def checked(workflow: str, commit: str) -> Receipt | None:
-        key = (workflow, commit)
-        if key not in receipts:
-            receipts[key] = run(workflow, commit)
-        return receipts[key]
+    def built(commit: str) -> Receipt | None:
+        if commit not in receipts:
+            receipts[commit] = run("container.yml", commit)
+        return receipts[commit]
 
     for position, candidate in enumerate(history):
         if candidate == marker:
@@ -101,37 +107,17 @@ def choose(
         # commits the marker has already passed; only a descendant moves Edge forward.
         if marker is not None and not ancestor(root, marker, candidate):
             continue
-        ci = checked("ci.yml", candidate)
-        if ci is None:
-            continue
-        runtime_hash = hashed(candidate)
-        evidence = None
-        if marker is not None and hashed(marker) == runtime_hash:
-            evidence = {"head_sha": marker, "id": None}
-        else:
-            for previous in history[position:]:
-                if hashed(previous) == runtime_hash:
-                    previous_ci = checked("ci.yml", previous)
-                    if previous_ci is not None and runtime_passed(previous_ci):
-                        evidence = previous_ci
-                        break
-        if evidence is None:
-            continue
-        image_hash = hashed(candidate, image=True)
+        image_hash = hashed(candidate)
         for previous in history[position:]:
-            if hashed(previous, image=True) != image_hash:
+            if hashed(previous) != image_hash:
                 continue
-            built = checked("container.yml", previous)
-            if built is not None:
+            receipt = built(previous)
+            if receipt is not None:
                 return {
                     "specsCommit": candidate,
                     "previousMarker": marker,
-                    "ciRun": ci["id"],
-                    "runtimeCommit": evidence["head_sha"],
-                    "runtimeRun": evidence["id"],
-                    "runtimeFingerprint": runtime_hash,
                     "imageCommit": previous,
-                    "imageRun": built["id"],
+                    "imageRun": receipt["id"],
                     "imageFingerprint": image_hash,
                 }
     return None
@@ -182,16 +168,6 @@ def successful_run(workflow: str, commit: str) -> Receipt | None:
     return None
 
 
-# CI's runtime receipt. Pinned integration runs in parts (W0.3); these two
-# jobs keep the unsplit job's names and pass only when every part passed.
-# Every other job named like them (each part) must have passed as well, so a
-# skipped, failed or cancelled part is never hidden behind the two names.
-RUNTIME_JOBS = frozenset(
-    {"Pinned integration (ubuntu-latest)", "Pinned integration (windows-latest)"}
-)
-RUNTIME_PREFIX = "Pinned integration ("
-
-
 def latest_jobs(receipt: Receipt) -> list[Receipt]:
     body = api(f"actions/runs/{receipt['id']}/jobs?per_page=100&filter=latest")
     jobs = body.get("jobs") if isinstance(body, dict) else None
@@ -202,12 +178,6 @@ def latest_jobs(receipt: Receipt) -> list[Receipt]:
 
 def passed_jobs(receipt: Receipt) -> set[str]:
     return {job["name"] for job in latest_jobs(receipt) if job.get("conclusion") == "success"}
-
-
-def runtime_passed(receipt: Receipt) -> bool:
-    runtime = [job for job in latest_jobs(receipt) if job["name"].startswith(RUNTIME_PREFIX)]
-    passed = {job["name"] for job in runtime if job.get("conclusion") == "success"}
-    return RUNTIME_JOBS <= passed and all(job.get("conclusion") == "success" for job in runtime)
 
 
 def current_marker() -> str | None:
@@ -309,10 +279,10 @@ def main() -> None:
         raise RuntimeError("Edge publication is paused by the repository safety hold")
     root = Path(__file__).resolve().parent.parent
     head = git(root, "rev-parse", "HEAD").strip()
-    receipt = choose(root, head, current_marker(), successful_run, runtime_passed)
+    receipt = choose(root, head, current_marker(), successful_run)
     if receipt is None:
         print(
-            "No newer candidate has the required CI, runtime and image receipts; Edge is unchanged."
+            "No newer candidate has a verified image receipt; Edge is unchanged."
         )
         return
     if not arguments.dry_run:
