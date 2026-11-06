@@ -90,11 +90,11 @@ jobs:
       full: ${{ steps.select.outputs.full }}
       container: ${{ steps.select.outputs.container }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Select build and recovery coverage
@@ -119,12 +119,12 @@ jobs:
       digest: ${{ steps.push.outputs.digest }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -219,7 +219,7 @@ jobs:
               raise ValueError('the tested image has no valid digest')
           receipt = {'specsCommit': git(root, 'rev-parse', 'HEAD').strip(), 'imageFingerprint': fingerprint(root, 'HEAD', image=True), 'digest': digest}
           Path('image-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8', newline='\n')
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: verified-container
           path: image-receipt.json
@@ -246,12 +246,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_tag }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Verify qualification and retain the tested digest
