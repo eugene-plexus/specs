@@ -670,8 +670,8 @@ jobs:
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r8-profile-checks.py
 
-  # The receipts Publish Edge reads (edge_marker.RUNTIME_JOBS), under the
-  # unsplit job's names. Each passes only if every part on Linux and Windows
+  # One verdict per system under the unsplit job's names (Edge does not
+  # wait for them). Each passes only if every part on Linux and Windows
   # passed: a failed, skipped or cancelled part fails both.
   pinned-integration:
     needs: [plan, r7-signing]
