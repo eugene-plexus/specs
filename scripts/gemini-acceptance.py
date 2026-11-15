@@ -55,6 +55,9 @@ import httpx
 import yaml
 from fastapi import Request
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import acceptance_logs  # noqa: E402
+
 NODE_NAME = "gemini-agent"
 KEYS_FILE = Path(os.environ.get("EP_KEYS", "C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env"))
 
@@ -522,7 +525,13 @@ def exercise(directory: Path, *, live: bool, live_video: bool, door_check=None) 
         (work / filename).write_text(
             json.dumps(data) if filename.endswith("json") else yaml.safe_dump(data), encoding="utf-8")
 
-    def wait(check, label, seconds=30):
+    def wait(check, label, seconds=30, process=None, log=None):
+        # A process that exited cannot answer later: end the wait then, and say
+        # whether it exited and what its own log says (specs#123).
+        def explain(error):
+            text = f"{error}; {acceptance_logs.exit_note(process, label)}"
+            return text + "\n" + acceptance_logs.report([log], 60, base=directory) if log else text
+
         deadline = time.perf_counter() + seconds
         last = None
         while time.perf_counter() < deadline:
@@ -531,8 +540,11 @@ def exercise(directory: Path, *, live: bool, live_video: bool, door_check=None) 
                     return
             except (httpx.HTTPError, KeyError, ValueError, TypeError) as e:
                 last = e
+            if process is not None and process.poll() is not None:
+                raise AssertionError(explain(f"{label} did not answer ({last!r})"))
             time.sleep(0.1)
-        raise AssertionError(f"timed out: {label} ({last!r})")
+        error = f"timed out: {label} ({last!r})"
+        raise AssertionError(explain(error) if process is not None else error)
 
     def start(name, extra_env=None):
         work = directory / name
@@ -552,7 +564,8 @@ def exercise(directory: Path, *, live: bool, live_video: bool, door_check=None) 
             cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
-        wait(lambda: call(name, "GET", "/healthz").status_code == 200, name)
+        wait(lambda: call(name, "GET", "/healthz").status_code == 200, name,
+             process=processes[name], log=work / "process.log")
 
     def stop(name):
         process = processes.pop(name, None)
