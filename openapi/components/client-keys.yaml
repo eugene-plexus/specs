@@ -134,6 +134,20 @@ components:
             forwards what the app prints. Any other key gets it when the
             operator turns it on, so a tool outside the registry sends its
             logs the same way ours do.
+        readMetrics:
+          type: boolean
+          default: false
+          description: |
+            Whether this key may read `GET /metrics` on a gateway or an agent,
+            and `GET /v1/metrics/export` on a gateway (row 12): the numbers a
+            Prometheus scraper reads. **It grants nothing else.** A key with it
+            runs no inference unless `allowedModels` also names a model, and a
+            key without it is refused at every metrics path with 403.
+
+            The console's "Make a scrape key" sets it together with
+            `allowedModels: []`, so the key can read numbers and run nothing.
+            The metrics paths ask the authority with admission purpose
+            `metrics`: a check that names no model and takes no lease.
         maxConcurrentRequests:
           type: integer
           minimum: 1
@@ -199,9 +213,11 @@ components:
         requestId: {type: string, minLength: 1, maxLength: 128}
         purpose:
           type: string
-          enum: [inference, logs, catalog, search]
+          enum: [inference, logs, catalog, search, metrics]
           default: inference
           description: |
+            Metrics (row 12) is a check for a scraper that reads `GET /metrics`: it names no model and no person token, takes no lease, and is refused with 403 ("This key may not read metrics.") unless the key's `readMetrics` is on. It never acquires, renews or releases.
+
             Logs and catalog permit only a check without a model/person token; neither acquires or renews inference. Catalog is only GET /v1/models with X-Eugene-App-Operation set to catalog, for app settings.
 
             Search is a web search that names no model (POST /v1/web_search, the door Open WebUI's external search engine calls). It takes the same check, acquire, renew and release as inference, and the same concurrency and rolling-minute limits, but it carries no `model` (a body that names one is refused with 422) and the key's `allowedModels` does not apply. The gateway checks the key's `allowedTools` and `localOnly`, as for every tool.
