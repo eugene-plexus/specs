@@ -612,14 +612,13 @@ def exercise(directory: Path) -> None:
         )
 
         # --- 5: a gateway restart finishes its streams -------------------------
-        for index in (1, 2):
-            client.post(
-                url(f"engine-{index}") + "/mode", json={"seconds": 5}
-            ).raise_for_status()
+        # Only r1 runs now (check 3 stopped r2), with two slots: two streams
+        # fill it, so neither waits in the gateway's line, which a drain refuses.
+        client.post(url("engine-1") + "/mode", json={"seconds": 5}).raise_for_status()
         process = processes["gateway"]
         with ThreadPoolExecutor(3) as pool:
             streams = [
-                pool.submit(chat, f"R13:restart-{n}", stream=True) for n in range(3)
+                pool.submit(chat, f"R13:restart-{n}", stream=True) for n in range(2)
             ]
             time.sleep(1.5)
             restarted = good("gateway", "POST", "/v1/admin/restart", operator)
@@ -633,7 +632,7 @@ def exercise(directory: Path) -> None:
         assert code == 0, code
         processes.pop("gateway")
         ok(
-            "5. a gateway restart finished its 3 open streams, refused a new one, and exited 0"
+            "5. a gateway restart finished its 2 open streams, refused a new one, and exited 0"
         )
 
         assert len(passed) == 5, passed
