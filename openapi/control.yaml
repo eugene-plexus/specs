@@ -1068,16 +1068,52 @@ paths:
     delete:
       operationId: logoutAdministration
       summary: Revoke the presented administration session
+      description: Also ends every operations token made from this session (row 39), on every machine that can fetch the trust bundle.
       responses:
         '204': {description: Signed out}
         '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+  /v1/auth/operations-token:
+    post:
+      operationId: exchangeOperationsToken
+      summary: Exchange a named administration session for an operations token for one machine
+      description: |
+        Row 39 (`docs/design/rows/row-39.md`). A person the owner gave an
+        operations power (`operateModels`, `operateMachines`) presents
+        their administration session and names one machine. Control
+        checks, at every exchange, that the session is current
+        (`administrationVersion`), that the person is enabled and holds an
+        operations power, and that the machine is enrolled and inside
+        `operationsMachines`. It answers with an `ep-operations+jwt`
+        addressed to `node:<machine>` only, living 10 minutes, carrying
+        the person (`sub`, `name`), the powers (`ops`), the session it
+        came from (`sid`) and the administration version.
+
+        The machine's agent, library and gateway accept it only on the
+        routes their power table lists. Signing out of the session, and
+        any change to the person's grants, password or enabled state,
+        revoke it through the trust bundle. The owner's session is refused:
+        the owner's console already reaches every machine.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OperationsTokenRequest'}
+      responses:
+        '200':
+          description: The token for that one machine.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperationsToken'}
+        '400': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '403': {$ref: 'components/common.yaml#/components/responses/Problem'}
   /v1/people/{id}/administration:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}}
     put:
       operationId: setPersonAdministration
       summary: Owner-only delegation of directory administration
-      description: Replaces the person's explicit administration grants and invalidates their existing administration sessions. Groups never confer these grants. Password recovery and app registration remain owner-only.
+      description: Replaces the person's explicit administration grants and invalidates their existing administration sessions and operations tokens (row 39). Groups never confer these grants. Password recovery and app registration remain owner-only.
       requestBody:
         required: true
         content:
@@ -6147,6 +6183,50 @@ components:
           uniqueItems: true
           items: {type: string, minLength: 1, maxLength: 64}
           description: May add/remove ordinary accounts in exactly these groups. Preserve memberships outside this scope. May not change individual-access mode, self or other administrators.
+        operateModels:
+          type: boolean
+          default: false
+          description: "Row 39. Download, delete and re-scan models; edit profiles; create, start, stop, restart and change runtimes, on the machines in operationsMachines. Never secrets, chats or sign-in keys."
+        operateMachines:
+          type: boolean
+          default: false
+          description: "Row 39. Update Eugene and engines (Update all), install and remove engine builds, restart components, and read the machines' logs (call R39-LOGS), on the machines in operationsMachines. Never secrets, chats or sign-in keys."
+        operationsMachines:
+          type: [array, 'null']
+          default: null
+          maxItems: 256
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 64}
+          description: Row 39. The machines (node names) the operations powers reach. Null is every machine; an empty list is none.
+    OperationsPower:
+      type: string
+      enum: [operate-models, operate-machines]
+      description: |
+        Row 39. An operations power as an operations token carries it
+        (`ops`): `operate-models` is `AdministrationGrants.operateModels`,
+        `operate-machines` is `operateMachines`.
+    OperationsTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [machine]
+      properties:
+        machine:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The node name of the one machine the token is for.
+    OperationsToken:
+      type: object
+      required: [token, expiresAt, machine, powers]
+      properties:
+        token:
+          type: string
+          description: An `ep-operations+jwt` addressed to `node:<machine>` only.
+        expiresAt: {type: string, format: date-time}
+        machine: {type: string}
+        powers:
+          type: array
+          items: {$ref: '#/components/schemas/OperationsPower'}
     AdministrationLoginRequest:
       type: object
       additionalProperties: false
