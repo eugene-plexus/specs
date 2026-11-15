@@ -5764,10 +5764,16 @@ paths:
         * **`loadBalancing`** (`enum`) — where a **new** conversation
           goes, whatever `conversationAffinity` says. **`spread` (the
           default since CB2, 2026-10-02)** picks the replica holding the
-          fewest conversations per slot — every conversation it served
-          inside the affinity table's 30 minutes, whether or not a
-          request is in flight — ties to the fewest in flight, then in
-          turn. Measured with 32 agent sessions on eight replicas: 80.2%
+          fewest prompt tokens, as a share of the context it reports (row
+          14, DI5; counted from each conversation's last prompt, over every
+          conversation it served inside the affinity table's 30 minutes,
+          whether or not a request is in flight, in 5% steps), then the
+          fewest conversations per slot, then the shortest predicted wait,
+          then the fewest requests in flight (the larger of this gateway's
+          count and the engine's own `engineLoad` where vLLM reports one),
+          then in turn. When any replica does not report its context, the
+          token step is left out and the conversations come first, as
+          before row 14. Measured with 32 agent sessions on eight replicas: 80.2%
           of prompt tokens reused against 60.4%, the median first token
           1.05 s against 4.00 s, because a replica whose agents are all
           thinking between turns looks empty to a count of requests in
@@ -5810,6 +5816,21 @@ paths:
           it a request of a higher band takes the place of the newest one
           of the lowest band waiting (`set_aside`); any other is refused
           (`queue_full`).
+        * **`moveByFirstToken`** (`boolean`, default on; row 14, LD3) — a
+          conversation waiting for room on its own replica moves to
+          another replica of its tier that has room now when that replica's
+          predicted first token, rereading the whole prompt, comes at least
+          `moveFirstTokenPenaltyMs` sooner than the wait for its own
+          replica plus reading only the new text. A prediction needs each
+          runtime's calibrated prefill rate (`prefill_tokens_per_second` on
+          the routing view) and its mean answer time; with either missing
+          the conversation keeps waiting for its own replica, as before.
+          Off keeps every conversation waiting for its own replica.
+        * **`moveFirstTokenPenaltyMs`** (`integer`, default 2,000, 0 to
+          600,000; row 14) — how much sooner, in milliseconds, another
+          replica's predicted first token must come before a conversation
+          leaves the replica that holds its prompt. A large value keeps
+          more conversations where their cache is.
         * **`answerReserveFloorTokens`** (`integer`, default 1,024, 0 to
           131,072; row 11, CB-C2) — the least room a turn holds for its
           answer in a runtime's shared context. A turn holds the lower of
@@ -9987,6 +10008,30 @@ components:
           description: |
             Seconds since the gateway last sent this backend a request.
             Absent when it never has.
+        engine_load:
+          type: integer
+          minimum: 0
+          description: |
+            Requests occupying the runtime's engine now from every client, as
+            its agent reports them (`Runtime.engineLoad`, row 14). Only vLLM
+            says; absent for llama.cpp, for a cloud account, and when the last
+            read failed.
+        prefill_tokens_per_second:
+          type: number
+          minimum: 0
+          description: |
+            The runtime's calibrated peak prefill rate (row 14, LD3): the 90th
+            percentile of uncached prompt tokens over first-token time across
+            its last 256 served requests that read at least 256 uncached
+            tokens, from the retained metrics at start and from every answer
+            since. Forgotten when the runtime leaves `ready`. Absent until
+            `prefill_samples` reaches 8, and a conversation is then never moved
+            for its sake.
+        prefill_samples:
+          type: integer
+          minimum: 0
+          description: |
+            How many served requests the calibration of this runtime holds.
 
     AnthropicMessagesRequest:
       type: object
@@ -12493,7 +12538,9 @@ components:
             v12), sent back there and the engine reused less than the
             whole of the conversation's previous prompt, so its history
             was gone; `new`, a conversation not seen before; `moved`, its
-            replica was full or gone and it went elsewhere. Null when
+            replica was full or gone, or another replica's predicted first
+            token was sooner by more than `moveFirstTokenPenaltyMs` (row 14),
+            and it went elsewhere. Null when
             there was no choice to make or affinity was off (before CB1,
             when another strategy was in effect). A backend that does not
             report cached tokens cannot be judged, and its turns stay
