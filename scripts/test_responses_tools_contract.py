@@ -127,12 +127,32 @@ class ResponsesToolsContractTests(unittest.TestCase):
             "code_interpreter",
             "no sandbox",
             "use a function tool and run it yourself",
-            "mcp",
-            "row 59",
             "file_search",
             "row 56",
         ):
             self.assertIn(cause, text)
+        # Row 59b: remote MCP runs; it is no longer among the refused.
+        refused = text[text.index("Tools still refused") :].split("\n\n", 1)[0]
+        self.assertNotIn("`mcp`", refused)
+        self.assertIn("`mcp` (remote MCP, row 59b) runs on a tool-driver", " ".join(text.split()))
+
+    def test_remote_mcp_items_and_events_are_named(self) -> None:
+        kinds = self.schemas["ResponsesOutputItem"]["properties"]["type"]["enum"]
+        for kind in ("mcp_list_tools", "mcp_call", "mcp_approval_request"):
+            self.assertIn(kind, kinds)
+        events = self.schemas["ResponsesStreamEvent"]["properties"]["type"]["enum"]
+        for event in (
+            "response.mcp_list_tools.in_progress",
+            "response.mcp_list_tools.completed",
+            "response.mcp_call.in_progress",
+            "response.mcp_call_arguments.done",
+            "response.mcp_call.completed",
+            "response.mcp_call.failed",
+        ):
+            self.assertIn(event, events)
+        tool = self.schemas["ResponsesTool"]["properties"]
+        for name in ("server_label", "server_url", "headers", "authorization", "require_approval"):
+            self.assertIn(name, tool)
 
     def test_compact_has_its_own_request_and_response(self) -> None:
         operation = self.contract["paths"]["/v1/responses/compact"]["post"]
