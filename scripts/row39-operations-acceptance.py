@@ -18,8 +18,11 @@ The owner gives Dana the Models power (`operateModels`) on machine A only.
    auto-start, and re-scans A's library through A's proxy: each is taken,
    and A's operations log names Dana for each, the library's row included.
 2. Dana's exchange for B is refused, naming B and her machines. Her token
-   for A, sent to B through A's proxy, is stripped (B answers 401), and sent
-   to B directly is refused (401).
+   for A, sent through A's proxy to another destination (the root), is
+   stripped (401, missing token), and sent to B is refused (401). The hop to
+   B through A's proxy is not run: on one host A's proxy refuses B's
+   loopback address by design (row 3 runs it with --lan); the agent's unit
+   test covers the strip toward another machine.
 3. On A, Dana tries an engine install (403, naming Updates and restarts),
    `PATCH /v1/config` on the agent, the gateway and the library (403, only
    the owner), a client key (403), a provider key on the driver (refused),
@@ -643,16 +646,25 @@ def step_scope(run: Run, session: str) -> None:
         )
     run.ok(f"Dana's exchange for B is refused (403): {detail!r}")
     token = run.token_for_a(session)
-    through = run.call("GET", "agent-a", "/api/proxy/node:agent-b/v1/runtimes", token)
+    # Through A's proxy toward another destination: the root, since on one
+    # host A's proxy refuses B's loopback address by design (row 3 --lan).
+    through = run.call(
+        "GET", "agent-a", "/api/proxy/control/v1/auth/administration/session", token
+    )
     direct = run.call("GET", "agent-b", "/v1/runtimes", token)
-    if (through.status_code, direct.status_code) != (401, 401):
+    if (
+        through.status_code != 401
+        or "Missing token" not in through.text
+        or direct.status_code != 401
+        or "node:agent-a" not in _detail(direct)
+    ):
         raise Failed(
-            f"Dana's token for A at B: through A's proxy {through.status_code} "
-            f"({through.text[:200]}), directly {direct.status_code} ({direct.text[:200]})"
+            f"Dana's token for A elsewhere: through A's proxy to the root {through.status_code} "
+            f"({through.text[:400]}), at B {direct.status_code} ({direct.text[:400]})"
         )
     run.ok(
-        "Dana's token for A goes no further: through A's proxy to B it is stripped (401: "
-        f"{_detail(through)!r}), and at B directly it is refused (401: {_detail(direct)!r})"
+        "Dana's token for A goes no further: A's proxy strips it toward the root (401: "
+        f"{_detail(through)!r}), and B refuses it ({_detail(direct)!r})"
     )
 
 
@@ -737,7 +749,7 @@ def check_owner_routes(run: Run, token: str, session: str) -> None:
         ),
     ]
     wrong = [
-        f"{what}: {got.status_code} {got.text[:200]}"
+        f"{what}: {got.status_code} {got.text[:400]}"
         for what, got, codes, says in tries
         if got.status_code not in codes or says not in _detail(got)
     ]
