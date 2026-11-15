@@ -845,7 +845,17 @@ def step_sabotage(run: Run, label: str, *, container_shape: bool, revert_fix: bo
 def step_sabotage_setup(run: Run) -> None:
     """6c. agent#44's fix taken back: setup must not choose the operator's file."""
     restart(run, container_shape=True, revert_44=True)
-    status = run.get("agent", "/v1/auth/status").json()
+    answer = run.get("agent", "/v1/auth/status")
+    if answer.status_code != 200:
+        raise Failed(f"/v1/auth/status answered {answer.status_code}: {answer.text[:300]}")
+    status = answer.json()
+    # The agent this run initialized, answering with the flag as it was before: not
+    # an agent that is not set up, nor one whose answer lacks the field.
+    if status.get("initialized") is not True or status.get("passphraseFile") is not False:
+        raise Failed(
+            f"sabotage NOT caught (agent#44's fix taken back): /v1/auth/status says {status}, "
+            "not initialized with passphraseFile false"
+        )
     chosen = wizard_mode(status)
     if chosen == "passphrase_file":
         raise Failed(
