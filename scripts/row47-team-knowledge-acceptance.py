@@ -10,14 +10,14 @@ At the root: groups G1 (A, B) and G2 (C).
 
 1. The owner makes "Handbook", gives G1 read, and adds a document. A's chat with it chosen cites
    "Handbook: rules.md". C sees no collection; Handbook's id is the same 404 for C as an id that
-   is not there, and C cannot choose it. A's project P uses the Handbook and is shared with C (the
+   is not there, and C cannot choose it. The owner's project uses the Handbook and is shared with C (the
    MSP case): C's chat in P is sent nothing of it, and nothing C is told names it.
-2. A shares P with B too: B sees P's instructions and documents and starts a chat in it, which is
+2. A shares project P with B: B sees P's instructions and documents and starts a chat in it, which is
    given the instruction and finds P's document; A cannot open B's chat by id; A sees a count.
 3. B is moved from G1 to G2 at the root: at B's next sign-in, B's search of the Handbook finds
    nothing, and its id is a 404.
-4. G1 may add to the Handbook. A model in A's chat proposes a note: it waits, unsearched, until A
-   accepts it; then it is found.
+4. G1 may add to the Handbook. A model in A's chat proposes a note: A is asked first, with its
+   words; approved, it waits, unsearched, until A accepts it; then it is found.
 5. With `--sabotage`: the installed Workbench's grant check (`team.readable`) is cut out of a
    copy and Workbench restarted: step 1's check of C must then fail. The file is restored from the
    copy, Workbench restarted, and the check passes again.
@@ -350,19 +350,24 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
                             json={"ids": [hid]})
         check("1g", "C cannot choose the Handbook for a chat",
               chosen.status_code == 404 and chosen.json() == none.json(), chosen.text[:200])
-        project = a.post("/api/projects", json={"name": "Harbour"}).json()["id"]
-        linked = a.http.put(ui + f"/api/projects/{project}/collections", headers=a._headers(),
-                            json={"ids": [hid]})
-        must("1h", "A's project uses the Handbook", linked.status_code == 200, linked.text[:300])
-        shared = a.http.put(ui + f"/api/projects/{project}/sharing", headers=a._headers(),
-                            json={"shares": [{"kind": "person", "id": people["c"], "role": "read"}]})
-        must("1i", "A shares the project with C", shared.status_code == 200, shared.text[:300])
-        c_in_project = chat(c, projectId=project)
+        # The owner's (an MSP's): only someone in a group with C, or the owner, shares with C.
+        client = owner.post("/api/projects", json={"name": "Client"}).json()["id"]
+        linked = owner.http.put(ui + f"/api/projects/{client}/collections", headers=owner._headers(),
+                                json={"ids": [hid]})
+        must("1h", "the owner's project uses the Handbook", linked.status_code == 200, linked.text[:300])
+        shared = owner.http.put(ui + f"/api/projects/{client}/sharing", headers=owner._headers(),
+                                json={"shares": [{"kind": "person", "id": people["c"], "role": "read"}]})
+        must("1i", "the owner shares the project with C", shared.status_code == 200, shared.text[:300])
+        refused = a.http.put(ui + "/api/projects/" + a.post("/api/projects", json={"name": "Mine"}).json()["id"]
+                             + "/sharing", headers=a._headers(),
+                             json={"shares": [{"kind": "person", "id": people["c"], "role": "read"}]})
+        check("1k", "A, in no group with C, cannot share with C", refused.status_code == 422, refused.text[:200])
+        c_in_project = chat(c, projectId=client)
 
         def c_finds_nothing(number: str) -> bool:
             told = c.ask(c_in_project, f"What is the front door code word {CODE}?")
             sent = sent_last()
-            return check(number, "C's chat in A's project is sent nothing of the Handbook, and is told nothing of it",
+            return check(number, "C's chat in the owner's project is sent nothing of the Handbook, and is told nothing of it",
                          "desk on day one" not in sent and "Handbook" not in sent
                          and "Handbook" not in json.dumps(told)
                          and "Handbook" not in c.get(f"/api/chats/{c_in_project}/collections").text,
@@ -398,7 +403,8 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
             running()
             c_finds_nothing("5g")
 
-        say("2. A shares the project with B: knowledge, not chats")
+        say("2. A shares a project with B: knowledge, not chats")
+        project = a.post("/api/projects", json={"name": "Harbour"}).json()["id"]
         note = a.post("/api/memory/notes", json={"text": INSTRUCTION, "kind": "instruction",
                                                  "projectId": project})
         must("2a", "A keeps an instruction in the project", note.status_code in (200, 201), note.text[:300])
@@ -409,9 +415,8 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
         a_own = chat(a, projectId=project)
         a.ask(a_own, "A private question about my garden.")
         shared = a.http.put(ui + f"/api/projects/{project}/sharing", headers=a._headers(), json={"shares": [
-            {"kind": "person", "id": people["c"], "role": "read"},
             {"kind": "person", "id": people["b"], "role": "read"}]})
-        must("2c", "A shares the project with B too", shared.status_code == 200, shared.text[:300])
+        must("2c", "A shares the project with B", shared.status_code == 200, shared.text[:300])
         collection = shared.json()["collectionId"]
         settled(a, collection)
         page = b.get(f"/api/projects/{project}").json()
@@ -431,7 +436,7 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
               and b.get(f"/api/chats/{a_own}").status_code == 404)
         mine = a.get(f"/api/projects/{project}").json()
         check("2g", "A sees how many chats others have in it, and only A's own chats",
-              mine["sharing"]["othersChats"] == 2 and [x["id"] for x in mine["chatList"]] == [a_own],
+              mine["sharing"]["othersChats"] == 1 and [x["id"] for x in mine["chatList"]] == [a_own],
               {"others": mine["sharing"]["othersChats"], "chats": [x["id"] for x in mine["chatList"]]})
 
         say("3. B is taken out of G1: the Handbook is gone for B")
@@ -456,20 +461,36 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
                                  json={"grants": [{"kind": "group", "id": groups["G1"], "role": "contribute"}]})
         must("4a", "G1 may add to the Handbook", granted.status_code == 200, granted.text[:300])
         a_note = chat(a, hid)
-        told = a.ask(a_note, "PROPOSE: Fire drills are on Fridays zqxdrillword.")
+        posted = a.post(f"/api/chats/{a_note}/messages",
+                        json={"content": "PROPOSE: Fire drills are on Fridays zqxdrillword."})
+        must("4b", "A asks in a chat with the Handbook chosen", posted.status_code == 201, posted.text[:200])
+
+        def asked():
+            last = a.get(f"/api/chats/{a_note}").json()["messages"][-1]
+            return last if last.get("toolRounds") else None
+
+        asking = wait(asked, "the proposal to be asked about", 60)
+        call = asking["toolRounds"][0]["calls"][0]
+        check("4c", "A is asked first, with the words, before anything leaves the chat",
+              call.get("ask") is True and call.get("status") != "done"
+              and a.get(f"/api/collections/{hid}").json()["inbox"] == [], call)
+        decided = a.post(f"/api/chats/{a_note}/messages/{asking['id']}/tools/decision",
+                         json={"callId": call["id"], "approve": True})
+        must("4d", "A approves it", decided.status_code == 204, decided.text[:200])
+        told = a.answer(a_note)
         calls = [x for r in told.get("toolRounds") or [] for x in r.get("calls") or []]
-        check("4b", "the model's suggest_team_note ran", calls and calls[0].get("status") == "done", calls)
+        check("4e", "the model's suggest_team_note ran", calls and calls[0].get("status") == "done", calls)
         seen = a.get(f"/api/collections/{hid}").json()
-        check("4c", "the note waits in the Handbook's inbox, not among its notes",
+        check("4f", "the note waits in the Handbook's inbox, not among its notes",
               [i["title"] for i in seen["inbox"]] == ["Fire drills are on Fridays zqxdrillword."]
               and seen["noteList"] == [], {"inbox": seen["inbox"], "notes": seen["noteList"]})
         a.ask(chat(a, hid), "When are the zqxdrillword drills?")
-        check("4d", "while it waits, it is not searched", "Fire drills are on Fridays" not in sent_last())
+        check("4g", "while it waits, it is not searched", "Fire drills are on Fridays" not in sent_last())
         accepted = a.post(f"/api/collections/{hid}/inbox/{seen['inbox'][0]['id']}/accept")
-        check("4e", "A accepts it, as A", accepted.status_code == 200 and accepted.json()["addedBy"] == "A",
+        check("4h", "A accepts it, as A", accepted.status_code == 200 and accepted.json()["addedBy"] == "A",
               accepted.text[:200])
         a.ask(chat(a, hid), "When are the zqxdrillword drills?")
-        check("4f", "accepted, it is found", "Fire drills are on Fridays" in sent_last())
+        check("4i", "accepted, it is found", "Fire drills are on Fridays" in sent_last())
     finally:
         for process in processes:
             r7.kill_hard(process.pid)
@@ -505,7 +526,7 @@ def main() -> None:
             shutil.rmtree(work, ignore_errors=True)
     failed = [r for r in RESULTS if not r[2]]
     print(f"\n{len(RESULTS) - len(failed)} of {len(RESULTS)} passed")
-    finished = any(r[0] == "4f" for r in RESULTS) and (
+    finished = any(r[0] == "4i" for r in RESULTS) and (
         not args.sabotage or any(r[0] == "5g" for r in RESULTS))
     sys.exit(1 if failed or not finished else 0)
 
