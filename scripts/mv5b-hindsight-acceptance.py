@@ -194,8 +194,10 @@ def not_healthy(manager: Any, record: Any, last_answer: str) -> str:
     the same in the app record alone."""
     unit = f"eugene-plexus-app@{record.id}.service"
     try:
+        # 250 lines: one start prints about 70 lines of banner and warnings before
+        # any failure, and the first start's failure is what names the cause.
         journal = subprocess.run(
-            ["sudo", "journalctl", "--no-pager", "-n", "60", "-u", unit],
+            ["sudo", "journalctl", "--no-pager", "-n", "250", "-u", unit],
             capture_output=True, text=True, timeout=30, check=False,
         )
         lines = (journal.stdout or journal.stderr).strip() or "(the journal is empty)"
@@ -204,8 +206,26 @@ def not_healthy(manager: Any, record: Any, last_answer: str) -> str:
     return safe_report(
         f"Hindsight did not become healthy: {manager.view(record)}\n"
         f"/health last answered: {last_answer}\n"
-        f"--- journalctl -u {unit} (last 60 lines) ---\n{lines}"
+        f"--- packages in the app's venv ---\n{installed_packages(manager, record)}\n"
+        f"--- journalctl -u {unit} (last 250 lines) ---\n{lines}"
     )
+
+
+def installed_packages(manager: Any, record: Any) -> str:
+    """The app's installed packages, one `name==version` per line: a start that
+    broke without a change here points at a dependency that moved."""
+    try:
+        from eugene_plexus_agent import apps
+
+        python = apps.venv_python(manager.store.version_dir(record.id, record.version) / "venv")
+        listed = subprocess.run(
+            [str(python), "-c", "import importlib.metadata as m;"
+             "print(chr(10).join(sorted(f\"{d.metadata['Name']}=={d.version}\" for d in m.distributions())))"],
+            capture_output=True, text=True, timeout=60, check=False,
+        )
+        return (listed.stdout or listed.stderr).strip() or "(no packages listed)"
+    except Exception as e:  # a report must not fail the failure it explains
+        return f"(the packages cannot be listed: {e!r})"
 
 
 async def acceptance(output: Path) -> dict[str, Any]:

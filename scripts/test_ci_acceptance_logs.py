@@ -151,7 +151,8 @@ class Mv5bTests(unittest.TestCase):
         with mock.patch.object(module.subprocess, "run", return_value=done) as run:
             text = module.not_healthy(manager, record, "ConnectError('refused')")
         self.assertIn("ConnectError('refused')", text)
-        self.assertIn("eugene-plexus-app@hindsight.service", run.call_args.args[0])
+        self.assertTrue(any("eugene-plexus-app@hindsight.service" in c.args[0] for c in run.call_args_list))
+        self.assertIn("packages in the app", text)
         self.assertIn("started", text)
         self.assertNotIn("s3cr3t", text)
         module.REPORT_SECRETS.clear()
