@@ -441,6 +441,17 @@ The session that wrote this was **unelevated**, which is the same sentence
   honest options are a narrow new audience or a route that accepts
   `aud: client`; both are a slice, and neither should be decided as a
   side effect of a tray icon.
+  *Answered 2026-10-27 by row 35 ([rows/row-35.md](rows/row-35.md);
+  TRAY-1 to TRAY-4, Troy 2026-10-21):* neither. The tray holds no
+  credential at all. It asks the agent over a named pipe,
+  `\\.\pipe\eugene-plexus-agent-<port>`, that admits only accounts that
+  may stop the service (read from the service's own DACL, and checked
+  again per connection with Windows' `AccessCheck`), so it grants nothing
+  Stop Eugene did not. **Pause models** stops every model and keeps the
+  console, the gateway and this machine's place in the install; the
+  pause outlives a reboot, stops answers in progress and cancels a
+  running benchmark. The console has the same Pause and Resume on every
+  OS (`POST /v1/node/pause`, `/v1/node/resume`).
 * **`Show-MigrationConsequences` has never run against a real
   migration.** Its refusal is sabotage-checked; the path where somebody
   passes `-Migrate` and the install actually moves is Troy's.
