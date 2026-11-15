@@ -27,8 +27,8 @@ GenAI names are pinned to the semantic-conventions release current at build time
 | `eugene_affinity_total` | counter | model, outcome (hit, new, moved) |
 | `eugene_wake_total`, `eugene_wake_wait_seconds` | counter, histogram | model, runtime |
 | `eugene_in_flight`, `eugene_runtime_slots` | gauge | runtime, node |
-| `eugene_budget_reserved_tokens`, `eugene_budget_pool_tokens` | gauge | runtime |
-| `eugene_queue_waiting` | gauge | runtime, band |
+| `eugene_budget_reserved_tokens`, `eugene_budget_pool_tokens` | gauge | runtime, node |
+| `eugene_queue_waiting` | gauge | runtime, node, band |
 | `eugene_queue_wait_seconds` | histogram | band, outcome |
 | `eugene_queue_refused_total` | counter | reason, band |
 | `eugene_circuit_open` | gauge | driver |
@@ -158,4 +158,15 @@ control `test_metrics_purpose_needs_read_metrics`; agent `test_engine_metrics_ar
 - **Access.** The gateway and the agent each check `limits.readMetrics` themselves, besides the authority's own refusal, and each is covered by a test that fails when the other is removed. Platform `client_admission.py` takes purpose `metrics`.
 - **`--metrics`** is now always passed to llama-server, in `engines/speculation.py` (the ENG file), with one assertion changed in `tests/test_speculation.py`.
 
-**Not built.** `scripts/row12-metrics-acceptance.py` (a real Prometheus and OpenTelemetry Collector in CI, pinned binaries). The gateway tests drive the same paths through the app with a stand-in collector and a stand-in authority; the specs branch integration runs the real stack. One review of the access part is still owed.
+**Review fixes (2026-11-15).**
+
+- A collector credential is trimmed when it is read from the config, and one a header cannot hold (a control character inside it) is refused with "the collector credential has a character a header cannot hold" and is never sent. An export failure says its own words only for a connect error, a timeout, a status and a bad address; any other says its exception type and nothing more, because the HTTP library quotes the header it refused. The cause is logged once for each change.
+- The scrape key has `allowedTools: []` as well as `allowedModels: []`: an absent `allowedTools` permits every tool, and the root admits a search (purpose `search`) with no model.
+- `eugene_budget_reserved_tokens`, `eugene_budget_pool_tokens` and `eugene_queue_waiting` carry `node`, so two machines' same-named runtimes are two series.
+- An address that is not a URL (`http://[bad`) is named in `lastError`, and the exporter sends again when any export setting changes, not only the address.
+- A standalone agent asks its own registry for every read of `/metrics`, so a revoked key or a withdrawn grant stops at once; an enrolled one keeps the root's answer for 15 s. The gateway keeps it for 10 s. A revoked key is refused by the gateway's own key policy before the kept answer is read.
+- A browser that opens the agent's `/metrics` (no credential, asks for html) is sent to the console's `/metrics/` page, which the path hides.
+- The agent logs why an engine's `/metrics` could not be read, once for each change.
+- `scripts/row12-metrics-acceptance.py` runs in the specs integration (shard L3): a real root, agent, driver and gateway, a stand-in llama-server that serves `/metrics` only when started with `--metrics`, and a stand-in OTLP collector.
+
+**Mixed versions.** A standby control root one release behind loops on a key record that has `readMetrics` (it refuses a field it does not know): update the standby before making the first scrape key, as for row 11's `band`. A gateway one release behind refuses a `readMetrics` key for inference, for the same reason. A key without it is answered as before.

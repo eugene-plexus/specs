@@ -151,7 +151,8 @@ components:
             refused every request on a key whose answer said `readMetrics: false`.
 
             The console's "Make a scrape key" sets it together with
-            `allowedModels: []`, so the key can read numbers and run nothing.
+            `allowedModels: []` and `allowedTools: []`, so the key can read numbers and
+            run no model and no tool (an absent `allowedTools` permits every tool).
             The metrics paths ask the authority with admission purpose
             `metrics`: a check that names no model and takes no lease.
         maxConcurrentRequests:
