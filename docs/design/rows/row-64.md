@@ -24,7 +24,7 @@ library `starter.py`, `starter_review.py`, `starter_models.yaml` and
 
 A new step 3b runs after the architecture check:
 
-1. **Get the engine.** Download the pinned engine's Linux CPU build once: the `engine:` line of the YAML, for example `b10999`, and its release asset `llama-<tag>-bin-ubuntu-x64.zip`.
+1. **Get the engine.** Download the pinned engine's Linux CPU build once: the `engine:` line of the YAML, for example `b10999`, and its release asset `llama-<tag>-bin-ubuntu-x64.tar.gz`.
 2. **Measure each small entry.** For each class whose recommended file is 8 GiB or less (4B, 8B and 14B today: 2.7, 5.3 and 7.1 GB):
    1. Download the file.
    2. Run `llama-bench -m <file> -p 512 -n 128 -r 3 -o json -t <physical cores>`.
