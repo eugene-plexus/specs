@@ -458,6 +458,11 @@ jobs:
       - name: One fair queue across a real install and two gateways (row 11)
         if: matrix.shard == 'L2'
         run: python specs/scripts/ld1-fair-queue-acceptance.py
+      # Row 13: checked engine updates and the drains they need, through a real
+      # root, agent, two drivers and a gateway, with stand-in managed builds.
+      - name: Checked engine updates, runtime drains and a gateway restart that finishes its streams (row 13)
+        if: matrix.shard == 'L2'
+        run: python specs/scripts/row13-engine-update-acceptance.py
       - name: Responses client tools and compact through the OpenAI SDK and fixture backend (row 57)
         if: matrix.shard == 'L1'
         run: python specs/scripts/row57-responses-tools-acceptance.py

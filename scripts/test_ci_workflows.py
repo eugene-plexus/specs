@@ -23,6 +23,8 @@ PINNED_STEPS = {
     "serving-sweep-acceptance.py": (EVERY, "linux"),
     # Row 11 (2026-10-26): one fair queue, checks 1-10 of its design.
     "ld1-fair-queue-acceptance.py": (EVERY, "linux"),
+    # Row 13: checked engine updates and the drains they need.
+    "row13-engine-update-acceptance.py": (EVERY, "linux"),
     "di7-same-answer-acceptance.py": (EVERY, "linux"),
     "Keep row 20 CPU evidence": ("always", "linux"),
     "row65-ollama-protocol.py": (EVERY, "both"),
