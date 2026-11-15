@@ -6360,6 +6360,10 @@ components:
           type: array
           items: {type: [number, "null"]}
 
+    OperationsPower:
+      type: string
+      enum: [operate-models, operate-machines]
+      description: Row 39, as `control.yaml` names it.
     OperationReport:
       type: object
       additionalProperties: false
@@ -6375,9 +6379,10 @@ components:
           description: The name to show for them.
         owner: {type: boolean}
         power:
-          description: The power the route needs. Absent on a read.
-          type: [string, "null"]
-          enum: [operate-models, operate-machines, null]
+          description: The power the route needs (`control.yaml` `OperationsPower`).
+          anyOf:
+            - $ref: "#/components/schemas/OperationsPower"
+            - type: "null"
         action:
           type: string
           maxLength: 64
@@ -6402,8 +6407,9 @@ components:
         name: {type: string}
         owner: {type: boolean}
         power:
-          type: [string, "null"]
-          enum: [operate-models, operate-machines, null]
+          anyOf:
+            - $ref: "#/components/schemas/OperationsPower"
+            - type: "null"
         action: {type: string}
         target: {type: string}
         status: {type: integer}
