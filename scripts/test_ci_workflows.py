@@ -6,7 +6,6 @@ import sys
 import unittest
 from pathlib import Path
 
-import edge_marker
 import ship
 import yaml
 from ci_plan import CHECKS, OUTPUTS, REF_INPUTS
@@ -368,7 +367,7 @@ class WiringTests(unittest.TestCase):
         self.assertEqual(found, PINNED_STEPS)
         self.assertEqual(len(steps), SETUP_STEPS + len(PINNED_STEPS))
 
-    def test_publish_edge_reads_aggregates_that_need_every_part(self) -> None:
+    def test_pinned_integration_aggregates_need_every_part(self) -> None:
         jobs = workflow("ci.yml")["jobs"]
         aggregate = jobs["pinned-integration"]
         self.assertEqual(aggregate["needs"], ["plan", "r7-signing"])
@@ -380,15 +379,16 @@ class WiringTests(unittest.TestCase):
             aggregate["name"].replace("${{ matrix.os }}", system)
             for system in aggregate["strategy"]["matrix"]["os"]
         }
-        self.assertEqual(names, set(edge_marker.RUNTIME_JOBS))
+        self.assertEqual(
+            names,
+            {"Pinned integration (ubuntu-latest)", "Pinned integration (windows-latest)"},
+        )
         check = aggregate["steps"][0]
         self.assertEqual(check["env"]["PARTS"], "${{ needs.r7-signing.result }}")
         self.assertIn('if [ "$PARTS" != success ]; then', check["run"])
         self.assertIn("exit 1", check["run"])
-        # Every part's name falls under the prefix Publish Edge requires to pass.
-        self.assertTrue(
-            jobs["r7-signing"]["name"].startswith(edge_marker.RUNTIME_PREFIX)
-        )
+        # Every part's name falls under the prefix the aggregate's lookup names.
+        self.assertTrue(jobs["r7-signing"]["name"].startswith("Pinned integration ("))
         self.assertEqual(jobs["r7-signing"]["strategy"]["fail-fast"], "false")
 
     def test_a_reduced_run_on_main_needs_the_previous_push_to_have_passed(self) -> None:

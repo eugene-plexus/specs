@@ -117,7 +117,8 @@ the release pins and the [roadmap](docs/design/roadmap.md).
 `scripts/ship.py` (the orchestrator runs it) pushes `main`, builds the `ui`
 and `workbench` `dist` commits, pins Workbench and the site host in the
 agent, updates `release/manifest.json` and both installers, and pushes this
-repository. The `edge` branch moves only when CI and the container image pass
-for the same content. If a dependency changed, `ship.py` stops and asks for
-the lock to be re-resolved:
+repository. The `edge` branch moves when the container image for the same
+content is verified; CI does not gate it. A red CI on `main` is fixed before
+a release. If a dependency changed, `ship.py` stops and asks for the lock to
+be re-resolved:
 `python scripts/release-inputs.py --resolve --uv <uv>`.
