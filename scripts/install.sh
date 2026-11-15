@@ -1983,7 +1983,7 @@ Type=exec
 # the system read-only to it and gives it a private /tmp.
 DynamicUser=yes
 StateDirectory=eugene-plexus-apps/%i
-# Newer systemd (259 on Ubuntu 26.04) mounts a dynamic user's state
+# systemd 257 and later (Debian 13, Ubuntu 26.04) mount a dynamic user's state
 # directory ID-mapped and noexec. An app may run programs it keeps there: Hindsight's
 # database unpacks PostgreSQL into it and runs initdb from it.
 ExecPaths=%S/eugene-plexus-apps/%i
