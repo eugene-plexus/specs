@@ -42,8 +42,8 @@ def systemd_setup_script(output: Path, account: str) -> str:
     """Use the installer's template and root broker, with isolated CI state."""
     installer = Path(__file__).with_name("install.sh").read_text(encoding="utf-8")
     body = installer.split("write_app_units() {", 1)[1].split("\n}\n", 1)[0]
-    body = body.replace("StateDirectory=eugene-plexus-apps/%i",
-                        "StateDirectory=eugene-plexus-mv5b/.codex-tmp/%i")
+    # The state directory and the exec grant on it (ExecPaths=%S/...) move together.
+    body = body.replace("eugene-plexus-apps/%i", "eugene-plexus-mv5b/.codex-tmp/%i")
     values = {
         "PREFIX": str(output), "SYSTEM_ACCOUNT": account, "SERVICE_LABEL": "mv5b-fixture",
         "APPS_HELPER": str(output / "apps-ctl"),
