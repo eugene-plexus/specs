@@ -671,13 +671,37 @@ with open(out, "w", encoding="utf-8") as fh:
 '''
 
 #: Takes the pipe's name first, with a DACL anyone may open, as a program
-#: luring the tray would; writes down anything a client sends it.
-SQUATTER = '''import os, sys, threading, win32file, win32pipe, win32security
-name, ready, heard = sys.argv[1], sys.argv[2], sys.argv[3]
+#: luring the tray would; writes down anything a client sends it, and the
+#: level each client lets it act at (impersonating, as an attacker would).
+#: A client that names no level (no SECURITY_SQOS_PRESENT) reads
+#: "not impersonated (1368)" here, never anonymous or identification.
+SQUATTER = '''import json, os, sys, threading
+import pywintypes, win32api, win32file, win32pipe, win32security
+name, ready, heard, levels = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 attributes = win32security.SECURITY_ATTRIBUTES()
 attributes.SECURITY_DESCRIPTOR = win32security.ConvertStringSecurityDescriptorToSecurityDescriptor(
     "D:(A;;GA;;;WD)", win32security.SDDL_REVISION_1)
 held = []
+LEVELS = {0: "anonymous", 1: "identification", 2: "impersonation", 3: "delegation"}
+def level_of(handle):
+    try:
+        client = win32pipe.GetNamedPipeClientProcessId(handle)
+    except Exception:
+        client = None
+    try:
+        win32security.ImpersonateNamedPipeClient(handle)
+    except pywintypes.error as exc:
+        return client, "not impersonated (%d)" % exc.winerror
+    try:
+        token = win32security.OpenThreadToken(
+            win32api.GetCurrentThread(), win32security.TOKEN_QUERY, True)
+        level = win32security.GetTokenInformation(token, win32security.TokenImpersonationLevel)
+        return client, LEVELS.get(level, str(level))
+    except pywintypes.error as exc:
+        # ERROR_CANT_OPEN_ANONYMOUS: the client allowed anonymous only.
+        return client, "anonymous" if exc.winerror == 1347 else "unread (%d)" % exc.winerror
+    finally:
+        win32security.RevertToSelf()
 def listen(handle):
     try:
         while True:
@@ -695,7 +719,30 @@ while len(held) < 200:
         win32pipe.ConnectNamedPipe(held[-1], None)
     except Exception:
         pass
+    client, level = level_of(held[-1])
+    with open(levels, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"pid": client, "level": level}) + "\\n")
     threading.Thread(target=listen, args=(held[-1],), daemon=True).start()
+'''
+
+#: As an account the service admits, unelevated: try to add an instance of
+#: the agent's served pipe beside its one. It must be refused.
+NEW_INSTANCE = '''import ctypes, json, sys
+out, name = sys.argv[1], sys.argv[2]
+result = {"is_admin": bool(ctypes.windll.shell32.IsUserAnAdmin())}
+try:
+    import pywintypes, win32pipe
+    try:
+        handle = win32pipe.CreateNamedPipe(name, 3, 0, 255, 4096, 4096, 0, None)
+        result["created"] = True
+        handle.Close()
+    except pywintypes.error as exc:
+        result["created"] = False
+        result["winerror"] = exc.winerror
+except BaseException as exc:
+    result["error"] = repr(exc)
+with open(out, "w", encoding="utf-8") as fh:
+    json.dump(result, fh)
 '''
 
 
@@ -969,6 +1016,7 @@ def windows_service(*, sabotage: bool) -> None:  # noqa: C901 - one scenario, in
         (checkpoint / "adapter.json").write_text("{}", encoding="utf-8")
         (root / "as_user.py").write_text(AS_USER, encoding="utf-8")
         (root / "squatter.py").write_text(SQUATTER, encoding="utf-8")
+        (root / "new_instance.py").write_text(NEW_INSTANCE, encoding="utf-8")
         (service_dir / "agent.yaml").write_text(
             json.dumps(
                 {
@@ -1063,6 +1111,34 @@ def windows_service(*, sabotage: bool) -> None:  # noqa: C901 - one scenario, in
             raise Failed("a refused account changed the pause")
         ok(f"{users['b']}, unelevated, is refused at the pipe, and nothing changes")
 
+        # --- 3b. no second instance, even for an account the pipe admits ------
+        out = results / f"a-instance-{uuid.uuid4().hex[:6]}.json"
+        _run_as(
+            users["a"],
+            passwords["a"],
+            [
+                str(venv / "Scripts" / "python.exe"),
+                str(root / "new_instance.py"),
+                str(out),
+                tray_pipe.pipe_name(port),
+            ],
+            results,
+            user_env(),
+        )
+        if not out.exists():
+            raise Failed(f"{users['a']}'s instance attempt wrote nothing")
+        instance = json.loads(out.read_text(encoding="utf-8"))
+        if instance.get("is_admin") is not False or "error" in instance:
+            raise Failed(f"{users['a']}'s instance attempt did not run as planned: {instance}")
+        if instance.get("created") is not False or instance.get("winerror") not in (5, 231):
+            raise Failed(f"{users['a']} added an instance of the agent's pipe: {instance}")
+        if pause_of(token).get("trayChannel") != "serving":
+            raise Failed("the agent's channel changed after the instance attempt")
+        ok(
+            f"{users['a']}, admitted and unelevated, may not add an instance beside the "
+            f"agent's (Windows error {instance['winerror']})"
+        )
+
         # --- 4. the remote path ---------------------------------------------------
         remote_check(tray_pipe.pipe_name(port))
         ok("the remote path \\\\127.0.0.1\\pipe\\... is refused, where a pipe of this script's answers on it")
@@ -1114,6 +1190,7 @@ def windows_service(*, sabotage: bool) -> None:  # noqa: C901 - one scenario, in
         # --- 7. a program that takes the pipe's name first -----------------------
         stop_service()
         ready, heard = results / "squatter.ready", results / "squatter.heard"
+        levels = results / "squatter.levels"
         squatter = _run_as(
             users["b"],
             passwords["b"],
@@ -1123,6 +1200,7 @@ def windows_service(*, sabotage: bool) -> None:  # noqa: C901 - one scenario, in
                 tray_pipe.pipe_name(port),
                 str(ready),
                 str(heard),
+                str(levels),
             ],
             results,
             user_env(),
@@ -1140,6 +1218,30 @@ def windows_service(*, sabotage: bool) -> None:  # noqa: C901 - one scenario, in
         if heard.exists() and heard.read_bytes():
             raise Failed(f"the tray sent the squatter {heard.read_bytes()!r}")
         ok(f"a program holding the pipe's name (process {holder}) is reported taken, and the tray sends it nothing")
+        # What the squatter could do as each client: the agent's probe lets it
+        # act as nobody, the tray lets it identify the account and no more.
+        agent_pid = tray_pipe.service_pid(name)
+        seen = [
+            json.loads(line)
+            for line in (levels.read_text(encoding="utf-8").splitlines() if levels.exists() else [])
+            if line.strip()
+        ]
+        probes = [s["level"] for s in seen if s["pid"] == agent_pid]
+        trays = [s["level"] for s in seen if s["pid"] != agent_pid]
+        if not probes or set(probes) != {"anonymous"}:
+            raise Failed(
+                f"the agent's probe of the held name let the squatter act at {probes} "
+                f"(agent process {agent_pid}; all seen: {seen})"
+            )
+        if not trays or set(trays) != {"identification"}:
+            raise Failed(
+                f"the tray's call let the squatter act at {trays} (agent process {agent_pid}; "
+                f"all seen: {seen})"
+            )
+        ok(
+            "the squatter could act as nobody through the agent's probe, and only identify "
+            "the tray's account"
+        )
         ctypes.windll.kernel32.TerminateProcess(squatter.hProcess, 1)
         ctypes.windll.kernel32.CloseHandle(squatter.hProcess)
         squatter = None

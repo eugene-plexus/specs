@@ -211,3 +211,11 @@ Pause as a lever for someone allowed to stop the service is accepted: that accou
 - **Only `build_server` opens the pipe** (`Settings.tray_channel_enabled`, as the machine port): an app built in a test or a harness holds no pipe.
 - **The Windows acceptance's engine is a Kev stand-in** (`kevPython` pointing at an interpreter whose `kev.serve` answers `/v1/models`): a service loads no test adapter. The chat through the gateway runs in the console path, on Linux.
 - **Mixed versions:** no request or report a machine sends gains a field, so the root need not go first. `GET /v1/node` gains `pause`, which consoles read and an older console ignores. `StopReason` gains `paused`; the gateway reads it as text, and an older console shows the word.
+
+## What the review found (2026-11-15)
+
+- **A client that opened and closed the pipe before the agent listened made the channel spin.** ConnectNamedPipe failed (232) on every turn, without a disconnect. Now the channel disconnects and waits a second. After five failures in a row it closes, reads `unavailable`, and opens again 30 seconds later.
+- **A grant added with `sc sdset` waited for some other client to connect.** The waiting channel now reads the service's grants every 3 seconds.
+- **A hand-edited `pausedModels.since` with no time zone failed `GET /v1/node` and the tray's state.** It now counts as damaged, like an unreadable time, and the machine stays paused.
+- **The levels were untested.** A squatter impersonates each client and records the level it gets. The agent's probe gives anonymous, and the tray gives identification. A client without `SECURITY_SQOS_PRESENT` reads as "not impersonated (1368)". An admitted, unelevated account cannot add a second instance of the served name.
+- **An answer past the tray's 180 seconds** now says so and is cancelled. Pause is shielded, so a cancelled wait cannot cut it part-way. The console shows `trayChannel: unavailable` in one line, as it shows `taken`.
