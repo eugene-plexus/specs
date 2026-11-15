@@ -165,6 +165,19 @@ class ShipTests(unittest.TestCase):
         self.assertIn("the pin commit would be pushed alone", output)
         self.assertEqual(git(self.specs, "rev-parse", "HEAD"), self.merged)
 
+    def test_a_merged_ci_check_beside_moving_pins_says_to_ship_in_one_push(self) -> None:
+        """agent#43's ship: a merged acceptance check that needed the new agent ran
+        against the old pin in the merged work's own run, and CI held Edge."""
+        _, output = self.ship(dry_run=True)
+        self.assertNotIn("--one-push", output, "scripts/new-check.py is not a CI check")
+        write(self.specs / "scripts/a99-thing-acceptance.py", "print('needs new control')\n")
+        commit(self.specs, "Merged work: an acceptance check")
+        _, output = self.ship(dry_run=True)
+        self.assertIn("change CI checks (scripts/a99-thing-acceptance.py)", output)
+        self.assertIn("ship with --one-push", output)
+        _, output = self.ship(dry_run=True, one_push=True)
+        self.assertNotIn("change CI checks", output)
+
     def test_a_red_main_is_named_when_ci_would_hold_the_first_push(self) -> None:
         self.failed_main_run.return_value = ("failure", "https://example.invalid/runs/5")
         # Merged work that plans full coverage stands alone: no hold, no warning.
