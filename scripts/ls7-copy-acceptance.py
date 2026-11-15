@@ -38,6 +38,8 @@ import httpx
 import yaml
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import acceptance_logs  # noqa: E402
 _spec = importlib.util.spec_from_file_location("ls3", HERE / "ls3-prepared-acceptance.py")
 assert _spec is not None and _spec.loader is not None
 ls3 = importlib.util.module_from_spec(_spec)
@@ -130,55 +132,70 @@ def lay_out(models: Path) -> Path:
     return provenance
 
 
-def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
-    with tempfile.TemporaryDirectory(prefix="ep-ls7-", ignore_cleanup_errors=True) as raw:
-        # Long names: a CI runner's temp folder is its 8.3 short name
-        # (RUNNER~1), which the agent spells long once it resolves a path.
-        directory = Path(raw).resolve()
-        agent_port, library_port, machine_port = ls3.free_ports(3)
-        models = directory / "share"
-        models.mkdir()
-        provenance = lay_out(models)
-        copies = directory / "copies"
-        server = ls3.fake_strata(directory / "strata")
-        (directory / "engines").mkdir()
-        (directory / "library.yaml").write_text(
-            yaml.safe_dump({"logLevel": "INFO", "modelRoots": [str(models)]}), encoding="utf-8"
-        )
-        (directory / "agent.yaml").write_text(
-            yaml.safe_dump(
-                {
-                    "firstRunComplete": True,
-                    "updateChecks": False,
-                    "securityMode": "prompt_on_startup",
-                    "components": [
-                        {
-                            "name": "library",
-                            "kind": "library",
-                            "url": f"http://127.0.0.1:{library_port}",
-                            "spawn": {"configFile": str(directory / "library.yaml")},
-                        }
-                    ],
-                    "runtimes": [],
-                }
-            ),
-            encoding="utf-8",
-        )
-        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
-        env.update(
+def wait_for(
+    fn: Any,
+    label: str,
+    seconds: float = 90,
+    process: subprocess.Popen[bytes] | None = None,
+) -> Any:
+    """Poll `fn` until it answers. A process that exited cannot answer later, so
+    the wait ends then, and a failure says whether the process had exited and
+    with what code (specs#127)."""
+    deadline = time.perf_counter() + seconds
+    last: object = None
+    while time.perf_counter() < deadline:
+        try:
+            got = fn()
+            if got:
+                return got
+        except (httpx.HTTPError, KeyError, ValueError, TypeError, IndexError) as e:
+            last = e
+        if process is not None and process.poll() is not None:
+            raise AssertionError(
+                f"{label}: {acceptance_logs.exit_note(process, 'the agent')} ({last!r})"
+            )
+        time.sleep(0.5)
+    note = acceptance_logs.exit_note(process, "the agent") if process is not None else ""
+    raise AssertionError(f"timed out: {label} ({last!r})" + (f"; {note}" if note else ""))
+
+
+def start_agent(directory: Path, log_path: Path) -> tuple[subprocess.Popen[bytes], int]:
+    """Write the agent's configuration on three fresh loopback ports and start it."""
+    agent_port, library_port, machine_port = ls3.free_ports(3)
+    (directory / "agent.yaml").write_text(
+        yaml.safe_dump(
             {
-                "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(directory / "agent.yaml"),
-                "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1",
-                "EUGENE_PLEXUS_AGENT_BIND_PORT": str(agent_port),
-                "EUGENE_PLEXUS_AGENT_MACHINE_PORT": str(machine_port),
-                "EUGENE_PLEXUS_AGENT_ENGINE_ROOT": str(directory / "engines"),
-                "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
-                "PYTHONUNBUFFERED": "1",
+                "firstRunComplete": True,
+                "updateChecks": False,
+                "securityMode": "prompt_on_startup",
+                "components": [
+                    {
+                        "name": "library",
+                        "kind": "library",
+                        "url": f"http://127.0.0.1:{library_port}",
+                        "spawn": {"configFile": str(directory / "library.yaml")},
+                    }
+                ],
+                "runtimes": [],
             }
-        )
-        log_path = directory / "agent.log"
-        log = log_path.open("wb")
+        ),
+        encoding="utf-8",
+    )
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
+    env.update(
+        {
+            "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(directory / "agent.yaml"),
+            "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1",
+            "EUGENE_PLEXUS_AGENT_BIND_PORT": str(agent_port),
+            "EUGENE_PLEXUS_AGENT_MACHINE_PORT": str(machine_port),
+            "EUGENE_PLEXUS_AGENT_ENGINE_ROOT": str(directory / "engines"),
+            "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
+            "PYTHONUNBUFFERED": "1",
+        }
+    )
+    with log_path.open("ab") as log:
+        log.write(f"[ls7] starting the agent on port {agent_port}\n".encode())
+        log.flush()
         agent = subprocess.Popen(
             [sys.executable, "-m", "eugene_plexus_agent", "--unattended"],
             cwd=directory,
@@ -188,23 +205,69 @@ def main() -> int:
             stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
+    return agent, agent_port
+
+
+def stop_agent(agent: subprocess.Popen[bytes]) -> None:
+    if agent.poll() is None:
+        if os.name == "nt":
+            agent.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            agent.terminate()
+    try:
+        agent.wait(timeout=60)
+    except subprocess.TimeoutExpired:
+        agent.kill()
+        print("WARN  the agent did not stop in 60 s and was killed", flush=True)
+
+
+def print_failure_logs(directory: Path, log_path: Path) -> None:
+    """The agent's output, then every other log the run wrote."""
+    others = [p for p in acceptance_logs.logs_under(directory) if p != log_path]
+    print(acceptance_logs.report([log_path, *others], 60, base=directory), flush=True)
+
+
+def main() -> int:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+    with tempfile.TemporaryDirectory(prefix="ep-ls7-", ignore_cleanup_errors=True) as raw:
+        # Long names: a CI runner's temp folder is its 8.3 short name
+        # (RUNNER~1), which the agent spells long once it resolves a path.
+        directory = Path(raw).resolve()
+        models = directory / "share"
+        models.mkdir()
+        provenance = lay_out(models)
+        copies = directory / "copies"
+        server = ls3.fake_strata(directory / "strata")
+        (directory / "engines").mkdir()
+        (directory / "library.yaml").write_text(
+            yaml.safe_dump({"logLevel": "INFO", "modelRoots": [str(models)]}), encoding="utf-8"
+        )
+        log_path = directory / "agent.log"
+        agent, agent_port = start_agent(directory, log_path)
         client = httpx.Client(base_url=f"http://127.0.0.1:{agent_port}", timeout=60, trust_env=False)
 
         def wait(fn, label: str, seconds: float = 90):  # type: ignore[no-untyped-def]
-            deadline = time.perf_counter() + seconds
-            last: object = None
-            while time.perf_counter() < deadline:
-                try:
-                    got = fn()
-                    if got:
-                        return got
-                except (httpx.HTTPError, KeyError, ValueError, TypeError, IndexError) as e:
-                    last = e
-                time.sleep(0.5)
-            raise AssertionError(f"timed out: {label} ({last!r})")
+            # `agent` is read when called: a restart below replaces it.
+            return wait_for(fn, label, seconds, agent)
 
+        failed = False
         try:
-            wait(lambda: client.get("/healthz").status_code == 200, "the agent answers")
+            try:
+                wait(lambda: client.get("/healthz").status_code == 200, "the agent answers")
+            except AssertionError as e:
+                # The port was free when it was picked; something can take it before
+                # the agent binds (specs#127). Start once more on new ports when the
+                # log says that is what happened; any other failure stands.
+                if not acceptance_logs.bind_failure(acceptance_logs.tail(log_path, 200)):
+                    raise
+                print(f"WARN  the agent could not bind its port ({e}); starting it once more", flush=True)
+                stop_agent(agent)
+                client.close()
+                agent, agent_port = start_agent(directory, log_path)
+                client = httpx.Client(
+                    base_url=f"http://127.0.0.1:{agent_port}", timeout=60, trust_env=False
+                )
+                wait(lambda: client.get("/healthz").status_code == 200, "the agent answers")
             token = client.post(
                 "/v1/auth/initialize", json={"passphrase": secrets.token_urlsafe(24)}
             ).json()["sessionToken"]
@@ -340,20 +403,15 @@ def main() -> int:
                 hand.get("status") == "unreadable" and "outside the Library folder" in (hand.get("error") or ""),
                 hand,
             )
+        except BaseException:
+            # A wait that timed out raises; only a failed `check` fills FAILURES,
+            # so the log is also printed for this (specs#127).
+            failed = True
+            raise
         finally:
-            if os.name == "nt":
-                agent.send_signal(signal.CTRL_BREAK_EVENT)
-            else:
-                agent.terminate()
-            try:
-                agent.wait(timeout=60)
-            except subprocess.TimeoutExpired:
-                agent.kill()
-                print("WARN  the agent did not stop in 60 s and was killed", flush=True)
-            log.close()
-            if FAILURES:
-                print("--- agent log (last 60 lines) ---")
-                print("\n".join(log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-60:]))
+            stop_agent(agent)
+            if FAILURES or failed:
+                print_failure_logs(directory, log_path)
     print(f"{'FAILED' if FAILURES else 'PASSED'}: {len(FAILURES)} failing check(s)")
     return 1 if FAILURES else 0
 
