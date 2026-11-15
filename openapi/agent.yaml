@@ -9527,11 +9527,11 @@ components:
         promptCache:
           $ref: "#/components/schemas/RuntimePromptCache"
         engineLoad:
+          type:
+            - integer
+            - "null"
+          minimum: 0
           readOnly: true
-          anyOf:
-            - type: integer
-              minimum: 0
-            - type: "null"
           description: |
             Requests occupying the engine now, from every client of it, as the
             engine counts them (row 14, M4-LOAD). Only vLLM says: its `GET /load`
