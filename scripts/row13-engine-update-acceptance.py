@@ -20,10 +20,12 @@ used for it, one copy switches at once):
     build in use again, and the update says why;
  3. a model with one copy switches at once ("Use b1 again", no download): the
     requests that arrive meanwhile wait in line, none is refused;
- 4. the gateway's drain takes this machine's own agent token and nothing else
-    of a component's;
+ 4. the gateway's drain takes the short-lived drain token this machine's agent
+    mints, and not the agent's own `sub: agent` token or another component's;
  5. a gateway restart finishes the streams in flight, refuses new requests
-    `shutting_down`, and exits 0.
+    `shutting_down`, and exits 0;
+ 6. an agent stop drains the gateway it runs first: the streams open through
+    it finish whole before the agent stops it and the engines.
 """
 
 # No `from __future__ import annotations`: the stand-in's FastAPI routes import
@@ -242,6 +244,7 @@ def exercise(directory: Path) -> None:
         "local-1",
         "local-2",
         "gateway",
+        "gateway-own",
     )
     ports = dict(zip(names, sweep.free_ports(len(names)), strict=True))
     assert not set(ports.values()) & set(range(8079, 8084))
@@ -334,10 +337,21 @@ def exercise(directory: Path) -> None:
                 "updateChecks": False,
                 "securityMode": "prompt_on_startup",
                 "advertiseUrl": url("agent"),
-                "components": [],
+                # Check 6: a gateway this agent runs itself, which its stop drains.
+                "components": [
+                    {
+                        "name": "gateway-own",
+                        "kind": "gateway",
+                        "url": url("gateway-own"),
+                        "spawn": {
+                            "configFile": str(directory / "agent" / "gateway-own.yaml")
+                        },
+                    }
+                ],
                 "runtimes": [],
             },
         )
+        write("agent", "gateway-own.yaml", {"routingRefreshSeconds": 1})
         start("agent")
         standalone = good(
             "agent", "POST", "/v1/auth/initialize", json={"passphrase": passphrase}
@@ -448,9 +462,11 @@ def exercise(directory: Path) -> None:
         )
         key = str(made["token"])
 
-        def chat(text: str, *, stream: bool, timeout: float = 120) -> httpx.Response:
+        def chat(
+            text: str, *, stream: bool, timeout: float = 120, via: str = "gateway"
+        ) -> httpx.Response:
             return call(
-                "gateway",
+                via,
                 "POST",
                 "/v1/chat/completions",
                 key,
@@ -600,15 +616,22 @@ def exercise(directory: Path) -> None:
             "none refused"
         )
 
-        # --- 4: the gateway's drain takes this machine's agent, no other ------
-        own = trust.agent_token(trust.recipient)
-        view = good("gateway", "GET", "/v1/admin/drain", own)
+        # --- 4: the gateway's drain takes the agent's drain token, no other ---
+        drain_token, _ = trust.mint_service(
+            sub="gateway-drain", audience=trust.recipient, ttl_seconds=60
+        )
+        view = good("gateway", "GET", "/v1/admin/drain", str(drain_token))
         assert view["state"] == "serving", view
-        for sub in ("inference-driver", "gateway"):
-            refused_drain = call("gateway", "GET", "/v1/admin/drain", service(sub))
-            assert refused_drain.status_code == 401, (sub, refused_drain.text)
+        for refused_token in (
+            trust.agent_token(trust.recipient),
+            service("inference-driver"),
+            service("gateway"),
+        ):
+            refused_drain = call("gateway", "GET", "/v1/admin/drain", refused_token)
+            assert refused_drain.status_code == 401, refused_drain.text
         ok(
-            "4. the gateway's drain takes this machine's agent token, and not a driver's or a gateway's"
+            "4. the gateway's drain takes the agent's short-lived drain token, and not its "
+            "sub: agent token, a driver's or a gateway's"
         )
 
         # --- 5: a gateway restart finishes its streams -------------------------
@@ -635,7 +658,42 @@ def exercise(directory: Path) -> None:
             "5. a gateway restart finished its 2 open streams, refused a new one, and exited 0"
         )
 
-        assert len(passed) == 5, passed
+        # --- 6: an agent stop drains its own gateway first ---------------------
+        sweep.wait(
+            lambda: whole(chat("R13:own-warm", stream=True, via="gateway-own")),
+            "the agent's own gateway serves",
+            seconds=90,
+        )
+        agent = processes["agent"]
+        with ThreadPoolExecutor(2) as pool:
+            streams = [
+                pool.submit(chat, f"R13:agent-stop-{n}", stream=True, via="gateway-own")
+                for n in range(2)
+            ]
+            time.sleep(1.5)
+            stopped_at = time.perf_counter()
+            (directory / "agent" / "stop").touch()
+            finished = [f.result(timeout=60) for f in streams]
+        assert all(whole(r) for r in finished), [r.text[-300:] for r in finished]
+        agent.wait(timeout=60)
+        processes.pop("agent")
+        took = time.perf_counter() - stopped_at
+        log = (directory / "agent" / "process.log").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        # The drain's own words, from the agent or the gateway it runs: a plain
+        # SIGTERM would also let uvicorn finish the streams on Linux, so the
+        # streams alone do not show that the stop drained first.
+        assert (
+            "draining gateway-own before its stop" in log
+            or "answer(s) in flight, at most" in log
+        ), log[-3000:]
+        ok(
+            f"6. an agent stop drained its own gateway: 2 open streams finished whole, "
+            f"then the agent stopped ({took:.1f} s)"
+        )
+
+        assert len(passed) == 6, passed
         print(f"ALL {len(passed)} CHECKS PASSED", flush=True)
     finally:
         (directory / "agent" / "stop").touch()

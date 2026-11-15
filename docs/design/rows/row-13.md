@@ -208,3 +208,22 @@ Then one acceptance run, and one review of the token change.
 - **Issues:** a mixed fleet while an update runs is its work in flight, not a stale build; a held model is its own issue with the update's reason. The design's "Updating: 1 of 3 runtimes on b11800" is on the Engines card, not in Issues, because an issue is something that needs a person. The tasks tray does not show rollouts yet.
 - **An engine check is a measurement** (`measurement_node`): no benchmark, settings build or launch starts on the node while one runs, so a wake cannot race the stopped model.
 - **Failing-first evidence:** agent `test_engine_rollout.py`, `test_runtime_drain.py`, `test_gateway_drain_stop.py`, `test_update_all.py`; gateway `test_drain.py`; ui `engineRollout.test.ts`, `issues.test.ts`, `page.test.tsx`; the acceptance `scripts/row13-engine-update-acceptance.py` (checks 1-5) on Linux CI. The design's check 6 (an agent stop drains its gateway) is the agent's `test_gateway_drain_stop.py` against a mock gateway, plus check 4, which proves the agent's own token opens the real gateway's drain.
+
+## Review fixes (second model, 2026-11-15)
+
+No blockers; twelve should-fix items and two notes, each fixed with a test that fails without it:
+
+1. A finished drain's exit gives open connections 10 s, then ends them, so a client that stopped reading (or a download the drain does not count) cannot keep the gateway down.
+2. The agent's own stop no longer respawns a gateway that drained and exited.
+3. A restart signals only the process it drained, never its successor (one restart spawned three times).
+4. A gateway's restart drains in the background: sign-in, enrollment and Restart answer at once.
+5. Settings waits, for a gateway, until its drain reads `serving` again (a new process), not for the old process's `/healthz`; the restart note no longer says answers stop.
+6. A gateway that read the runtimes in the last 330 s (longer than the slowest refresh, 300 s) is waited on.
+7. A drain whose `then` runs cannot be cancelled halfway.
+8. A runtime stopped by someone else while it drains is left stopped; the rollout skips it and says so.
+9. A rollout waits (at most 10 min) for runtimes still loading before it chooses, so Update all just after a machine update moves them through the drain and the check.
+10. A stopped or failed update leaves no runtime pinned to its build; Issues says a restart starts a model on the build in use.
+11. Stopping an update ends the check's tool and everything under it.
+12. The resume test reaches the "agent restarted during its check" branch; `test_engine_check.py` runs the check against stand-in tools; the acceptance adds check 6, an agent stop that drains its own gateway.
+
+Notes: the drain token has its own `sub: gateway-drain` and lives 60 s (the gateway accepts at most 5 min); an install or uninstall is refused while an update runs, naming the update.

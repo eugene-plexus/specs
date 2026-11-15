@@ -5458,11 +5458,16 @@ paths:
         Config, health and admin routes answer throughout. A second call
         returns the drain already running.
 
-        **Accepts an operator session, or a service token this machine's
-        own agent minted for itself (`sub: agent`, addressed to this
-        machine)**: the agent drains its gateway before every stop, which
-        works where a console signal cannot be sent (the Windows
-        service). No other machine's token, and no other component's.
+        **Accepts an operator session, or the drain token this machine's
+        own agent mints (`sub: gateway-drain`, addressed to this machine,
+        living at most 5 minutes)**: the agent drains its gateway before
+        every stop, which works where a console signal cannot be sent (the
+        Windows service). Not the agent's own `sub: agent` token, no other
+        machine's token, and no other component's.
+
+        Once the drain is over, connections still open (a client that
+        stopped reading, a download) get 10 s, then end, so the process
+        always exits.
       responses:
         '202':
           description: The drain, as it stands.

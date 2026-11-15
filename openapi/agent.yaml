@@ -1347,8 +1347,8 @@ paths:
       operationId: uninstallEngine
       summary: Remove Eugene-managed builds of an engine, preserving models.
       description: |
-        Operator-only. Refuses with 409 while an installation or any
-        runtime for this engine is running. Removes only builds with a
+        Operator-only. Refuses with 409 while an installation, an update
+        (`.../rollout`, row 13) or any runtime for this engine is running. Removes only builds with a
         valid managed-install receipt inside this engine's store. Keeps
         model files, runtime declarations, borrowed installations and
         shared dependencies. Repeating removal is harmless. This is
@@ -1436,7 +1436,9 @@ paths:
         `POST /v1/engines/{engine}/rollout` moves the runtimes to it,
         checked and one at a time.
 
-        Returns 409 when an install is already running, and 422 when
+        Returns 409 when an install or an update (`.../rollout`) is
+        already running: an install then could prune the build the update
+        moves to (row 13). 422 when
         this host has no installable build (see
         `EngineAcquisition.reason`) or when a requested `variant` is not
         one the release publishes for this host.
@@ -1610,10 +1612,13 @@ paths:
     delete:
       tags: [engines]
       operationId: cancelEngineRollout
-      summary: Stop a rollout; each runtime already moved stays where it is.
+      summary: Stop a rollout; the build in use stays as it was.
       description: |
-        The runtime being moved goes back to the build in use. 409 when
-        nothing is in flight. Operator only.
+        The runtime being moved goes back to the build in use. Each runtime
+        already moved runs on until it next restarts, then starts on the
+        build in use: a stopped update pins no runtime to its build (row 13
+        review). A failed update does the same. 409 when nothing is in
+        flight. Operator only.
       responses:
         "200":
           description: The rollout, now `cancelled`.
@@ -3512,11 +3517,15 @@ paths:
         is), and a gateway routes only to `ready` runtimes, so an older
         gateway obeys too. No agent calls a gateway.
 
-        Each gateway that read `GET /v1/runtimes` in the last 60 s must
-        report (`.../drain/report`) `running: 0` after the drain began:
-        then the drain is `drained` and `then` runs. A runtime no gateway
-        read is drained at once. A gateway silent for 60 s is no longer
-        waited for, and `message` names it. After `graceSeconds` the
+        Each gateway that read `GET /v1/runtimes` in the last 330 s (longer
+        than the slowest `routingRefreshSeconds`, 300) must report
+        (`.../drain/report`) `running: 0` after the drain began: then the
+        drain is `drained` and `then` runs. A runtime no gateway read is
+        drained at once. A gateway silent for 330 s, or one that reads but
+        has not reported in 330 s, is no longer waited for, and `message`
+        names it. A runtime stopped by someone else while it drains ends
+        the drain, and `then` does not run. Once `then` runs, `DELETE` is
+        refused (409). After `graceSeconds` the
         drain is `cut` and `then` runs anyway: "2 answers were cut at the
         120 s limit."
 
