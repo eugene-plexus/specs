@@ -5842,9 +5842,30 @@ paths:
         * **`metricsRollupEnabled`** (`boolean`, default `true`) —
           hourly aggregates, kept indefinitely because they are a few
           hundred rows a day and they are the only record that survives
-          retention. Written but not yet served: they hold sums and a
-          max, and no endpoint reports a percentile it cannot compute
-          from those.
+          retention. `GET /v1/metrics?bucket=hour` serves the hours past
+          retention from them (row 12): counts, a mean and a max, and no
+          percentile, because none can be computed from those.
+
+        The metrics-export fields (row 12). Prometheus needs none: `GET
+        /metrics` is always there for a key that may read metrics. These
+        are the optional push to an OTLP/HTTP collector, off by default.
+        Every one takes effect at the next push, with no restart. Nothing
+        exported carries a prompt, an answer or a person's name.
+
+        * **`telemetryOtlpEndpoint`** (`url`, empty is off) — the
+          collector's address, for example `http://collector:4318`.
+          Metrics go to `<endpoint>/v1/metrics` and traces to
+          `<endpoint>/v1/traces`.
+        * **`telemetryOtlpAuthorization`** (`secret`) — the whole
+          `Authorization` header value the collector wants. Redacted when
+          read.
+        * **`telemetryOtlpSignals`** (`enum`, `metrics`, `traces` or
+          `both`, default `both`).
+        * **`telemetryTraceSampleRatio`** (`number`, 0 to 1, default 1) —
+          the share of requests that get a trace, chosen once at the front
+          door.
+        * **`telemetryOtlpIntervalSeconds`** (`integer`, 5 to 3,600,
+          default 60) — how often the exporter sends.
       responses:
         '200':
           description: Current config.
