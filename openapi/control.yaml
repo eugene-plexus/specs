@@ -1107,6 +1107,26 @@ paths:
         '400': {$ref: 'components/common.yaml#/components/responses/Problem'}
         '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
         '403': {$ref: 'components/common.yaml#/components/responses/Problem'}
+  /v1/auth/operations-machines:
+    get:
+      operationId: listOperationsMachines
+      summary: The machines a person's operations powers reach, and what runs on each
+      description: |
+        Row 39. For a person with an operations power, from their
+        administration session: each enrolled machine inside
+        `operationsMachines`, with its label and the kinds of component it
+        runs (read live from each machine, as `GET /v1/components` does),
+        so the console knows which machine's operations token to send to
+        the library or the gateway. A machine that did not answer is listed
+        in `unreachableNodes` with no kinds. The owner's session is refused.
+      responses:
+        '200':
+          description: The machines in scope.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperationsMachineList'}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '403': {$ref: 'components/common.yaml#/components/responses/Problem'}
   /v1/people/{id}/administration:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}}
@@ -6227,6 +6247,26 @@ components:
         powers:
           type: array
           items: {$ref: '#/components/schemas/OperationsPower'}
+    OperationsMachine:
+      type: object
+      required: [name, kinds]
+      properties:
+        name: {type: string}
+        label: {type: [string, 'null']}
+        kinds:
+          type: array
+          items: {type: string}
+          description: The kinds of component this machine runs (`gateway`, `library`, ...).
+    OperationsMachineList:
+      type: object
+      required: [machines, unreachableNodes]
+      properties:
+        machines:
+          type: array
+          items: {$ref: '#/components/schemas/OperationsMachine'}
+        unreachableNodes:
+          type: array
+          items: {type: string}
     AdministrationLoginRequest:
       type: object
       additionalProperties: false
