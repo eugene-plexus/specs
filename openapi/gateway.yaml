@@ -5504,6 +5504,60 @@ paths:
   # every streaming client. The hooks fire around every attempt on both
   # paths.
 
+  /metrics:
+    get:
+      tags: [metrics]
+      operationId: getPrometheusMetrics
+      summary: This gateway's numbers in Prometheus text format (row 12).
+      description: |
+        What a Prometheus scraper reads, on the gateway's own port. Every
+        name starts with `eugene_` and is kept until a major release: an
+        alert or a dashboard built on one keeps working. `eugene_build_info`
+        says which build answered.
+
+        Counters and histograms count requests this process served since it
+        started (a scraper reads rates, so a restart is a counter reset).
+        Gauges are read when the scrape arrives, from the routing table, the
+        token budget and the queue.
+
+        **No prompts, no answers, no person names.** Labels are bounded: `model`
+        is a configured model or `other`, so a made-up model name makes no
+        series; `key_id` is bounded by the key registry.
+
+        An operator session, or a client key with `readMetrics`. No
+        credential is a 401; a key without the grant is a 403.
+      responses:
+        '200':
+          description: Prometheus text exposition format, version 0.0.4.
+          content:
+            text/plain:
+              schema: {type: string}
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/metrics/export:
+    get:
+      tags: [metrics]
+      operationId: getMetricsExport
+      summary: Where this gateway's numbers go, and how it is going (row 12).
+      description: |
+        The state of the two ways out: the Prometheus path and the optional
+        OTLP exporter. The console's "Export" panel reads it. An operator
+        session, or a client key with `readMetrics`; 401 and 403 as for
+        `GET /metrics`.
+      responses:
+        '200':
+          description: The export state.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MetricsExport'}
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
   /v1/metrics/clients:
     get:
       tags: [metrics]
@@ -5588,13 +5642,15 @@ paths:
             the whole window. `hour` additionally splits each group by
             hour, which is what a history chart reads.
 
-            Both are computed from **raw rows**, so both are bounded by
-            `metricsRetentionDays`. Hourly rollups are written and kept
-            past retention, but they are not served here and deliberately
-            so: a rollup can carry sums and a max, and a percentile
-            cannot be reconstructed from those. Serving a mean through a
-            field named `p50` would be a quieter error than serving
-            nothing.
+            `none` is computed from **raw rows** and is bounded by
+            `metricsRetentionDays`. `hour` serves the hours inside that
+            window from raw rows (`source: raw`, with percentiles) and the
+            hours past it from the stored hourly rollups (`source: rollup`,
+            row 12): counts, a mean and a max, and no percentiles, because a
+            percentile cannot be rebuilt from sums. A rollup group says so in
+            `source`, and carries `latencyMeanMs` and `latencyMaxMs` where a
+            raw group carries `latencyMs`. Serving a mean through a field
+            named `p50` would be a quieter error than serving nothing.
           schema:
             type: string
             enum: [none, hour]
@@ -5650,7 +5706,7 @@ paths:
 
         Newest first, cursor-paged. Raw rows exist only within
         `metricsRetentionDays`; older traffic survives only as hourly
-        rollups, which no endpoint serves yet.
+        rollups, which `GET /v1/metrics?bucket=hour` serves (row 12).
       parameters:
         - name: limit
           in: query
@@ -5838,9 +5894,30 @@ paths:
         * **`metricsRollupEnabled`** (`boolean`, default `true`) —
           hourly aggregates, kept indefinitely because they are a few
           hundred rows a day and they are the only record that survives
-          retention. Written but not yet served: they hold sums and a
-          max, and no endpoint reports a percentile it cannot compute
-          from those.
+          retention. `GET /v1/metrics?bucket=hour` serves the hours past
+          retention from them (row 12): counts, a mean and a max, and no
+          percentile, because none can be computed from those.
+
+        The metrics-export fields (row 12). Prometheus needs none: `GET
+        /metrics` is always there for a key that may read metrics. These
+        are the optional push to an OTLP/HTTP collector, off by default.
+        Every one takes effect at the next push, with no restart. Nothing
+        exported carries a prompt, an answer or a person's name.
+
+        * **`telemetryOtlpEndpoint`** (`url`, empty is off) — the
+          collector's address, for example `http://collector:4318`.
+          Metrics go to `<endpoint>/v1/metrics` and traces to
+          `<endpoint>/v1/traces`.
+        * **`telemetryOtlpAuthorization`** (`secret`) — the whole
+          `Authorization` header value the collector wants. Redacted when
+          read.
+        * **`telemetryOtlpSignals`** (`enum`, `metrics`, `traces` or
+          `both`, default `both`).
+        * **`telemetryTraceSampleRatio`** (`number`, 0 to 1, default 1) —
+          the share of requests that get a trace, chosen once at the front
+          door.
+        * **`telemetryOtlpIntervalSeconds`** (`integer`, 5 to 3,600,
+          default 60) — how often the exporter sends.
       responses:
         '200':
           description: Current config.
@@ -11862,8 +11939,26 @@ components:
         - errors
         - cascaded
         - swappedIn
-        - latencyMs
       properties:
+        source:
+          $ref: '#/components/schemas/MetricsSource'
+        latencyMeanMs:
+          type: number
+          minimum: 0
+          description: |
+            Mean request latency in milliseconds, from the stored sums. Present
+            on a `source: rollup` group, which has no percentiles.
+        latencyMaxMs:
+          type: integer
+          minimum: 0
+          description: 'The slowest request of the hour. Present on a `source: rollup` group.'
+        tokensPerSecondMean:
+          type: number
+          minimum: 0
+          description: |
+            Completion tokens over the serving attempts' time, from the stored
+            sums, for a `source: rollup` group whose requests reported usage.
+            Absent otherwise. A mean, so it is not given as `p50`.
         bucketStart:
           type: string
           format: date-time
@@ -11915,6 +12010,7 @@ components:
             way to see what it costs.
         latencyMs:
           $ref: '#/components/schemas/Percentiles'
+          description: 'Absent on a `source: rollup` group, which has `latencyMeanMs` and `latencyMaxMs` instead.'
         tokensPerSecond:
           oneOf:
             - $ref: '#/components/schemas/Throughput'
@@ -12037,6 +12133,57 @@ components:
         requests: {type: integer, minimum: 0}
         promptTokens: {type: integer, minimum: 0}
         cachedTokens: {type: integer, minimum: 0}
+
+    MetricsSource:
+      type: string
+      enum: [raw, rollup]
+      description: |
+        Where a group's numbers came from (row 12): `raw`, the retained request
+        rows (percentiles are real); `rollup`, the stored hourly aggregates of
+        hours past `metricsRetentionDays` (counts, mean and max only).
+
+    MetricsExport:
+      type: object
+      description: |
+        The two ways this gateway's numbers leave it. Prometheus is pulled, so
+        the gateway says when it was last read and by which key. OTLP is pushed
+        and optional, so it says whether the last push worked, and why not.
+      required: [prometheus, otlp]
+      properties:
+        prometheus:
+          type: object
+          required: [path]
+          properties:
+            path:
+              type: string
+              description: The path to scrape, on this gateway's own port. Always `/metrics`.
+            lastScrapeAt:
+              type: [string, 'null']
+              format: date-time
+              description: When a scraper last read `/metrics`. Null before the first scrape since the gateway started.
+            lastScrapeKeyName:
+              type: [string, 'null']
+              description: The name of the key that scraper used, or `operator` for a signed-in session. Never the key itself.
+        otlp:
+          type: object
+          required: [state]
+          properties:
+            state:
+              type: string
+              enum: [off, ok, failing]
+              description: |
+                `off` with no `telemetryOtlpEndpoint`. `ok` after a push the collector
+                accepted. `failing` when the last push did not arrive; `lastError` says
+                why. A failing export never slows or refuses a request.
+            endpoint:
+              type: [string, 'null']
+              description: The collector address, with no credential in it.
+            lastSuccessAt:
+              type: [string, 'null']
+              format: date-time
+            lastError:
+              type: [string, 'null']
+              description: The observed cause of the last failed push, in words.
 
     MetricsAffinity:
       type: object
@@ -12438,6 +12585,19 @@ components:
             when another strategy was in effect). A backend that does not
             report cached tokens cannot be judged, and its turns stay
             `hit`.
+        affinityKey:
+          type:
+            - string
+            - 'null'
+          enum: [chain, client, session, start, null]
+          description: |
+            Which key placed this request (gateway#19, schema v15): `chain`, a
+            stored conversation's id or a `previous_response_id` chain's first
+            response (row 54); `client`, the caller's `prompt_cache_key`;
+            `session`, Claude Code's session id; `start`, the hash of the
+            conversation's opening words. Null when no key was made (affinity
+            off, or a door that does not place by conversation). **Never the key
+            itself**: a hash of a person's first words is not a metric.
         door:
           type:
             - string
@@ -12445,8 +12605,10 @@ components:
           description: |
             Which door the request came in by (P3b): `speech`,
             `transcription`, `translation` (P3-4), `images` (P4, schema v8),
-            `videos` (P5, schema v9, the submit's row), `moderation` (P6)
-            or `completion` (P6, a row that carries tokens as chat's does).
+            `videos` (P5, schema v9, the submit's row), `moderation` (P6),
+            `completion` (P6, a row that carries tokens as chat's does) or
+            `decisions` (row 12, `POST /v1/systemone`: a row that carries the
+            decision's tokens).
             Null on rows from before schema v7 and on every other door,
             whose rows carry tokens.
         characters:

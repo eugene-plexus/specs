@@ -106,7 +106,7 @@ An entry with no runtimes needs only (a).
 ### Metrics, UI, Workbench
 
 - The store moves from v13 to v14 in place, adding the columns `queued_ms`, `band` and `refusal`. A queue refusal writes a row with outcome `refused`.
-- Names for row 12: `eugene_queue_waiting{runtime,band}`, `eugene_queue_wait_seconds{band,outcome}` and `eugene_queue_refused_total{reason,band}`; in traces, `gen_ai.latency.time_in_queue`.
+- Names for row 12: `eugene_queue_waiting{runtime,band}`, `eugene_queue_wait_seconds{band,outcome}` and `eugene_queue_refused_total{reason,band}`; in traces, `eugene.latency.time_in_queue` (row 12 found that the pinned semantic conventions do not define `gen_ai.latency.*`).
 - The key limits editor gains "Priority: Interactive / Background / Dropped first when busy" and "Requests that may wait: 8 (0 refuses at once)".
 - `app/metrics/page.tsx` shows "Waited in line" (p50 and p95), lines such as "3 waiting for qwen3-8b on tower", and "Refused: 4 queue full, 1 waited too long". The new settings render from the config schema.
 - Workbench's `memory_learn.py` and `memory_tidy.py` call `hub.complete(..., band="background")`. A refusal means the work is tried at the next pass.
