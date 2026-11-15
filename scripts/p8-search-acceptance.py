@@ -578,7 +578,7 @@ def exercise(directory: Path, *, clients: bool, searxng: str | None, browser: bo
         test = proxy("searx", "POST", "/v1/config/test", operator).json()
         assert test["ok"] is True and "searxng answered" in test["summary"], test
         info = proxy("searx", "GET", "/v1/info", operator).json()
-        assert info["tools"] == ["web_search"] and info["egress"] == "internet", info
+        assert info["tools"] == ["web_search", "mcp"] and info["egress"] == "internet", info
         ok(f"the SearXNG account is set up through the proxy by name; its Test ran a real search ({test['summary']})")
 
         brave_patch = proxy("brave", "PATCH", "/v1/config", operator,

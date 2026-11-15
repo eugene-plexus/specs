@@ -43,6 +43,8 @@ PINNED_STEPS = {
     # Row 4 (2026-10-22): a promoted root's address reaches every machine.
     "root-moved-acceptance.py": (EVERY, "both"),
     "row57-responses-tools-acceptance.py": (EVERY, "linux"),
+    # Row 59 (2026-10-26): Tavily, and remote MCP through the tool-driver.
+    "row59-remote-mcp-acceptance.py": (EVERY, "both"),
     # Row 53 (2026-10-23): files kept for one owner each, through the store.
     "row53-store-acceptance.py": (EVERY, "both"),
     # Row 54 (2026-10-26): stored responses and conversations, for their owners only.
