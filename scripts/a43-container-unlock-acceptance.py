@@ -27,8 +27,14 @@ as it did on the NAS.
 Checks, in order:
 
 1. The operator's file is written as the Unraid template says (`printf '%s'`:
-   the exact bytes, no newline; mode 0400 on POSIX), and the agent is
-   initialized with that passphrase.
+   the exact bytes, no newline; mode 0400 on POSIX). A fresh install
+   (agent#44): `agent.yaml` sets no `securityMode`. Before setup,
+   `/v1/auth/status` must say `passphraseFile: true` and
+   `passphraseFileFromOperator: true`, so the mode the setup wizard picks from
+   that answer (`ui/src/app/setup/page.tsx`: the file, else the keyring where
+   there is one, else the prompt) is `passphrase_file`. The agent is
+   initialized with the file's passphrase, and that mode is set with
+   `PATCH /v1/config`, as the wizard's step 3 does.
 2. An inference-driver for the account is declared, and its `apiKey` is set
    with `PATCH /v1/config` through the agent's proxy, as the console does. The
    driver's file on disk holds the key sealed: an envelope, the key nowhere in
@@ -49,6 +55,10 @@ Checks, in order:
    returns the agent's own file, none here), which is the agent of agent#43.
    Each of check 4's three checks must fail both times: the agent locked, the
    driver degraded, and no request carrying the key reaches the provider.
+   (c) In the container's shape with agent#44's fix taken back in the agent's
+   process (`routes.auth._unlocks_from_file` as before: the agent's own file
+   only): the mode the wizard picks from `/v1/auth/status` must not be
+   `passphrase_file`, which is check 1's failing.
 
 Needs the agent and the inference-driver installed in this interpreter (the
 Pinned integration job has them). Run:
@@ -117,11 +127,29 @@ class Failed(AssertionError):
 # --------------------------------------------------------------------------- #
 
 
-def serve_agent(directory: Path, port: int, machine_port: int, revert_fix: bool) -> None:
+def serve_agent(
+    directory: Path, port: int, machine_port: int, revert_fix: bool, revert_44: bool = False
+) -> None:
     """One agent through the shared harness's real start path.
 
     `revert_fix` takes agent#43's fix back in this process only: the agent
-    reads its own passphrase file and never the root's, as it did before."""
+    reads its own passphrase file and never the root's, as it did before.
+    `revert_44` takes agent#44's back: `/v1/auth/status` reports a passphrase
+    file only for the agent's own, so the wizard does not choose the file."""
+    if revert_44:
+        from eugene_plexus_agent.routes import auth as agent_auth
+
+        if not hasattr(agent_auth, "_unlocks_from_file"):
+            raise SystemExit("this agent has no routes.auth._unlocks_from_file to take back")
+
+        def own_file_only_flag(request: Any, state: Any) -> bool:
+            return (
+                state.get_config("securityMode") == "passphrase_file"
+                and agent_auth._passphrase_path(request) is not None
+            )
+
+        agent_auth._unlocks_from_file = own_file_only_flag  # type: ignore[assignment]
+        print("a43: SABOTAGED: the status reports the agent's own file only", flush=True)
     if revert_fix:
         from eugene_plexus_agent import passphrase_file
 
@@ -381,7 +409,9 @@ class Run:
 
     # ---- the agent's process -------------------------------------------------
 
-    def start_agent(self, *, container_shape: bool = True, revert_fix: bool = False) -> None:
+    def start_agent(
+        self, *, container_shape: bool = True, revert_fix: bool = False, revert_44: bool = False
+    ) -> None:
         (self.agent_dir / "stop").unlink(missing_ok=True)
         env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
         # The provider's key reaches the driver from its config or not at all.
@@ -407,6 +437,7 @@ class Run:
             "--machine-port",
             str(self.ports["machine"]),
             *(["--revert-fix"] if revert_fix else []),
+            *(["--revert-44"] if revert_44 else []),
         ]
         self.log = (self.root / "agent.log").open("ab")
         self.process = subprocess.Popen(
@@ -569,15 +600,9 @@ def step_initialize(run: Run) -> None:
     if os.name != "nt":
         os.chmod(run.operators_file, 0o400)
     run.written = fingerprint(run.operators_file)
+    # A fresh install (agent#44): no securityMode, which setup chooses.
     (run.agent_dir / "agent.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "firstRunComplete": True,
-                "updateChecks": False,
-                "securityMode": "passphrase_file",
-                "components": [],
-            }
-        ),
+        yaml.safe_dump({"firstRunComplete": True, "updateChecks": False, "components": []}),
         encoding="utf-8",
         newline="\n",
     )
@@ -585,6 +610,14 @@ def step_initialize(run: Run) -> None:
     before = run.get("agent", "/v1/auth/status").json()
     if before.get("initialized") is not False:
         raise Failed(f"a new agent's /v1/auth/status says {before}")
+    chosen = wizard_mode(before)
+    if chosen != "passphrase_file" or before.get("passphraseFileFromOperator") is not True:
+        raise Failed(
+            f"before setup, /v1/auth/status says {before}, so setup would choose {chosen} for "
+            "this agent, not the operator's passphrase file"
+        )
+    if str(run.operators_file) in json.dumps(before):
+        raise Failed("the unauthenticated /v1/auth/status names the operator's file")
     initialized = run.call(
         "POST", "agent", "/v1/auth/initialize", json={"passphrase": run.passphrase}
     )
@@ -594,11 +627,27 @@ def step_initialize(run: Run) -> None:
     after = run.get("agent", "/v1/auth/status").json()
     if after.get("unlocked") is not True:
         raise Failed(f"just initialized, /v1/auth/status says {after}")
+    applied = run.call("PATCH", "agent", "/v1/config", run.session, json={"securityMode": chosen})
+    if applied.status_code != 200 or "securityMode" not in (applied.json().get("applied") or []):
+        raise Failed(f"PATCH securityMode={chosen}: {applied.status_code} {applied.text[:300]}")
     mode = run.written["mode"] if os.name != "nt" else "not set on Windows"
     run.ok(
         f"1. the operator's file holds the passphrase's {len(run.written['bytes'])} bytes and "
-        f"no newline (mode {mode}); the agent is initialized with it and unlocked"
+        f"no newline (mode {mode}); before setup the agent says it can unlock from the "
+        f"operator's file, so setup chooses {chosen}; the agent is initialized with the "
+        "file's passphrase, unlocked, and on that mode"
     )
+
+
+def wizard_mode(status: dict[str, Any]) -> str:
+    """The mode the setup wizard picks for this agent and the root from
+    `/v1/auth/status` (`ui/src/app/setup/page.tsx`, the probe): the file when
+    the agent reports one, else the keyring where there is one, else the prompt."""
+    if status.get("passphraseFile") is True:
+        return "passphrase_file"
+    if status.get("keyringAvailable") is True:
+        return "os_keyring"
+    return "prompt_on_startup"
 
 
 def step_sealed_key(run: Run) -> None:
@@ -656,11 +705,13 @@ def step_sealed_key(run: Run) -> None:
     )
 
 
-def restart(run: Run, *, container_shape: bool = True, revert_fix: bool = False) -> None:
+def restart(
+    run: Run, *, container_shape: bool = True, revert_fix: bool = False, revert_44: bool = False
+) -> None:
     """3. The agent and its children stopped and started again; no sign-in."""
     run.stop_agent()
     run.provider.forget()
-    run.start_agent(container_shape=container_shape, revert_fix=revert_fix)
+    run.start_agent(container_shape=container_shape, revert_fix=revert_fix, revert_44=revert_44)
 
 
 def check_unlocked(run: Run) -> str:
@@ -791,12 +842,39 @@ def step_sabotage(run: Run, label: str, *, container_shape: bool, revert_fix: bo
     )
 
 
+def step_sabotage_setup(run: Run) -> None:
+    """6c. agent#44's fix taken back: setup must not choose the operator's file."""
+    restart(run, container_shape=True, revert_44=True)
+    answer = run.get("agent", "/v1/auth/status")
+    if answer.status_code != 200:
+        raise Failed(f"/v1/auth/status answered {answer.status_code}: {answer.text[:300]}")
+    status = answer.json()
+    # The agent this run initialized, answering with the flag as it was before: not
+    # an agent that is not set up, nor one whose answer lacks the field.
+    if status.get("initialized") is not True or status.get("passphraseFile") is not False:
+        raise Failed(
+            f"sabotage NOT caught (agent#44's fix taken back): /v1/auth/status says {status}, "
+            "not initialized with passphraseFile false"
+        )
+    chosen = wizard_mode(status)
+    if chosen == "passphrase_file":
+        raise Failed(
+            f"sabotage NOT caught (agent#44's fix taken back): /v1/auth/status says {status}, "
+            "and setup would still choose passphrase_file"
+        )
+    run.ok(
+        f"6. sabotage caught (agent#44's fix taken back): /v1/auth/status says "
+        f"passphraseFile {status.get('passphraseFile')!r}, so setup would choose {chosen}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--serve-agent", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--port", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--machine-port", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--revert-fix", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--revert-44", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--sabotage",
         action="store_true",
@@ -804,10 +882,10 @@ def main() -> int:
     )
     args = parser.parse_args()
     if args.serve_agent:
-        serve_agent(args.serve_agent, args.port, args.machine_port, args.revert_fix)
+        serve_agent(args.serve_agent, args.port, args.machine_port, args.revert_fix, args.revert_44)
         return 0
     clear_install_settings()
-    expected = 7 + (2 if args.sabotage else 0)
+    expected = 7 + (3 if args.sabotage else 0)
     with tempfile.TemporaryDirectory(prefix="ep-a43-", ignore_cleanup_errors=True) as tmp:
         run = Run(Path(tmp))
         try:
@@ -828,6 +906,7 @@ def main() -> int:
                     container_shape=True,
                     revert_fix=True,
                 )
+                step_sabotage_setup(run)
         except Failed as exc:
             print(f"FAIL {exc}", flush=True)
             run.dump_logs()

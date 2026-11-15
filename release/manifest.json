@@ -3,14 +3,14 @@
   "python": "3.12",
   "uvMinimum": "0.12.18",
   "components": {
-    "agent": "c71a9a8b4ca28748f025f97ac3a1094a6d248aad",
+    "agent": "abe79cb35252bd182f21de4d7084ad271d2530f8",
     "control": "54cf8b019df2e328eae36986a020f5251ed6d106",
-    "gateway": "7bf7cce43ef0fb316b70221c46189c634bf99ecb",
-    "library": "1b015632de2dddde6139719916b77128a9019869",
+    "gateway": "ae23bed8eba369b5f741be680ee35fab307c5cd5",
+    "library": "723ec68a82a682d05461f2402959f2cff983964d",
     "store": "92d59cb4f703c9564b0f41203d2d36f95feb9460",
-    "tool-driver": "a9c8b03439b60d2ba24275bf9f17da02c245190e",
-    "ui": "ae86f28474034495ead40a630e248017f98db32e",
-    "inference-driver": "ea858952086d3c476571f076eca5623359ddeb13"
+    "tool-driver": "16a7a3a0820044427775aa86312739ba9fc1304b",
+    "ui": "99a19d5ca0a5aa842968b0253efb91e40bf9b4c0",
+    "inference-driver": "5ba5881d7117679f78a03c4e97e3bac5caf80c8c"
   },
   "dependenciesSha256": "51eff13a14bc6dc31446aa03bd2e3683f887fa3c34f083dfbf86e1a1eee44def"
 }

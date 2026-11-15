@@ -147,8 +147,11 @@ services:
     # gateway routes nothing until a person signs in -- and every health
     # check says "ok" while that is true. A container has no OS keyring,
     # so the passphrase comes from a mounted secret. Uncomment the
-    # `secrets:` block below and the two lines here, then set
-    # `securityMode: passphrase_file` once in the UI. See
+    # `secrets:` block below and the two lines here. A new install: run
+    # setup with the passphrase that is in the secret; setup puts the
+    # control root and this machine's agent on the file. An install set up
+    # before the secret: set Security mode to "Passphrase file auto-unlock"
+    # on the Control root and on this machine's agent, once, in the UI. See
     # docs/deployment/container.md, "Unattended unlock", for what it
     # trades away -- it is off by default because it is a real trade.
     #
