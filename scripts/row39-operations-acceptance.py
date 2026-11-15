@@ -18,11 +18,10 @@ The owner gives Dana the Models power (`operateModels`) on machine A only.
    auto-start, and re-scans A's library through A's proxy: each is taken,
    and A's operations log names Dana for each, the library's row included.
 2. Dana's exchange for B is refused, naming B and her machines. Her token
-   for A, sent through A's proxy to another destination (the root), is
-   stripped (401, missing token), and sent to B is refused (401). The hop to
-   B through A's proxy is not run: on one host A's proxy refuses B's
-   loopback address by design (row 3 runs it with --lan); the agent's unit
-   test covers the strip toward another machine.
+   for A, sent to B, is refused (401). The hop to B through A's proxy is
+   not run: on one host A's proxy refuses B's loopback address by design
+   (row 3 runs it with --lan); the agent's unit test covers the strip toward
+   another machine.
 3. On A, Dana tries an engine install (403, naming Updates and restarts),
    `PATCH /v1/config` on the agent, the gateway and the library (403, only
    the owner), a client key (403), a provider key on the driver (refused),
@@ -646,25 +645,18 @@ def step_scope(run: Run, session: str) -> None:
         )
     run.ok(f"Dana's exchange for B is refused (403): {detail!r}")
     token = run.token_for_a(session)
-    # Through A's proxy toward another destination: the root, since on one
-    # host A's proxy refuses B's loopback address by design (row 3 --lan).
-    through = run.call(
-        "GET", "agent-a", "/api/proxy/control/v1/auth/administration/session", token
-    )
+    # The hop to B through A's proxy is not run here: on one host A's proxy
+    # refuses B's loopback address by design (row 3 runs it with --lan), and
+    # this harness's root is not a component A's proxy can name. The strip
+    # toward another machine is the agent's unit test
+    # (test_an_operations_token_for_another_machine_is_stripped).
     direct = run.call("GET", "agent-b", "/v1/runtimes", token)
-    if (
-        through.status_code != 401
-        or "Missing token" not in through.text
-        or direct.status_code != 401
-        or "node:agent-a" not in _detail(direct)
-    ):
+    if direct.status_code != 401 or "node:agent-a" not in _detail(direct):
         raise Failed(
-            f"Dana's token for A elsewhere: through A's proxy to the root {through.status_code} "
-            f"({through.text[:400]}), at B {direct.status_code} ({direct.text[:400]})"
+            f"Dana's token for A at B: {direct.status_code} ({direct.text[:400]})"
         )
     run.ok(
-        "Dana's token for A goes no further: A's proxy strips it toward the root (401: "
-        f"{_detail(through)!r}), and B refuses it ({_detail(direct)!r})"
+        f"Dana's token for A goes no further: B refuses it (401: {_detail(direct)!r})"
     )
 
 
