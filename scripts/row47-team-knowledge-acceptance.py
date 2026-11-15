@@ -337,7 +337,7 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
         check("1d", "A's chat with the Handbook chosen cites Handbook: rules.md",
               team and team[0]["name"] == "Handbook: rules.md"
               and team[0]["collection"] == {"id": hid, "name": "Handbook"}
-              and "front door code word" in sent_last(), team)
+              and "desk on day one" in sent_last(), team)
         check("1e", "C sees no collection",
               c.get("/api/collections").json()["collections"] == [])
         same = c.get(f"/api/collections/{hid}")
@@ -363,7 +363,7 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
             told = c.ask(c_in_project, f"What is the front door code word {CODE}?")
             sent = sent_last()
             return check(number, "C's chat in A's project is sent nothing of the Handbook, and is told nothing of it",
-                         "front door code word" not in sent and "Handbook" not in sent
+                         "desk on day one" not in sent and "Handbook" not in sent
                          and "Handbook" not in json.dumps(told)
                          and "Handbook" not in c.get(f"/api/chats/{c_in_project}/collections").text,
                          {"retrieval": told.get("retrieval"), "sources": told.get("sources")})
@@ -372,7 +372,9 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
 
         if sabotage:
             say("5. sabotage: the grant check cut out of the installed Workbench")
-            found = sorted(agent_dir.rglob("eugene_plexus_workbench/team.py"))
+            # The installed package, not uv's caches of the archive.
+            found = sorted(p for p in agent_dir.rglob("eugene_plexus_workbench/team.py")
+                           if "site-packages" in p.parts)
             must("5a", "the installed team.py is found", len(found) == 1, found)
             module = found[0]
             copy = work / "team.py.original"
@@ -435,14 +437,14 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
         say("3. B is taken out of G1: the Handbook is gone for B")
         b_hand = chat(b, hid)
         b.ask(b_hand, f"What is the front door code word {CODE}?")
-        check("3a", "while in G1, B's chat finds the Handbook", "front door code word" in sent_last())
+        check("3a", "while in G1, B's chat finds the Handbook", "desk on day one" in sent_last())
         moved = call("control", "PATCH", f"/v1/people/{people['b']}", root, json={"groups": []})
         must("3b", "B is taken out of G1 at the root", moved.status_code == 200, moved.text[:200])
         b2 = Browser(ui)
         must("3c", "B signs in again", b2.sign_in(PASSWORDS["b"], "b").startswith("/#signin="))
         told = b2.ask(b_hand, f"What is the front door code word {CODE}?")
         check("3d", "B's next search of the Handbook finds nothing, and says nothing of it",
-              "front door code word" not in sent_last() and "Handbook" not in json.dumps(told))
+              "desk on day one" not in sent_last() and "Handbook" not in json.dumps(told))
         check("3e", "the Handbook's id is a 404 for B now",
               b2.get(f"/api/collections/{hid}").status_code == 404)
 
