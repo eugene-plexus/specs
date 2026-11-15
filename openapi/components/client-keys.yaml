@@ -136,13 +136,19 @@ components:
             logs the same way ours do.
         readMetrics:
           type: boolean
-          default: false
           description: |
             Whether this key may read `GET /metrics` on a gateway or an agent,
             and `GET /v1/metrics/export` on a gateway (row 12): the numbers a
             Prometheus scraper reads. **It grants nothing else.** A key with it
             runs no inference unless `allowedModels` also names a model, and a
             key without it is refused at every metrics path with 403.
+
+            **Absent means off**, and no default is declared here on purpose: a
+            declared default is filled into every answer a generated model
+            writes, and a reader a release behind refuses the field
+            (`extra='forbid'`), so the authority and the agent send it only when
+            it is on. Found by the specs integration: a gateway a release behind
+            refused every request on a key whose answer said `readMetrics: false`.
 
             The console's "Make a scrape key" sets it together with
             `allowedModels: []`, so the key can read numbers and run nothing.
