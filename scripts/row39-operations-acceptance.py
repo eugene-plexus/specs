@@ -602,19 +602,28 @@ def step_runs_a(run: Run) -> str:
         f"auto-start (200) and re-scans A's library through A's proxy ({scanned.status_code})"
     )
 
+    wanted = {
+        ("Dana", run.dana_id, "agent", "stop runtime", RUNTIME),
+        ("Dana", run.dana_id, "agent", "change runtime auto-start", RUNTIME),
+        ("Dana", run.dana_id, "library", "re-scan models", ""),
+        ("Owner", "operator", "agent", "create runtime", RUNTIME),
+    }
+    seen: set[tuple[str, ...]] = set()
+
     def recorded() -> bool:
-        rows = {
+        seen.clear()
+        seen.update(
             (e["name"], e["personId"], e["component"], e["action"], e["target"])
             for e in run.log_of_a()
-        }
-        return {
-            ("Dana", run.dana_id, "agent", "stop runtime", RUNTIME),
-            ("Dana", run.dana_id, "agent", "change runtime auto-start", RUNTIME),
-            ("Dana", run.dana_id, "library", "re-scan models", ""),
-            ("Owner", "operator", "agent", "create runtime", RUNTIME),
-        } <= rows
+        )
+        return wanted <= seen
 
-    run.wait(recorded, "A's operations log to name Dana for each change", 30)
+    try:
+        run.wait(recorded, "A's operations log to name Dana for each change", 30)
+    except Failed as exc:
+        raise Failed(
+            f"{exc}; missing {sorted(wanted - seen)}; it holds {sorted(seen)}"
+        ) from None
     run.ok(
         "A's operations log names Dana for each change, the library's too, and the owner's"
     )
