@@ -6247,7 +6247,7 @@ components:
         powers:
           type: array
           items: {$ref: '#/components/schemas/OperationsPower'}
-    OperationsMachine:
+    MachineInScope:
       type: object
       required: [name, kinds]
       properties:
@@ -6263,7 +6263,7 @@ components:
       properties:
         machines:
           type: array
-          items: {$ref: '#/components/schemas/OperationsMachine'}
+          items: {$ref: '#/components/schemas/MachineInScope'}
         unreachableNodes:
           type: array
           items: {type: string}
