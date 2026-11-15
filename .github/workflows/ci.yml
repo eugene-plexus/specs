@@ -659,6 +659,13 @@ jobs:
         env:
           R32_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
         run: python specs/scripts/row32-skills-acceptance.py
+      # Row 47: Workbench at the candidate, as row 7's. The sabotage cuts the grant check out of
+      # the installed Workbench once and must see step 1 fail, then restores it.
+      - name: Verify team knowledge reaches only the people it is given to, and a shared project shares knowledge, never chats (row 47)
+        if: matrix.shard == 'L3' || matrix.shard == 'W1'
+        env:
+          R47_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row47-team-knowledge-acceptance.py --sabotage
       - name: Verify Update all survives an agent restart across enrolled machines and apps
         if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/update-all-acceptance.py

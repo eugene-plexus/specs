@@ -54,6 +54,8 @@ PINNED_STEPS = {
     "row70c-workbench-groups-acceptance.py": (EVERY, "both"),
     # Row 32 (2026-10-26): skills through the model's tools, hostile archives, removal.
     "row32-skills-acceptance.py": (EVERY, "both"),
+    # Row 47 (2026-11-15): team knowledge and shared projects, with its sabotage.
+    "row47-team-knowledge-acceptance.py": (EVERY, "both"),
     "r8-profile-acceptance.py": (EVERY, "both"),
     "row48b-library-down-acceptance.py": (EVERY, "both"),
     "ls1-eligibility-acceptance.py": (EVERY, "both"),
