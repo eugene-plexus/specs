@@ -185,3 +185,34 @@ R39-DELETE (Models includes deleting model files).
   delegation editor's line for that power says it includes logs.
 - **R39-DELETE: Choice 1.** The Models power includes deleting model files,
   each delete in the machine's record.
+
+## What building found (2026-11-15)
+
+- **The token module is vendored.** `tokens.py` is generated from
+  `platform/1.0.0/tokens.py` into seven repos (`scripts/vendor-platform.py`),
+  so the new class went into all seven: agent, control, gateway, library,
+  inference-driver, tool-driver, store. Revocation needs no new state: an
+  operations token carries `sid` (its administration session) and the
+  person's `administration_version`, and a grant, password, enabled-state
+  change or deletion lists `ops:<person>:<version>` in the bundle's sign-outs.
+- **The console needed to know which machine serves what.** Control's
+  component placement is owner-only, so `GET /v1/auth/operations-machines`
+  (control.yaml) lists the machines in a person's scope and the kinds of
+  component each runs. The console finds its own machine by asking
+  `GET /v1/node` with each machine's token.
+- **The directory was open to every named administrator.** A person with
+  only operations powers signs in through the same login, and
+  `/v1/people`, `/v1/permission-groups` and `/v1/oidc/clients` answered
+  them. Those routes now need a directory grant (403 otherwise).
+- **Refusals say "only the owner".** A valid operations token on a route
+  its powers do not open answers 403 "Only the owner can do this" on the
+  agent, library and gateway, not 401 "not accepted here". The
+  inference-driver is untouched and still answers 401 for it.
+- **Defaults built beyond the table:** any power also reads
+  `GET /v1/engines`, `GET /v1/engines/{engine}/install`, `GET /v1/updates/all`
+  (agent) and `GET /v1/folders`, `GET /v1/scan` (library). Models also
+  opens `PUT /v1/runtimes/{name}/auto-start`, cancelling an engine install
+  goes with Updates and restarts, and Models searches the catalogue
+  (`/v1/catalogue/*`) and plans and forgets model deletions. The gateway's
+  metrics summary is readable; its request log and client usage are not.
+  Pause and resume (row 35) stay the owner's.

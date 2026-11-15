@@ -486,6 +486,13 @@ jobs:
       - name: A stolen worker key tried against every other process, then revoked
         if: matrix.shard == 'L2' || matrix.shard == 'W2'
         run: python specs/scripts/row3-per-node-keys-acceptance.py --lan
+      # Row 39: a person who is not the owner, given Models on one machine, runs
+      # it through her own operations token, is refused everything that is the
+      # owner's, loses it when the owner removes the power or she signs out;
+      # with PATCH /v1/config put in the table by mistake, step 3 must fail.
+      - name: Operations rights for a person who is not the owner, sabotaged (row 39)
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
+        run: python specs/scripts/row39-operations-acceptance.py --sabotage
       # Row 46: with its root stopped past its limit, a machine refuses another
       # machine's stop request and still answers; the refusal sabotaged must fail.
       - name: A machine cut off from its root refuses other machines' changes and still answers (row 46)

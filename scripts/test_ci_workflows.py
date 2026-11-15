@@ -33,6 +33,7 @@ PINNED_STEPS = {
     "r7-rotation-acceptance.py": (FULL, "both"),
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
     "row46-frozen-trust-acceptance.py": (EVERY, "both"),
+    "row39-operations-acceptance.py": (EVERY, "both"),
     # Row 35 (2026-10-27): pause a machine's models from the console.
     "row35-tray-pause-acceptance.py": (EVERY, "linux"),
     # agent#43 (2026-11-06): an agent in the container's shape unlocks from the root's file.
