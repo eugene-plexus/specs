@@ -14,7 +14,7 @@ At the root: groups G1 (A, B) and G2 (C).
    MSP case): C's chat in P is sent nothing of it, and nothing C is told names it.
 2. A shares P with B too: B sees P's instructions and documents and starts a chat in it, which is
    given the instruction and finds P's document; A cannot open B's chat by id; A sees a count.
-3. B is taken out of G1 at the root: at B's next sign-in, B's search of the Handbook finds
+3. B is moved from G1 to G2 at the root: at B's next sign-in, B's search of the Handbook finds
    nothing, and its id is a 404.
 4. G1 may add to the Handbook. A model in A's chat proposes a note: it waits, unsearched, until A
    accepts it; then it is found.
@@ -438,10 +438,13 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
         b_hand = chat(b, hid)
         b.ask(b_hand, f"What is the front door code word {CODE}?")
         check("3a", "while in G1, B's chat finds the Handbook", "desk on day one" in sent_last())
-        moved = call("control", "PATCH", f"/v1/people/{people['b']}", root, json={"groups": []})
-        must("3b", "B is taken out of G1 at the root", moved.status_code == 200, moved.text[:200])
+        # Into G2: a person in no group may not be given Workbench at all.
+        moved = call("control", "PATCH", f"/v1/people/{people['b']}", root,
+                     json={"groups": [groups["G2"]]})
+        must("3b", "B is moved from G1 to G2 at the root", moved.status_code == 200, moved.text[:200])
         b2 = Browser(ui)
-        must("3c", "B signs in again", b2.sign_in(PASSWORDS["b"], "b").startswith("/#signin="))
+        ended = b2.sign_in(PASSWORDS["b"], "b")
+        must("3c", "B signs in again", ended.startswith("/#signin="), ended)
         told = b2.ask(b_hand, f"What is the front door code word {CODE}?")
         check("3d", "B's next search of the Handbook finds nothing, and says nothing of it",
               "desk on day one" not in sent_last() and "Handbook" not in json.dumps(told))
