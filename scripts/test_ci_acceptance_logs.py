@@ -89,6 +89,14 @@ class HelperTests(unittest.TestCase):
             self.assertIn("three", text)
 
 
+def has(module: str) -> bool:
+    return importlib.util.find_spec(module) is not None
+
+
+@unittest.skipUnless(
+    has("httpx") and has("yaml"),
+    "the CI planning job installs neither httpx nor PyYAML; run this where the agent is installed",
+)
 class Ls7Tests(unittest.TestCase):
     """The script's own behaviour, with the agent replaced by a process that exits."""
 
