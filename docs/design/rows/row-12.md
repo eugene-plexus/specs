@@ -144,3 +144,18 @@ control `test_metrics_purpose_needs_read_metrics`; agent `test_engine_metrics_ar
 - **MET-PEOPLE: Choice 2.** No person names in any exported metric, the Prometheus page included. Series per key stay.
 - **MET-NAMES: Choice 2.** `eugene_*` names for every metric.
 - **MET-ENGINE: Choice 1.** Each agent serves its own engines' metrics.
+
+## What building found (2026-11-15)
+
+**Built as designed, with the answered calls applied.**
+
+- **Names (MET-NAMES, Choice 2).** Every name starts with `eugene_`; none is a GenAI name. The door view is `eugene_request_duration_seconds{door,model,outcome}`, `eugene_time_to_first_token_seconds{model}` and `eugene_time_per_output_token_seconds{model}`; the backend view is `eugene_attempts_total`, `eugene_attempt_duration_seconds{driver,runtime,node,served}` and `eugene_tokens_total`. The table in section 2 holds for the other names. Added, not in the table: `eugene_telemetry_series_dropped_total{family}`, `eugene_telemetry_spans_dropped_total`, `eugene_metrics_enabled`. `eugene_build_info` has `component`, `version`, `commit` and no `semconv`.
+- **People (MET-PEOPLE, Choice 2).** No `person` label anywhere, so the `telemetryExportPersonLabels` setting is not built. `eugene_client_key_info{key_id,key_name}` is on the Prometheus page only; an OTLP payload leaves it out.
+- **Spans.** `eugene.latency.time_to_first_token` (on the attempt) and `eugene.latency.time_in_queue` (on the door's span); the pinned conventions do not define `gen_ai.latency.*`. Spans are written from the finished request row, so their times are the row's: the door spans the request, attempts follow each other from its start. A caller's `traceparent` is continued, and one it did not sample is not traced. **`traceparent` is not sent to the driver**: a driver makes no span of its own yet, so nothing would read it.
+- **Telemetry needs the request store.** Counters are made from the rows the store records, so `metricsEnabled: false` leaves the counters empty. `/metrics` says so with `eugene_metrics_enabled 0`.
+- **Rollups (MET-RU).** `MetricsGroup.latencyMs` is no longer required: a `source: rollup` group has `latencyMeanMs`, `latencyMaxMs` and `tokensPerSecondMean` (a mean is not given as `p50`). The rollup also gained `token_ms_sum` (not in the design), because tokens over the time of requests that reported none would understate the rate. The rollup now attributes a request to the same attempt the live summary does and leaves refused requests out of its counts. Hours rolled up before v15 have the new columns at zero.
+- **gateway#19** is built here: `affinity_key` (v15) and `MetricRequest.affinityKey`. It is null when `conversationAffinity` is off.
+- **Access.** The gateway and the agent each check `limits.readMetrics` themselves, besides the authority's own refusal, and each is covered by a test that fails when the other is removed. Platform `client_admission.py` takes purpose `metrics`.
+- **`--metrics`** is now always passed to llama-server, in `engines/speculation.py` (the ENG file), with one assertion changed in `tests/test_speculation.py`.
+
+**Not built.** `scripts/row12-metrics-acceptance.py` (a real Prometheus and OpenTelemetry Collector in CI, pinned binaries). The gateway tests drive the same paths through the app with a stand-in collector and a stand-in authority; the specs branch integration runs the real stack. One review of the access part is still owed.
