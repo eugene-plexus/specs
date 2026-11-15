@@ -38,7 +38,7 @@ on:
         description: "JSON array of macOS runner platforms"
         required: false
         type: string
-        default: '["macos-14","macos-15","macos-26"]'
+        default: '["macos-15","macos-26"]'
   workflow_call:
     inputs:
       agent_ref:
@@ -61,7 +61,7 @@ on:
         description: "JSON array of macOS runner platforms"
         required: false
         type: string
-        default: '["macos-14","macos-15","macos-26"]'
+        default: '["macos-15","macos-26"]'
 
 permissions:
   contents: read
@@ -76,7 +76,7 @@ jobs:
       matrix:
         # Three macOS releases people run; each image's machine is a
         # virtual M1 or M2 with 7 or 14 GB, and every one exposes Metal.
-        os: ${{ fromJSON(inputs.platforms || '["macos-14","macos-15","macos-26"]') }}
+        os: ${{ fromJSON(inputs.platforms || '["macos-15","macos-26"]') }}
     steps:
       - uses: actions/checkout@v6
       # For the harness alone, which is stdlib only. The install brings its
@@ -139,7 +139,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.platforms || '["macos-14","macos-15","macos-26"]') }}
+        os: ${{ fromJSON(inputs.platforms || '["macos-15","macos-26"]') }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6

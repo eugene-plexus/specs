@@ -45,4 +45,4 @@ jobs:
     if: needs.plan.outputs.macos == 'true'
     uses: ./.github/workflows/a4-macos.yml
     with:
-      platforms: ${{ needs.plan.outputs.full == 'true' && '["macos-14","macos-15","macos-26"]' || '["macos-26"]' }}
+      platforms: ${{ needs.plan.outputs.full == 'true' && '["macos-15","macos-26"]' || '["macos-26"]' }}

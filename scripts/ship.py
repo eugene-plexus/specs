@@ -70,6 +70,8 @@ ORDER = (*MANIFEST_REPOS[1:], "site-host", "workbench", "agent", "ui")
 SHA = re.compile(r"[a-f0-9]{40}")
 # CI's job that holds a reduced-plan push to main until the push before it passed.
 GUARD_JOB = "The previous push to main passed CI"
+#: What CI runs as a check: a merged change to one of these may need the new pins.
+CI_CHECK = re.compile(r"\.github/workflows/[^/]+\.ya?ml|scripts/[^/]+-(acceptance|checks)\.(py|sh)")
 WB_PIN = re.compile(
     r"(workbench/archive/)([a-f0-9]{40})(\.tar\.gz\n  version: )([a-f0-9]{40})"
 )
@@ -458,6 +460,18 @@ def ship(
                 f"  specs: CI's run of main's head {red[0]}: {red[1]}\n"
                 "    This ship's first push plans reduced coverage, so CI holds it, and Edge,\n"
                 "    until that run is re-run and passes or a full-plan push lands on main."
+            )
+    # A merged CI check that needs the new component code fails against the old
+    # pins in the merged work's own run, and CI then holds the pin push and Edge
+    # (agent#43's ship, 2026-11-06). Say so while it can still go out with the pins.
+    if merged and not one_push and plans:
+        changed = git(SPECS, "diff", "--name-only", f"origin/main..{merged_head}").split()
+        checks = [p for p in changed if CI_CHECK.fullmatch(p)]
+        if checks:
+            print(
+                f"  specs: the merged commits change CI checks ({', '.join(checks)}) while "
+                f"{', '.join(plans)} move. A check that needs the new code fails against the "
+                "old pins in their own run, and CI holds Edge: ship with --one-push."
             )
     for plan in plans.values():
         if plan.push_main and not dry_run:
