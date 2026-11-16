@@ -470,12 +470,12 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
             return last if last.get("toolRounds") else None
 
         asking = wait(asked, "the proposal to be asked about", 60)
-        call = asking["toolRounds"][0]["calls"][0]
+        asked_call = asking["toolRounds"][0]["calls"][0]
         check("4c", "A is asked first, with the words, before anything leaves the chat",
-              call.get("ask") is True and call.get("status") != "done"
-              and a.get(f"/api/collections/{hid}").json()["inbox"] == [], call)
+              asked_call.get("ask") is True and asked_call.get("status") != "done"
+              and a.get(f"/api/collections/{hid}").json()["inbox"] == [], asked_call)
         decided = a.post(f"/api/chats/{a_note}/messages/{asking['id']}/tools/decision",
-                         json={"callId": call["id"], "approve": True})
+                         json={"callId": asked_call["id"], "approve": True})
         must("4d", "A approves it", decided.status_code == 204, decided.text[:200])
         told = a.answer(a_note)
         calls = [x for r in told.get("toolRounds") or [] for x in r.get("calls") or []]
