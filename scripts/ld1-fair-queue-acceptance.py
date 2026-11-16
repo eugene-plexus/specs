@@ -590,8 +590,11 @@ runpy.run_path({str(Path(__file__).resolve())!r}, run_name='__main__')
         assert any(r["requestedModel"] == "ld1-old-history" for r in history), history[:3]
         with sqlite3.connect(directory / "gateway-a" / "metrics.sqlite3") as conn:
             version = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        # Moved forward to the schema this build writes: 14 for row 11, 15 since row 12.
-        assert version == ("15",), version
+        # Moved forward to the schema the gateway under test writes (14 for row 11,
+        # 15 since row 12, 16 since row 38), whatever that is.
+        from eugene_plexus_gateway.metrics import SCHEMA_VERSION
+
+        assert version == (str(SCHEMA_VERSION),), (version, SCHEMA_VERSION)
         ok("10. a v13 metrics store is moved forward in place, its history kept")
 
         # --- 1 and 2: over the limit waits; past the line, key_queue_full ------
