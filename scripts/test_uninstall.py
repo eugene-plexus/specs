@@ -254,7 +254,8 @@ class MovedInstallTests(unittest.TestCase):
         names = re.findall(r'"([^"]+)"', match.group(1))
         self.assertIn("prompt-cache", names)
 
-    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    # The move runs on a Mac; a Windows runner's `bash` can be WSL's with no distribution.
+    @unittest.skipUnless(os.name != "nt" and shutil.which("bash"), "needs a POSIX bash")
     def test_a_mac_move_leaves_the_prompt_cache_behind(self):
         text = (ROOT / "install.sh").read_text(encoding="utf-8")
         functions = "".join(
