@@ -70,14 +70,14 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=040e2802f4858feb828ebf48e8b96986e4c23f35
-PIN_CONTROL=dcf086d39eac96fc62213d1eb5d4136d34b33ce7
-PIN_GATEWAY=5b6cf512581c258a5198ee11a07768039050de23
-PIN_DRIVER=5ba5881d7117679f78a03c4e97e3bac5caf80c8c
-PIN_LIBRARY=723ec68a82a682d05461f2402959f2cff983964d
-PIN_STORE=92d59cb4f703c9564b0f41203d2d36f95feb9460
-PIN_TOOL_DRIVER=16a7a3a0820044427775aa86312739ba9fc1304b
-PIN_UI=e01f004dbec178f867deb19d47f08e6f6575b331   # branch `dist`, not `main`
+PIN_AGENT=c9ad98cf1d0f9f581c0e377745aed352637302d8
+PIN_CONTROL=83302e7afd8767f3a5a5a4f09096e628ebc908c9
+PIN_GATEWAY=ac131f25fd4413dba67ec544ab16c3a7e731add9
+PIN_DRIVER=8f3d321373e91c78a280aecca464a97c1baa4476
+PIN_LIBRARY=34a80aa70e6dd0f2f7b2a8937779310ae1381a74
+PIN_STORE=57fae66f52a0b665906f10e892568b94526574f6
+PIN_TOOL_DRIVER=9298d549a3243a5b4a6a7b560f2c2f10ff8b231e
+PIN_UI=1fa34064f2fc41b9fc4af9e197b753aeb66b85a5   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
