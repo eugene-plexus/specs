@@ -77,7 +77,7 @@ PIN_DRIVER=8f3d321373e91c78a280aecca464a97c1baa4476
 PIN_LIBRARY=34a80aa70e6dd0f2f7b2a8937779310ae1381a74
 PIN_STORE=57fae66f52a0b665906f10e892568b94526574f6
 PIN_TOOL_DRIVER=9298d549a3243a5b4a6a7b560f2c2f10ff8b231e
-PIN_UI=d813f8f17834092b7aafbe25867f2db17cb735f9   # branch `dist`, not `main`
+PIN_UI=f578ae8f33bd011f2cb7259e4d92d757da2f6349   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
