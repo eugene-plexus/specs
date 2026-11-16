@@ -101,7 +101,7 @@ def _sabotage_gateway() -> None:
 
     def skipped(self: Any, allowed: Any, *, local_only: bool = False) -> Any:
         if isinstance(allowed, ModelScope):
-            allowed = ModelScope(allowed.key, ["*"])
+            allowed = ModelScope(allowed.key, [])
         return original(self, allowed, local_only=local_only)
 
     routing.Resolution.restricted = skipped  # type: ignore[method-assign]

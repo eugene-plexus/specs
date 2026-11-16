@@ -5855,7 +5855,15 @@ components:
         - setNodeCertificateNames
         - retireOidcKeys
         - changePassphrase
+        - setPersonActiveGroup
       description: |
+        **`setPersonActiveGroup` (row 37)** sets one person's `activeGroup`
+        and nothing else of their record: `{id, activeGroup}`, where
+        `activeGroup` is one of their groups or null. It is how a person's
+        own choice at `/oidc/active-group` is written, applied to the record
+        as it is then, so a choice cannot write back anything the owner
+        changed meanwhile. A standby from before row 37 cannot apply it.
+
         **`retireOidcKeys` (row 5, log version 1)** keeps only the sign-in
         keys named in `keep` (`{keep: [kid]}`, at least one held key) and
         drops the others, so every token they signed stops verifying. It
