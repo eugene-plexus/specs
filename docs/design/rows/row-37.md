@@ -290,3 +290,12 @@ from the active group" above.
 - Notes: the Responses door's 403 carries `model_not_allowed`; the owner's
   token gets 403 `not_a_person`; a person's check that an agent answers
   with a 500 says an agent older than its root cannot pass on group models.
+
+## Caught up with row 38 (2026-11-16)
+
+Row 38 took log version 2 for `setAlerting`; row 37 takes **log version 3**
+for `setPersonActiveGroup` and for the fields an older standby refuses (a
+group's `roleRouting` and `allowedModels`, a person's `activeGroup`). The
+root refuses to write any of them (409, naming the standby) while its
+standby reports less, as rows 5 and 38 do; a row 70 policy still saves.
+control, gateway and ui were replayed onto `main` as one commit each.
