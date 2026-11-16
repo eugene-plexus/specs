@@ -204,3 +204,11 @@ code closely. Risks:
   own port; routing does not depend on how a runtime started). SELinux
   hosts (Fedora, RHEL) may need a relabel option on the model mount; not
   handled, not tested.
+- **Which kills leave an orphan (found by the first CI run):** killing the
+  agent alone on Linux does not. Its children get SIGTERM when it dies
+  (`orphan_kill`, `PR_SET_PDEATHSIG`), and the attached `docker run`
+  forwards it to the container, which then stops and is removed. An orphan
+  is left when the agent's whole tree is killed at once (systemd's final
+  SIGKILL of the service's control group, the OOM killer on the cgroup),
+  when Windows' job object ends the CLI (TerminateProcess forwards
+  nothing), or when the CLI alone dies. The acceptance kills the whole tree.

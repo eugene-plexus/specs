@@ -16,10 +16,11 @@ from the environment):
    only, the profile's variable reaches the container by name and its value is
    in no command line, and the engine answers a chat.
 4. Stop: the container is gone within 30 s.
-5. Kill the agent: the container is left running; at the agent's next start it
-   is removed, and the log says so.
-6. A bad image reference: the pull fails naming the registry's answer, and the
+5. A bad image reference: the pull fails naming the registry's answer, and the
    image in use stays.
+6. Kill the agent with its whole process tree (systemd's final SIGKILL): the
+   container is left running; at the agent's next start it is removed, and the
+   log says so.
 
 Not run here: a real vLLM on a GPU (no GPU on the runner), and a chat routed
 through a gateway (the engine is reached on its own port; routing to a runtime
@@ -40,6 +41,7 @@ import time
 from pathlib import Path
 
 import httpx
+import psutil
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -187,9 +189,18 @@ class Agent:
             )
         wait(lambda: self.client.get("/healthz").status_code == 200, "agent up", 60)
 
-    def kill(self) -> None:
-        """SIGKILL, as a crash or an OOM kill would: no stop runs."""
+    def kill_tree(self) -> None:
+        """SIGKILL the agent and every process under it, as systemd's final
+        SIGKILL of a service's control group does: no stop runs, and the
+        `docker run` CLI forwards nothing. (Killing the agent alone is not an
+        orphan on Linux: the CLI gets SIGTERM on its parent's death,
+        `orphan_kill`, and forwards it to the container.) The agent is frozen
+        first, so it sees none of it."""
         assert self.process is not None
+        agent = psutil.Process(self.process.pid)
+        agent.suspend()
+        for child in agent.children(recursive=True):
+            child.kill()
         self.process.send_signal(signal.SIGKILL)
         self.process.wait(timeout=30)
 
@@ -394,7 +405,7 @@ def main() -> int:
             "runtime ready again",
             120,
         )
-        agent.kill()
+        agent.kill_tree()
         time.sleep(2)
         assert containers_named(name), "the container went with the agent; nothing to sweep"
         agent.start()
@@ -402,7 +413,10 @@ def main() -> int:
         assert "an earlier run of this agent left running" in agent.log.read_text(
             encoding="utf-8", errors="replace"
         )
-        ok("a killed agent's container is removed at its next start, and the log says so")
+        ok(
+            "an agent killed with its whole tree leaves its container running; its next "
+            "start removes it, and the log says so"
+        )
     except BaseException:
         print("---- agent log (tail) ----", flush=True)
         if agent.log.exists():
