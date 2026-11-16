@@ -74,6 +74,61 @@ class HelperTests(unittest.TestCase):
             self.assertTrue(acceptance_logs.bind_failure(text), text)
         self.assertFalse(acceptance_logs.bind_failure("ModuleNotFoundError: No module named 'x'"))
 
+    def test_quiet_ports_are_outside_the_range_the_os_hands_to_other_processes(self) -> None:
+        """A port a script picks and releases is taken by the next process that asks for any
+        port (an agent's own door, a client's source port) unless it is a port the OS never
+        hands out that way (specs#130, #132)."""
+        import socket
+
+        low, _ = acceptance_logs.ephemeral_range()
+        ports = acceptance_logs.quiet_ports(12)
+        self.assertEqual(len(set(ports)), 12)
+        for port in ports:
+            self.assertLess(port, low, f"{port} is inside the OS's own range")
+            self.assertNotIn(port, range(8079, 8085))
+            self.assertNotIn(port, range(8279, 8285))
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", port))
+        more = acceptance_logs.quiet_ports(3, avoid=ports)
+        self.assertFalse(set(more) & set(ports))
+        self.assertIsInstance(acceptance_logs.quiet_port(*ports), int)
+
+    def test_a_quiet_port_is_never_one_something_holds(self) -> None:
+        import socket
+
+        held = []
+        try:
+            for port in acceptance_logs.quiet_ports(40):
+                sock = socket.socket()
+                sock.bind(("127.0.0.1", port))
+                sock.listen()
+                held.append(sock)
+            taken = {s.getsockname()[1] for s in held}
+            for _ in range(5):
+                self.assertFalse(taken & set(acceptance_logs.quiet_ports(40)))
+        finally:
+            for sock in held:
+                sock.close()
+
+    def test_a_part_is_up_only_when_its_latest_event_is_a_start(self) -> None:
+        up = acceptance_logs.part_is_up
+        spawned = "2026-11-16 07:25:10,001 INFO eugene_plexus_agent.app: spawning gateway: python -m eugene_plexus_gateway\n"
+        started = "[gateway] INFO:     Application startup complete.\n"
+        exited = "2026-11-16 07:25:16,064 INFO eugene_plexus_agent.app: gateway exited on request (rc=3); respawning\n"
+        self.assertFalse(up("", "gateway"))
+        self.assertFalse(up(spawned, "gateway"), "spawned is not yet answering")
+        self.assertTrue(up(spawned + started, "gateway"))
+        # The failure of specs#132: the check ran after the exit and before the next start.
+        self.assertFalse(up(spawned + started + exited + spawned, "gateway"))
+        self.assertFalse(up(spawned + started + exited, "gateway"))
+        self.assertTrue(up(spawned + started + exited + spawned + started, "gateway"))
+        # A part stopped before it answered: its successor's start is the latest event.
+        killed = "library exited cleanly (rc=0); respawning\n"
+        self.assertTrue(up(spawned + killed + spawned + started, "gateway"))
+        # Another part's lines are not this part's.
+        self.assertFalse(up(spawned + started, "library"))
+        self.assertTrue(up("[driver: r39-driver] INFO:     Application startup complete.\n", "r39-driver"))
+
     def test_report_names_each_log_and_logs_under_skips_empty_ones(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             base = Path(raw)
@@ -138,6 +193,87 @@ class Ls7Tests(unittest.TestCase):
         self.assertEqual(len(started), 2)
         self.assertIn("starting it once more", printed)
         self.assertEqual(printed.count("address already in use"), 2, "both starts' output is kept")
+
+
+@unittest.skipUnless(
+    has("httpx") and has("yaml"),
+    "the CI planning job installs neither httpx nor PyYAML; run this where the agent is installed",
+)
+class Row46StartTests(unittest.TestCase):
+    """specs#130: an agent that cannot bind a port the script picked."""
+
+    BIND = (
+        "ERROR:    [Errno 98] error while attempting to bind on address ('127.0.0.1', 35439): "
+        "address already in use"
+    )
+
+    def run_start(self, first: bool, *log_lines: str, code: int = 1) -> tuple[list[dict], Any]:
+        row46 = load("row46_under_test", "row46-frozen-trust-acceptance.py")
+        started: list[dict] = []
+        with tempfile.TemporaryDirectory() as raw:
+            run = row46.Run(Path(raw))
+            self.addCleanup(run.client.close)
+            sleeper: list[subprocess.Popen[bytes]] = []
+
+            def spawn(name: str, argv: list[str], cwd: Path) -> None:
+                started.append(
+                    {"name": name, "agent": run.ports[name], "machine": run.ports["machine-b"]}
+                )
+                log = (run.root / f"{name}.log").open("ab")
+                run.logs[name] = log
+                if len(started) == 1:
+                    log.write(("\n".join(log_lines) + "\n").encode())
+                    log.flush()
+                    run.processes[name] = exits(code)
+                else:
+                    process = subprocess.Popen(
+                        [sys.executable, "-c", "import time; time.sleep(60)"],
+                        stdin=subprocess.DEVNULL,
+                    )
+                    sleeper.append(process)
+                    run.processes[name] = process
+
+            run.spawn = spawn  # type: ignore[method-assign]
+
+            def call(*args: Any, **kwargs: Any) -> Any:
+                import httpx
+
+                if len(started) < 2:
+                    raise httpx.ConnectError("refused")
+                return mock.Mock(status_code=200)
+
+            run.call = call  # type: ignore[method-assign]
+            error: BaseException | None = None
+            out = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out):
+                    run.start_agent("b", first=first)
+            except row46.Failed as e:
+                error = e
+            finally:
+                for process in sleeper:
+                    process.kill()
+                    process.wait(timeout=30)
+                for log in run.logs.values():
+                    log.close()
+        return started, (error, out.getvalue())
+
+    def test_a_first_start_that_cannot_bind_starts_once_more_on_new_ports(self) -> None:
+        started, (error, printed) = self.run_start(True, self.BIND)
+        self.assertIsNone(error)
+        self.assertEqual(len(started), 2)
+        self.assertNotEqual(started[0]["agent"], started[1]["agent"])
+        self.assertIn("starting it once more", printed)
+
+    def test_a_failure_that_is_not_a_bind_failure_is_not_retried(self) -> None:
+        started, (error, _) = self.run_start(True, "ModuleNotFoundError: No module named 'x'")
+        self.assertIsNotNone(error)
+        self.assertEqual(len(started), 1)
+
+    def test_a_restart_keeps_its_ports_even_when_the_log_names_a_bind_failure(self) -> None:
+        started, (error, _) = self.run_start(False, self.BIND)
+        self.assertIsNotNone(error)
+        self.assertEqual(len(started), 1, "the root was told this agent's ports")
 
 
 class Mv5bTests(unittest.TestCase):

@@ -65,6 +65,8 @@ import httpx
 import yaml
 
 HERE = Path(__file__).resolve()
+sys.path.insert(0, str(HERE.parent))
+import acceptance_logs  # noqa: E402
 MODEL = "r46-stub"
 RUNTIME = "r46"
 #: Ports this run never takes: the defaults and the live install's (+200).
@@ -163,22 +165,10 @@ def serve_stub(port: int) -> None:
 
 
 def free_ports(names: list[str]) -> dict[str, int]:
-    """Distinct loopback ports the OS says are free now, none of the forbidden."""
-    held: list[socket.socket] = []
-    ports: dict[str, int] = {}
-    try:
-        while len(ports) < len(names):
-            sock = socket.socket()
-            sock.bind(("0.0.0.0", 0))
-            held.append(sock)
-            port = int(sock.getsockname()[1])
-            if port in NEVER or port in ports.values():
-                continue
-            ports[names[len(ports)]] = port
-        return ports
-    finally:
-        for sock in held:
-            sock.close()
+    """Distinct loopback ports nothing holds now, below the range the OS hands out, so
+    no agent's own pick and no client's source port can take one before its process
+    binds it (specs#130)."""
+    return dict(zip(names, acceptance_logs.quiet_ports(len(names)), strict=True))
 
 
 # --------------------------------------------------------------------------- #
@@ -248,7 +238,27 @@ class Run:
             return
         raise Failed("the root still answers after it was stopped")
 
-    def start_agent(self, a: str, *, sabotage: bool = False) -> None:
+    def start_agent(self, a: str, *, sabotage: bool = False, first: bool = False) -> None:
+        """Start agent `a`. A first start (nothing has learned its ports yet) that the log
+        says could not bind its port starts once more on new ports; any other failure, and
+        every restart, stands: a restarted agent keeps the ports the root was told."""
+        try:
+            self._start_agent(a, sabotage=sabotage)
+        except Failed as failure:
+            log = self.root / f"agent-{a}.log"
+            if not first or not acceptance_logs.bind_failure(acceptance_logs.tail(log, 200)):
+                raise
+            print(
+                f"WARN  agent {a} could not bind its port ({failure}); starting it once more",
+                flush=True,
+            )
+            self.processes.pop(f"agent-{a}", None)
+            self.logs.pop(f"agent-{a}").close()
+            fresh = acceptance_logs.quiet_ports(2, avoid=self.ports.values())
+            self.ports[f"agent-{a}"], self.ports[f"machine-{a}"] = fresh
+            self._start_agent(a, sabotage=sabotage)
+
+    def _start_agent(self, a: str, *, sabotage: bool = False) -> None:
         directory = self.dirs[a]
         (directory / "stop").unlink(missing_ok=True)
         argv = [
@@ -517,7 +527,7 @@ def install(run: Run) -> str:
         raise Failed(f"root initialize answered {got.status_code}: {got.text}")
     root_session = run.login("control")
     for a, grants in (("b", []), ("c", ["gateway"])):
-        run.start_agent(a)
+        run.start_agent(a, first=True)
         run.join(a, root_session, grants)
     session_b = run.login("agent-b")
     model = run.dirs["b"] / "models" / "r46.gguf"

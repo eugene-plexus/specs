@@ -58,6 +58,8 @@ import httpx
 import yaml
 
 HERE = Path(__file__).resolve()
+sys.path.insert(0, str(HERE.parent))
+import acceptance_logs  # noqa: E402
 MODEL = "r39-stub"
 RUNTIME = "r39"
 #: Ports this run never takes: the defaults and the live install's (+200).
@@ -162,22 +164,10 @@ def serve_stub(port: int) -> None:
 
 
 def free_ports(names: list[str]) -> dict[str, int]:
-    """Distinct loopback ports the OS says are free now, none of the forbidden."""
-    held: list[socket.socket] = []
-    ports: dict[str, int] = {}
-    try:
-        while len(ports) < len(names):
-            sock = socket.socket()
-            sock.bind(("0.0.0.0", 0))
-            held.append(sock)
-            port = int(sock.getsockname()[1])
-            if port in NEVER or port in ports.values():
-                continue
-            ports[names[len(ports)]] = port
-        return ports
-    finally:
-        for sock in held:
-            sock.close()
+    """Distinct loopback ports nothing holds now, below the range the OS hands out, so
+    no agent's own pick and no client's source port can take one before its process
+    binds it (specs#130)."""
+    return dict(zip(names, acceptance_logs.quiet_ports(len(names)), strict=True))
 
 
 # --------------------------------------------------------------------------- #
@@ -346,6 +336,40 @@ class Run:
         raise Failed(
             f"timed out after {timeout:.0f} s waiting for {label} (last: {last!r})"
         )
+
+    def wait_settled(
+        self,
+        a: str,
+        parts: list[str],
+        since: int = 0,
+        probed: tuple[str, ...] = ("library", "gateway"),
+    ) -> None:
+        """Until agent `a`'s parts are up and have stopped restarting (specs#132).
+
+        The agent restarts every child it spawned after sign-in and again after
+        enrollment, and a gateway drains first, so on a slow runner the restart lands
+        seconds after the install returned. A check in that gap meets a gateway between
+        two processes ("Server disconnected without sending a response"). The library and
+        the gateway must answer through A's proxy, the agent's log (from byte `since`) must
+        show each part's latest event as a start, and the count of spawns, exits and starts
+        must not move for 2 s.
+        """
+        log = self.root / f"agent-{a}.log"
+        seen: dict[str, Any] = {"events": None, "at": 0.0}
+
+        def settled() -> bool:
+            text = log.read_bytes()[since:].decode("utf-8", errors="replace")
+            events = tuple(acceptance_logs.part_events(text, part) for part in parts)
+            if events != seen["events"]:
+                seen["events"], seen["at"] = events, time.perf_counter()
+            if not all(acceptance_logs.part_is_up(text, part) for part in parts):
+                return False
+            for part in (p for p in parts if p in probed):
+                if self.call("GET", f"agent-{a}", f"/api/proxy/{part}/healthz").status_code != 200:
+                    return False
+            return time.perf_counter() - seen["at"] >= 2.0
+
+        self.wait(settled, f"A's {', '.join(parts)} to finish restarting", 90)
 
     def login(self, name: str) -> str:
         token: Any = None
@@ -566,13 +590,7 @@ def install(run: Run) -> None:
         raise Failed(f"the owner makes Dana: {made.status_code} {made.text[:300]}")
     run.dana_id = str(made.json()["id"])
     run.grant({"operateModels": True, "operationsMachines": ["agent-a"]})
-    run.wait(
-        lambda: (
-            run.call("GET", "agent-a", "/api/proxy/library/healthz").status_code == 200
-        ),
-        "A's library",
-        90,
-    )
+    run.wait_settled("a", ["library", "gateway", "r39-driver"])
 
 
 def step_runs_a(run: Run) -> str:
@@ -828,18 +846,11 @@ def step_revoked(run: Run, session: str) -> None:
 def step_sabotage(run: Run) -> None:
     run.stop_agent("a")
     run.wait_released(["agent-a", "machine-a", "gateway", "library", "driver"])
+    began = (run.root / "agent-a.log").stat().st_size
     run.start_agent("a", sabotage=True)
     # Review S2: the sabotaged A answers for its library and gateway as well
     # before step 3 runs, so a refusal there is the gate's and not a gap.
-    for part in ("library", "gateway"):
-        run.wait(
-            lambda part=part: (
-                run.call("GET", "agent-a", f"/api/proxy/{part}/healthz").status_code
-                == 200
-            ),
-            f"A's {part} after the restart",
-            90,
-        )
+    run.wait_settled("a", ["library", "gateway"], since=began)
     run.grant({"operateModels": True, "operationsMachines": ["agent-a"]})
     session = run.dana_signs_in()
     token = run.token_for_a(session)

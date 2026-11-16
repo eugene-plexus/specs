@@ -17,6 +17,8 @@ import time
 import httpx
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import acceptance_logs  # noqa: E402
 
 #: Ports the harness never picks: the defaults (8079-8083) and the live install's
 #: (+200). OS-assigned ports are far above both; the check is belt and braces.
@@ -28,13 +30,11 @@ RESTARTS = "S8_HARNESS_RESTARTS"
 
 
 def free_port(*avoid: int) -> int:
-    """A port the OS hands out, that is none of the ports a live install or a default uses."""
-    while True:
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", 0))
-            port = int(sock.getsockname()[1])
-        if port not in NEVER and port not in avoid:
-            return port
+    """A port nothing holds now, that is none of the ports a live install or a default uses,
+    and is **below the range the OS hands out**: a port picked with `bind(0)` and released
+    is taken by the next process that asks for any port (an agent's door for a child, a
+    client's source port) before the one it was picked for binds it (specs#130, #132)."""
+    return acceptance_logs.quiet_port(*avoid, *NEVER)
 
 
 def harness_settings(settings_class, root: Path, port: int, machine_port: int | None = None):

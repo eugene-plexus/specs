@@ -349,6 +349,7 @@ def exercise(work: Path, workbench_ref: str) -> None:
     def seen() -> list[dict]:
         return call("fixture", "GET", "/seen")
 
+    operator = None
     try:
         say("an install: a root, an agent with a gateway and a model, Workbench")
         start("fixture")
@@ -431,11 +432,15 @@ def exercise(work: Path, workbench_ref: str) -> None:
         must("0c", "Ada and Bo sign in",
              ada.sign_in("ada-password-32", "ada").startswith("/#signin=")
              and bo.sign_in("bo-password-32", "bo").startswith("/#signin="))
-        model = wait(
-            lambda: next(m["id"] for m in ada.get("/api/models").json()["models"]
-                         if m["id"].endswith(MODEL)),
-            "the model is listed", 90,
-        )
+        def model_listed() -> str:
+            answer = ada.get("/api/models")
+            if answer.status_code != 200:
+                # Said in the timeout, with the components' state below it (specs#132): a bare
+                # KeyError 'models' named nothing.
+                raise ValueError(f"/api/models answered {answer.status_code}: {answer.text[:300]}")
+            return next(m["id"] for m in answer.json()["models"] if m["id"].endswith(MODEL))
+
+        model = wait(model_listed, "the model is listed", 90)
 
         def chat(person, instructions: str | None = "Be brief.") -> str:
             made = person.post("/api/chats", json={"model": model})
@@ -612,6 +617,16 @@ def exercise(work: Path, workbench_ref: str) -> None:
               kept)
     except Abort as exc:
         print(f"\nABORTED: {exc}", flush=True)
+        if operator:
+            # What the agent says each component is, so a gateway that never ran is named here
+            # and not left to be read out of 60 lines of another process's log (specs#132).
+            try:
+                listed = call("agent", "GET", "/v1/components", operator)
+                for c in listed if isinstance(listed, list) else listed.get("components", []):
+                    print(f"  component {c.get('name')}: {c.get('status')} at {c.get('url')} "
+                          f"pid {c.get('pid')} {c.get('lastError') or ''}", flush=True)
+            except Exception as why:  # the install may be what failed
+                print(f"  components: not readable ({why})", flush=True)
         for name in ("agent", "control"):
             log = work / name / "process.log"
             if log.exists():

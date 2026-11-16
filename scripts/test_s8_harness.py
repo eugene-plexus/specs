@@ -230,6 +230,16 @@ class FreePortTests(unittest.TestCase):
             self.assertNotIn(port, range(8279, 8284))
         self.assertNotEqual(harness.free_port(49999), 49999)
 
+    def test_a_port_is_below_the_range_the_os_hands_to_other_processes(self) -> None:
+        """specs#130, #132: a port in that range is taken by an agent's own pick or a
+        client's source port before the process it was picked for binds it."""
+        harness = load_harness()  # puts the scripts folder on sys.path
+        import acceptance_logs
+
+        low, _ = acceptance_logs.ephemeral_range()
+        for _ in range(20):
+            self.assertLess(harness.free_port(), low)
+
 
 if __name__ == "__main__":
     unittest.main()
