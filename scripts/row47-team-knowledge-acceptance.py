@@ -351,18 +351,18 @@ def exercise(work: Path, commit: str, *, sabotage: bool) -> None:
         check("1g", "C cannot choose the Handbook for a chat",
               chosen.status_code == 404 and chosen.json() == none.json(), chosen.text[:200])
         # The owner's (an MSP's): only someone in a group with C, or the owner, shares with C.
-        client = owner.post("/api/projects", json={"name": "Client"}).json()["id"]
-        linked = owner.http.put(ui + f"/api/projects/{client}/collections", headers=owner._headers(),
+        msp = owner.post("/api/projects", json={"name": "Client"}).json()["id"]
+        linked = owner.http.put(ui + f"/api/projects/{msp}/collections", headers=owner._headers(),
                                 json={"ids": [hid]})
         must("1h", "the owner's project uses the Handbook", linked.status_code == 200, linked.text[:300])
-        shared = owner.http.put(ui + f"/api/projects/{client}/sharing", headers=owner._headers(),
+        shared = owner.http.put(ui + f"/api/projects/{msp}/sharing", headers=owner._headers(),
                                 json={"shares": [{"kind": "person", "id": people["c"], "role": "read"}]})
         must("1i", "the owner shares the project with C", shared.status_code == 200, shared.text[:300])
         refused = a.http.put(ui + "/api/projects/" + a.post("/api/projects", json={"name": "Mine"}).json()["id"]
                              + "/sharing", headers=a._headers(),
                              json={"shares": [{"kind": "person", "id": people["c"], "role": "read"}]})
         check("1k", "A, in no group with C, cannot share with C", refused.status_code == 422, refused.text[:200])
-        c_in_project = chat(c, projectId=client)
+        c_in_project = chat(c, projectId=msp)
 
         def c_finds_nothing(number: str) -> bool:
             told = c.ask(c_in_project, f"What is the front door code word {CODE}?")
