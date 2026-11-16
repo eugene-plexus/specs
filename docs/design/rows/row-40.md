@@ -127,3 +127,92 @@ L, about 4 days. One adversarial review. Risks:
   purchase hardware, Internet connection, etc." No electricity estimate;
   every served model has an owner-set rate, cloud models starting at the
   provider's price.
+
+## What building found (2026-11-16)
+
+- **Whose price list.** The owner's rate is kept at the control root, one list
+  for the install (`setModelPrice`, `GET`/`PUT /v1/usage/prices`), not in each
+  gateway's settings as §2 said: two gateways with their own lists would count
+  one request at two prices, and a money allowance is install-wide. The root
+  prices each request itself. The gateway tells it what only the gateway knows,
+  as a `ModelPriceHint`: at `acquire` for the model asked for, at `release` for
+  the model that served it (`locality`, and the provider's price its drivers
+  report). Order: the owner's rate, else the provider's price, else free for a
+  model every backend of which is local, else unknown. The gateway's `/v1/models`
+  lists the provider's price as `provider_price`, so the console shows it
+  beside the owner's rate. The design's gateway tests `test_prices.py` and
+  `test_usage_release.py` exist in the gateway (the hint, the listing, the
+  release); the owner-rate rules are tested at the root
+  (`control/tests/test_usage.py`).
+- **Provider prices.** An OpenRouter account reads `pricing.prompt` and
+  `pricing.completion` from its listing (dollars a token as strings; `-1`,
+  missing, or a float is no price). OpenAI, Anthropic and Gemini accounts read
+  `docs/data/model-prices.json`, copied into the driver by
+  `vendor-platform.py`. Default built: the table holds only models with one
+  flat price for input and one for output (a model priced by prompt length,
+  such as Gemini 2.5 Pro, is left out, so its cost is unknown, never
+  understated), and it is refreshed by hand before a release; no script
+  fetches prices, because none of the three publishes them in a form a
+  script can read. Its `asOf` says when the prices were taken.
+- **Money is exact.** A rate is whole micro-dollars a million tokens, which is
+  one pico-dollar a token, so a request's cost is the integer
+  `prompt * input + completion * output` pico-dollars. Counters keep
+  pico-dollars; the API says dollars as a twelve-place decimal string
+  (`costUsd`). The console and Workbench convert between typed dollars and
+  micro-dollars on the digits.
+- **The refusal** is OpenAI's own for a spent quota: 429, `type` and `code`
+  `insufficient_quota` (not `allowance_exhausted`: full OpenAI compatibility),
+  the root's sentence as the message, and `Retry-After` in seconds until the
+  reset. The Anthropic door says `rate_limit_error`, the Gemini door
+  `RESOURCE_EXHAUSTED`; the Responses door's stream frame keeps
+  `rate_limit_exceeded`. The root also refuses a `check` on arrival when a
+  token allowance is spent and the check names a model, so a refused request
+  never waits in a queue; a model list (no model) is not refused. The unpriced
+  sentence says "The owner sets one on the Usage page.", where prices are set.
+- **Counting.** A release that ends a lease still held counts once, for the key's
+  lineage, the person the acquire verified and their groups then (the acquire's
+  log entry remembers the person, `usageOpen`). A second release of one request
+  counts nothing. Day counters are kept 62 days and month counters 13 months, at
+  most 32 models a period (the rest under `*`), pruned once a UTC day, so the
+  replicated state stays bounded; the count rides on the release's existing
+  `putClientAdmission` entry, so counting adds no log entries.
+- **Allowances do not cut a running request**: they are left out of the policy a
+  lease is bound to, and out of every admission answer.
+- **A group's allowance** is one pool for its members. A person whose groups set
+  an allowance of one kind is refused only when every one of those groups has
+  spent it (row 70's most generous rule). A money allowance never refuses a
+  model that costs nothing, and refuses a model with no price.
+- **A person's own usage** is at `GET /oidc/usage` (not `/v1/usage/me`): an app
+  reaches the root at its issuer, and the agent forwards `/oidc/*` there.
+  Workbench's Settings shows it, and says so plainly for an Eugene that counts
+  none.
+- **The console**: a Usage page under the gateway (per key, group and person,
+  day, month, allowances, by model; and every served model's price, the
+  provider's beside the owner's rate, which it sets and clears). A key's
+  allowances are offered only where an install's root counts them; a group's
+  only to a root that answers them.
+- **A standalone agent** (a machine that joined no install) refuses a token or
+  money allowance with a sentence that says why: no root counts it there.
+- **Known gaps.** A stream the client cuts before its end counts nothing (the
+  gateway learns the tokens at the end). A fallback to a cloud model with no
+  price inside a request that was admitted on a priced model counts as
+  unpriced and is not refused: the gateway's routing does not yet skip
+  unpriced fallback targets under a money allowance.
+
+### Mixed versions
+
+- **Log version 2.** A standby a release behind stops at the first key or group
+  that sets an allowance and at the first `setModelPrice` (it refuses a field
+  and an op it does not know). The root refuses those writes with 409 "Update
+  <standby> first" while its standby reports log version 1, as row 5's ops do.
+  A standby a release behind ignores the counts on `putClientAdmission`: it
+  keeps no counters until it is updated.
+- **A gateway a release behind** sends no price hint and no usage: its requests
+  are not counted, and a money allowance refuses them as unpriced unless the
+  owner set a rate for the model. Allowances never appear in an admission
+  answer, so it reads every key as before.
+- **A root or agent a release behind** refuses the hint and the usage (422); the
+  gateway asks again without them and leaves them out for five minutes. Such a
+  root enforces no allowance, which it does not know.
+- **A console a release behind** does not offer allowances or prices; a root
+  before row 40 refuses a group or key write that sets one.

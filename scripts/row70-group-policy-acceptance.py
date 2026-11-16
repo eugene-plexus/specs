@@ -339,7 +339,13 @@ def build(install: Install, root: str, session: str) -> dict[str, Any]:
             },
         )
         assert made.status_code == 201, made.text
-        assert made.json()["policies"] == {"queueBand": band, "summaryContextPercent": percent}
+        # Row 40's usage allowances are answered too, null when not set.
+        answered = made.json()["policies"]
+        assert {k: answered.get(k) for k in ("queueBand", "summaryContextPercent")} == {
+            "queueBand": band,
+            "summaryContextPercent": percent,
+        }, answered
+        assert all(v is None for k, v in answered.items() if k not in ("queueBand", "summaryContextPercent")), answered
         groups[name] = made.json()["id"]
     people = {}
     for name, member_of in (("A", ["G1"]), ("B", ["G1", "G2"])):
