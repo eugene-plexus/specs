@@ -60,6 +60,9 @@
       "agent": "contracts/run-operations.json",
       "library": "contracts/run-operations.json",
       "ui": "contracts/run-operations.json"
+    },
+    "docs/data/model-prices.json": {
+      "inference-driver": "src/eugene_plexus_inference_driver/model_prices.json"
     }
   }
 }

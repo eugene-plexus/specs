@@ -355,10 +355,13 @@ components:
         of them has none. The authority's owner rate wins over both.
       properties:
         locality:
-          type: string
-          enum: [local, external, unknown]
+          $ref: '#/components/schemas/ModelPriceLocality'
         providerPrice:
           $ref: '#/components/schemas/ModelPrice'
+    ModelPriceLocality:
+      type: string
+      enum: [local, external, unknown]
+      description: Where a model runs, as the gateway's `ModelLocality` says it (row 40).
     AdmissionUsage:
       type: object
       additionalProperties: false

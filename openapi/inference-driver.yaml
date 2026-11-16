@@ -3371,12 +3371,16 @@ components:
         inputPerMillionMicros: {type: integer, minimum: 0}
         outputPerMillionMicros: {type: integer, minimum: 0}
         source:
-          type: string
-          enum: [openrouter, table]
+          $ref: '#/components/schemas/DriverPriceSource'
         asOf:
           type: string
           format: date
           description: The day the listing was read, or the table's date.
+
+    DriverPriceSource:
+      type: string
+      enum: [openrouter, table]
+      description: Where a driver read a model's price (row 40).
 
     DriverCatalogue:
       type: object
