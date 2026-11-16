@@ -175,6 +175,52 @@ about reading chats. That needs one adversarial review (DI-C4).
 vLLM and MLX come later. vLLM offloads KV cache to CPU, and LMCache adds
 disk. `mlx_lm` can save a prompt cache to a file.
 
+#### What building found (row 15, 2026-11-15)
+
+- **The agent saves and reads back, not the driver.** The agent holds every
+  planned stop (Stop, idle unload, a model switch, an edit, a drain, the
+  agent stopping) and talks to llama-server on loopback, so it saves before
+  `stop_one`, `restart` and `stop_all`, and reads back when the runtime is
+  next ready and before it reports `ready`. Row 13's `before_stop` hook is
+  not needed: a drain's `then` goes through `stop_one`.
+- **Read back by slot at start, not by conversation on the next turn.** The
+  driver knows which slot holds which conversation only when the profile
+  pins slots (CB4), which is off by default. Reading the newest files back
+  into the slots at start works either way: llama-server finds a
+  conversation's slot by its own longest-common-prefix choice. A file goes
+  back to the slot it came from when that slot is free, so a pinned
+  conversation finds its state where its pin points while the driver keeps
+  running. The driver and the gateway are unchanged. Row 44 should restore
+  on the target the same way, or add per-conversation keys then.
+- **The key is a folder.** Each launch gets
+  `<config folder>/prompt-cache/<runtime>/<key>`, the key a hash of the
+  command line (minus host, port and alias) with the size and modification
+  time of every file it names, the engine program's identity and the
+  `LLAMA_ARG_*` variables. The engine is given only that folder. An engine
+  update is a new key, so its first start reads nothing back.
+- **With llama.cpp's default slots, a stop finds only the last
+  conversation.** With the slot count unset (4, unified KV), llama-server
+  moves idle slots to its RAM prompt cache and clears them when a new
+  request starts (`--cache-idle-slots`), and the RAM cache cannot be saved.
+  Measured on b12428: three conversations, one file. With a slot count set
+  on the profile (separate KV per slot) or slot pinning on
+  (`--no-cache-idle-slots`), every slot keeps its conversation and each is
+  saved. Files from earlier stops stay, up to one per slot.
+- **Measured on CPU** (b12428, `win-cpu-x64`, this PC, the acceptance
+  script): Stories15M, 70 tokens read cold in 3.4 ms, 72 reused after
+  reading back; LFM2-350M (a hybrid, convolution and attention), 70 tokens
+  in 58 ms cold, 69 of 73 reused after reading back (8.8 ms). Save and read
+  back took under 0.1 s for 1-2 MiB. The GPU measurements in "Measure
+  first" were not run: this PC's card is held by the live install.
+- **Only an engine that listens on loopback saves.** llama-server's slot
+  routes take no key, so an engine other machines can reach would let them
+  write, read back and erase files; such a runtime says why it keeps none.
+- **Defaults built (DI-C4 as answered):** on, 3 days after the last use,
+  20 GiB (a setting, least recently used first). Off deletes every file. A
+  deleted runtime's files go with it; an edited runtime's stay. Every
+  person's chats are cached alike; the files are never readable through any
+  route, and the console shows counts and sizes only.
+
 #### Later: move a machine's conversations before maintenance (DI2b)
 
 Troy, 2026-10-20: a large install takes machines offline for maintenance, and

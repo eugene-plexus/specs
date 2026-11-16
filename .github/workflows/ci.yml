@@ -464,6 +464,19 @@ jobs:
       - name: Checked engine updates, runtime drains and a gateway restart that finishes its streams (row 13)
         if: matrix.shard == 'L2'
         run: python specs/scripts/row13-engine-update-acceptance.py
+      # Row 15: the prompt cache on disk, with the acquired llama.cpp CPU build and the
+      # tiny Stories15M model: saved at a planned stop, read back before ready, never read
+      # by another launch, expired, deleted when off, cleared and with its runtime; then
+      # every launch given one key, which must fail the run, restored from a copy.
+      - name: The prompt cache kept on disk across restarts, sabotaged (row 15)
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
+        run: python specs/scripts/row15-disk-prompt-cache-acceptance.py --output .codex-tmp/row15 --sabotage
+      - name: Keep row 15 evidence
+        if: always() && (matrix.shard == 'L2' || matrix.shard == 'W2')
+        uses: actions/upload-artifact@v4
+        with:
+          name: row15-disk-prompt-cache-${{ matrix.shard }}
+          path: .codex-tmp/row15/**/result.json
       # Row 12: the numbers a scraper and a collector read, through a real root, agent,
       # driver and gateway, a stand-in llama-server and a stand-in OTLP collector.
       - name: Prometheus metrics, a scrape key and an OTLP export through a real install (row 12)
