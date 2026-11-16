@@ -12007,8 +12007,11 @@ components:
           type: number
           minimum: 0
           description: |
-            Mean request latency in milliseconds, from the stored sums. Present
-            on a `source: rollup` group, which has no percentiles.
+            Mean request latency in milliseconds. On a `source: rollup` group,
+            which has no percentiles, from the stored sums; on a raw group
+            (row 38) beside `latencyMs`, so a chart can join hours inside
+            retention with the hours past it. Absent from a raw group of a
+            gateway older than metrics v16.
         latencyMaxMs:
           type: integer
           minimum: 0
