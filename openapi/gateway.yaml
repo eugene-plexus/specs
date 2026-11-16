@@ -5783,18 +5783,19 @@ paths:
 
           **A person's group routing (row 37).** For a request with a
           verified person, the root's admission answer may carry the
-          person's `roleRouting` and `allowedModels` (their active
-          group's). A role it routes resolves to the group's list instead
-          of this slot's; a role it does not route uses this slot. Either
-          way every model outside the allowed set (the key's
-          `allowedModels` and the person's, both) is dropped before any is
-          tried, fallbacks and server-run tools' models included, and a
+          person's `roleRouting` (their active group's) and `modelLimits`
+          (every group of theirs that sets a model list). A role it routes
+          resolves to the group's list instead of this slot's; a role it
+          does not route uses this slot. Either way every model outside the
+          allowed set (the key's `allowedModels` and every one of the
+          person's lists) is dropped before any is tried, fallbacks and server-run tools' models included, and a
           group list that keeps none falls back to this slot's list,
-          filtered. A model the person's group leaves out is refused 403
-          with `code` `model_not_allowed`: "Your group Sales does not
-          include m3. Ask the owner, or choose another model." A role with
-          nothing left is a 404: "No model your group Sales allows has the
-          role Chat." `GET /v1/models` with a person's token lists only the
+          filtered. A model one of the person's groups leaves out is refused
+          403 with `code` `model_not_allowed`, on the Responses door too:
+          "Your group Sales does not include m3. Ask the owner, or choose
+          another model." A role with nothing left is a 404: "No model your
+          groups allow has the role Chat." A model name over 256 characters
+          is never matched against a list. `GET /v1/models` with a person's token lists only the
           models they may reach and the `role:*` entries they can use.
         * **`geminiModelNames`** (`model_slots`, default `[]`, label
           **Gemini model names**) — live mappings on the Gemini door.

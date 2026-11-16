@@ -245,10 +245,10 @@ components:
       required: [keyId, keyName]
       description: |
         Row 37: an agent or gateway from before row 37 refuses an answer that
-        carries `roleRouting`, `allowedModels` or `modelGroup` (its model
-        forbids unknown fields), so a person whose active group sets either
-        is refused with a 503 there until it is updated: it fails closed,
-        never open. The root sends them only when that group sets them.
+        carries `roleRouting`, `routingGroup` or `modelLimits` (its model
+        forbids unknown fields), so a person whose groups set them is refused
+        there until that machine is updated: it fails closed, never open.
+        The root sends them only when a group sets them.
       properties:
         keyId: {type: string}
         keyName: {type: string}
@@ -284,28 +284,28 @@ components:
             verified a person and that group routes at least one role. A
             request for `role:<role>` that this names tries these models in
             order, after the gateway drops every model outside the allowed
-            set; a role it does not name uses the install's slot. Absent: the
+            set (`modelLimits` and the key's list); a role it does not name
+            uses the install's slot. Absent: the
             install's routing for every role, as before row 37. Never taken
             from the caller.
-        allowedModels:
-          type: array
-          maxItems: 64
-          uniqueItems: true
-          items: {type: string, minLength: 1, maxLength: 256}
-          description: |
-            The models the verified person may reach (row 37), from their
-            active group: exact ids or patterns with `*`, as the key's
-            `allowedModels`. The gateway allows a model only when this and
-            the key's own list both allow it, for the model asked for, every
-            fallback and every model a server-run tool calls. A `role:<role>`
-            name is not checked against it: the role's models are. Present
-            only when the root verified a person and that group limits
-            models; absent is no limit beyond the key's. Empty allows none.
-        modelGroup:
+        routingGroup:
           $ref: '#/components/schemas/ModelGroup'
           description: |
-            The group `roleRouting` and `allowedModels` come from (row 37),
-            so a refusal names it. Present when either is.
+            The group `roleRouting` comes from (row 37): the person's active
+            group. Present with `roleRouting`.
+        modelLimits:
+          type: array
+          maxItems: 64
+          items: {$ref: '#/components/schemas/GroupModelLimit'}
+          description: |
+            Row 37 (call R37-SELF, Choice 3): the model list of every group
+            the verified person is in that sets one, sorted by group name. A
+            model is allowed only when the key's own `allowedModels` and
+            every list here allow it, for the model asked for, every fallback
+            and every model a server-run tool calls; the person's choice of
+            active group never widens it. A `role:<role>` name is not checked
+            against these lists: the role's models are. Absent when no group
+            of theirs sets a list: no limit beyond the key's.
     RoleRouting:
       type: object
       description: |
@@ -328,6 +328,19 @@ components:
       properties:
         id: {type: string, minLength: 1, maxLength: 64}
         name: {type: string, minLength: 1, maxLength: 80}
+    GroupModelLimit:
+      type: object
+      additionalProperties: false
+      required: [group, models]
+      description: One group's model list, as it limits a person (row 37).
+      properties:
+        group: {$ref: '#/components/schemas/ModelGroup'}
+        models:
+          type: array
+          maxItems: 64
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 256}
+          description: Exact ids or patterns with `*`, at most 8 `*` in one entry. Empty allows none.
     AdmissionRefusalReason:
       type: string
       enum: [concurrency, rate]
