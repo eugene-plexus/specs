@@ -74,6 +74,7 @@ PINNED_STEPS = {
     "ls5-preparation-acceptance.py": (FULL, "both"),
     "runtime-stop-acceptance.py": (EVERY, "both"),
     "row43-cards-left-acceptance.py": (EVERY, "linux"),
+    "row42-vllm-container-acceptance.py": (EVERY, "linux"),
     # Row 36 (2026-10-26): why a machine's announcement was refused.
     "row36-announcement-acceptance.py": (EVERY, "linux"),
     "ls6-fit-acceptance.py": (FULL, "both"),
