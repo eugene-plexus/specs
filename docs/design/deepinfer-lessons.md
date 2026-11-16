@@ -216,10 +216,37 @@ disk. `mlx_lm` can save a prompt cache to a file.
   routes take no key, so an engine other machines can reach would let them
   write, read back and erase files; such a runtime says why it keeps none.
 - **Defaults built (DI-C4 as answered):** on, 3 days after the last use,
-  20 GiB (a setting, least recently used first). Off deletes every file. A
+  20 GiB (a setting, oldest first). Off deletes every file. A
   deleted runtime's files go with it; an edited runtime's stay. Every
   person's chats are cached alike; the files are never readable through any
   route, and the console shows counts and sizes only.
+
+#### Review fixes (second model, 2026-11-16)
+
+One blocker and six should-fix, each fixed with a test that fails without it:
+
+- **B1.** Whether an engine listens on loopback is read as llama-server reads
+  it: the last `--host` (or `--host=`) on the final command line, `extraArgs`
+  included, else `LLAMA_ARG_HOST`.
+- **S2.** Reading a file back does not renew it: a file expires its days
+  after it was saved, and a conversation that goes on is saved again.
+- **S3.** Every regular file in the cache's folders is the cache's, whatever
+  its name: it counts toward the cap and the days, and goes on off and Clear.
+- **S4.** The uninstall's "Also delete settings, app data and logs" deletes
+  `prompt-cache`; a Windows or Mac move of the install does not carry it.
+- **S5.** Tests for the owner-only routes against service and operations
+  tokens, a refused save, and the readiness loop's own sweep; a failed sweep
+  is logged.
+- **S6.** A save never takes its disk below `diskPromptCacheMinFreeGb`
+  (10 GB), never writes more than the cap (estimated from the launch's last
+  files, which carry their token counts), and a slot whose save ran out of
+  time is not tried again blindly. The runtime's note says why.
+- **S7.** `--no-slots`, `LLAMA_ARG_ENDPOINT_SLOTS=0` or an API key gets no
+  folder, and the note says why.
+- **Notes.** The folder saved into is the plan's own; a note never names a
+  path; the key gives `--model=PATH` and `LLAMA_ARG_*` values the file's
+  identity, with its file id; a file the system kept is not counted as
+  deleted.
 
 #### Later: move a machine's conversations before maintenance (DI2b)
 

@@ -3334,7 +3334,7 @@ mac_lower() {
 # before the copy: it must hold what it held then. An app's `versions` goes
 # the same way. Python code needs nothing more: imports check a name
 # exactly, even where the volume ignores case.
-MAC_RESERVED="exec-approvals.json venv pythons .cache uninstall update engines eugene-mlx install-check.py release-requirements.lock .engine-records"
+MAC_RESERVED="exec-approvals.json venv pythons .cache uninstall update engines eugene-mlx install-check.py release-requirements.lock .engine-records prompt-cache"
 mac_migrate_reserved() {
     for _reserved in $MAC_RESERVED; do
         mac_remove_by_lookup "$PREFIX/$_reserved"
@@ -3364,7 +3364,7 @@ mac_remove_by_lookup() {
 # runs -- the engine store and an MLX environment among it.
 mac_migrate_skips() {
     case "$(mac_lower "$1")" in
-        venv|pythons|bin|.cache|uninstall|update|engines|eugene-mlx|install-check.py|release-requirements.lock) return 0 ;;
+        venv|pythons|bin|.cache|uninstall|update|engines|eugene-mlx|install-check.py|release-requirements.lock|prompt-cache) return 0 ;;
     esac
     return 1
 }
@@ -4196,8 +4196,12 @@ def inventory(prefix: Path) -> dict:
     ]
     apps = prefix / "apps"
     software += [apps / name for name in ("pythons", "launcher", "ctl")]
-    # `store`: the files apps kept through the gateway (row 53).
-    data = [prefix / name for name in ("logs", "passphrase", "control-state", "store")]
+    # `store`: the files apps kept through the gateway (row 53). `prompt-cache`: the
+    # conversations the engines saved across restarts (row 15), copies of people's chats.
+    data = [
+        prefix / name
+        for name in ("logs", "passphrase", "control-state", "store", "prompt-cache")
+    ]
     for app in apps.iterdir() if apps.is_dir() and not apps.is_symlink() else []:
         if (
             app.is_dir()

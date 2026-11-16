@@ -78,8 +78,12 @@ def inventory(prefix: Path) -> dict:
     ]
     apps = prefix / "apps"
     software += [apps / name for name in ("pythons", "launcher", "ctl")]
-    # `store`: the files apps kept through the gateway (row 53).
-    data = [prefix / name for name in ("logs", "passphrase", "control-state", "store")]
+    # `store`: the files apps kept through the gateway (row 53). `prompt-cache`: the
+    # conversations the engines saved across restarts (row 15), copies of people's chats.
+    data = [
+        prefix / name
+        for name in ("logs", "passphrase", "control-state", "store", "prompt-cache")
+    ]
     for app in apps.iterdir() if apps.is_dir() and not apps.is_symlink() else []:
         if (
             app.is_dir()

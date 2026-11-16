@@ -54,6 +54,7 @@ class RemovalTests(unittest.TestCase):
         self.write("apps/chat/versions/1/venv/bin/python")
         self.write("apps/chat/data/chat.sqlite3")
         self.write("control-state/keys.json")
+        self.write("prompt-cache/qwen/k1/1-aaaaaa-s0.bin")
         self.write("library-state.runs.sqlite3-wal")
         self.write("gateway.yaml.unreadable")
         copies = (
@@ -71,6 +72,8 @@ class RemovalTests(unittest.TestCase):
         self.assertIn(str(self.prefix / "apps/chat/versions"), plan["software"])
         self.assertIn(str(self.prefix / "apps/chat/data"), plan["data"])
         self.assertIn(str(self.prefix / "control-state"), plan["data"])
+        # Row 15: the saved conversations are people's chats, deleted with the data.
+        self.assertIn(str(self.prefix / "prompt-cache"), plan["data"])
         self.assertIn(str(self.prefix / "library-state.runs.sqlite3-wal"), plan["data"])
         self.assertIn(str(self.prefix / "gateway.yaml.unreadable"), plan["data"])
         for name in copies:
@@ -238,6 +241,37 @@ class RemovalTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(0, third.returncode, third.stdout + third.stderr)
+
+
+class MovedInstallTests(unittest.TestCase):
+    """Row 15 (review S4): an install moved to a new folder does not carry the saved
+    conversations. They are copies of people's chats, keyed on the old install's paths."""
+
+    def test_windows_does_not_copy_the_prompt_cache(self):
+        text = (ROOT / "install.ps1").read_text(encoding="utf-8")
+        match = re.search(r'\$installerOwned = @\(([^)]*)\)', text)
+        self.assertIsNotNone(match)
+        names = re.findall(r'"([^"]+)"', match.group(1))
+        self.assertIn("prompt-cache", names)
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_a_mac_move_leaves_the_prompt_cache_behind(self):
+        text = (ROOT / "install.sh").read_text(encoding="utf-8")
+        functions = "".join(
+            re.search(rf"^{name}\(\) {{.*?^}}\n", text, re.M | re.S).group(0)
+            for name in ("mac_lower", "mac_migrate_skips")
+        )
+        reserved = re.search(r'^MAC_RESERVED="([^"]*)"', text, re.M)
+        self.assertIsNotNone(reserved)
+        self.assertIn("prompt-cache", reserved.group(1).split())
+        for name, skipped in (("prompt-cache", 0), ("Prompt-Cache", 0), ("agent.yaml", 1)):
+            run = subprocess.run(
+                ["bash", "-c", functions + f"mac_migrate_skips '{name}'"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(skipped, run.returncode, (name, run.stderr))
 
 
 if __name__ == "__main__":

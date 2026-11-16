@@ -5092,9 +5092,11 @@ paths:
         **The files are copies of people's chats** (the token ids and the
         engine's state for them). They are never readable through any
         route: this answers counts, sizes and dates only. They expire
-        `days` after their last use, the least recently used go first
-        above `capBytes`, a runtime's files go with the runtime, and
-        turning the setting off deletes them all.
+        `days` after they were saved (reading one back does not renew it),
+        the oldest go first above `capBytes`, a save never takes the disk
+        below `diskPromptCacheMinFreeGb`, a runtime's files go with the
+        runtime, and turning the setting off deletes them all. Every
+        regular file in the folder counts as the cache's, whatever its name.
 
         **A file is read back only by the launch it was saved by:** the
         same runtime, model file, engine build and command line (cache
@@ -10415,7 +10417,11 @@ components:
             its next start reads them back. False when the setting is off,
             the engine was started without Eugene's folder (an older start,
             a build without `--slot-save-path`, an engine other machines can
-            reach, or a folder set by hand), and `note` says which.
+            reach by its last `--host`, slot routes turned off or behind an
+            API key, or a folder set by hand), and `note` says which. While
+            it saves, `note` says why the last stop kept less than it held
+            (no room above the free-space floor or the cap, no time, the
+            engine's refusal). Never a path.
         conversations:
           type: integer
           minimum: 0
@@ -10465,11 +10471,11 @@ components:
         oldest:
           type: [string, "null"]
           format: date-time
-          description: When the least recently used file was last used. Null with no files.
+          description: When the oldest file was saved. Null with no files.
         newest:
           type: [string, "null"]
           format: date-time
-          description: When the most recently used file was last used. Null with no files.
+          description: When the newest file was saved. Null with no files.
         folder:
           type: [string, "null"]
           description: The folder on this machine. Null when this agent has none.
