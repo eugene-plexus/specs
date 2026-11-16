@@ -195,6 +195,10 @@ tags:
       per-component code.
   - name: meta
     description: Health and version.
+  - name: alerts
+    description: |
+      Alert rules, SLO targets and the alert webhook, evaluated by the active
+      root once a minute (row 38).
   - name: sites
     description: |
       Job Sites (`docs/design/job-sites-own-enrollment.md`): machines a
@@ -1031,6 +1035,11 @@ paths:
               schema: {$ref: '#/components/schemas/OAuthError'}
         '403':
           description: '`not_a_member`: the person is not in that group. `not_a_person`: the token is the owner''s, who is in no group.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '409':
+          description: '`temporarily_unavailable`: the install''s standby runs an older Eugene and could not copy the choice; the owner updates it first.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
@@ -4300,6 +4309,102 @@ paths:
           description: Authentication, current permission, state, or availability refused the request.
         '503':
           description: Authentication, current permission, state, or availability refused the request.
+  /v1/alerts:
+    get:
+      operationId: getAlerts
+      tags: [alerts]
+      summary: What is firing now, what fired lately, and how each SLO stands
+      description: |
+        Row 38 (`docs/design/rows/row-38.md`). The active root evaluates the
+        alert rules once a minute: it reads the gateway's metrics summary,
+        each machine's host history and its own record of which machines
+        answer. This is what it found, from this root's memory: a root that
+        took over starts with an empty history, and a rule fires again there
+        after its `forMinutes`.
+
+        The owner's session reads everything. A person with an operations
+        power (row 39) reads it with their administration session, read
+        only: alerts about the machines their powers reach and about models,
+        and SLOs set on a model. SLOs set on a client key, and the alerts
+        they raise, stay the owner's, as do the rules and the webhook
+        (`GET /v1/alerting`).
+      responses:
+        '200':
+          description: The alert state.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertsView'}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '403': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '503': {$ref: 'components/common.yaml#/components/responses/Problem'}
+  /v1/alerting:
+    get:
+      operationId: getAlerting
+      tags: [alerts]
+      summary: The alert rules, the SLO targets and whether a webhook is set
+      description: |
+        Row 38. The owner only. Until the owner saves rules, `defaults` is
+        true and `rules` is the built-in set the evaluator uses: a machine
+        that does not answer for 5 minutes, a disk over 90% for 10 minutes,
+        a GPU over 85 °C for 5 minutes, failures over 5% for 10 minutes,
+        and an SLO budget burning 14.4 times too fast for 5 minutes. The
+        webhook address is a secret: only its host is shown back.
+      responses:
+        '200':
+          description: The settings in effect.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertingSettings'}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '403': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '503': {$ref: 'components/common.yaml#/components/responses/Problem'}
+    put:
+      operationId: setAlerting
+      tags: [alerts]
+      summary: Replace the alert rules and SLO targets, and set or remove the webhook
+      description: |
+        Row 38. The owner only. One `setAlerting` entry (log version 2):
+        the rules and targets replace the ones held. `webhookUrl` absent
+        keeps the webhook; null or empty removes it; a URL sets it, sealed
+        under the master key and never shown back. Only `http` and `https`
+        addresses are taken. Refused (409) on a standby, and while the
+        install's standby applies a log version below 2: update the standby
+        first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AlertingUpdate'}
+      responses:
+        '200':
+          description: The settings now in effect.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertingSettings'}
+        '400': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '403': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '409': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '503': {$ref: 'components/common.yaml#/components/responses/Problem'}
+  /v1/alerting/test:
+    post:
+      operationId: testAlertWebhook
+      tags: [alerts]
+      summary: Post a test alert to the webhook now
+      description: |
+        Row 38. The owner only. Posts one `AlertWebhookPost` with
+        `state: test` to the webhook that is set, once, without retries,
+        and answers with what happened. 409 when no webhook is set.
+      responses:
+        '200':
+          description: What the webhook answered.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AlertWebhookStatus'}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '403': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '409': {$ref: 'components/common.yaml#/components/responses/Problem'}
+        '503': {$ref: 'components/common.yaml#/components/responses/Problem'}
 components:
 
   securitySchemes:
@@ -5706,7 +5811,9 @@ components:
             Absent until it has pulled since this root started. Log
             version 1 adds `retireOidcKeys` and `changePassphrase`: this
             root refuses to write either while its standby reports less,
-            because the standby's copy would stop there.
+            because the standby's copy would stop there. Log version 3
+            (row 37) adds `setPersonActiveGroup`, and the group and person
+            fields of row 37, under the same rule.
 
     LogPage:
       type: object
@@ -5855,14 +5962,18 @@ components:
         - setNodeCertificateNames
         - retireOidcKeys
         - changePassphrase
+        - setAlerting
         - setPersonActiveGroup
       description: |
-        **`setPersonActiveGroup` (row 37)** sets one person's `activeGroup`
-        and nothing else of their record: `{id, activeGroup}`, where
-        `activeGroup` is one of their groups or null. It is how a person's
-        own choice at `/oidc/active-group` is written, applied to the record
-        as it is then, so a choice cannot write back anything the owner
-        changed meanwhile. A standby from before row 37 cannot apply it.
+        **`setPersonActiveGroup` (row 37, log version 3)** sets one
+        person's `activeGroup` and nothing else of their record: `{id,
+        activeGroup}`, where `activeGroup` is one of their groups or null.
+        It is how a person's own choice at `/oidc/active-group` is written,
+        applied to the record as it is then, so a choice cannot write back
+        anything the owner changed meanwhile. Log version 3 also covers a
+        group record that sets `roleRouting` or `allowedModels` and a person
+        record with `activeGroup`: the root refuses to write any of them
+        (409) while its standby reports a log version below 3.
 
         **`retireOidcKeys` (row 5, log version 1)** keeps only the sign-in
         keys named in `keep` (`{keep: [kid]}`, at least one held key) and
@@ -5875,7 +5986,8 @@ components:
         holds every value the old master key sealed, sealed again under
         the new one by the writer (`signingKey`, `controlKey`,
         `recoveryKey`, `installCaKey`, `oidcKeys` by `kid`, and
-        `externalProviders` by id). It must name exactly the sealed values
+        `externalProviders` by id, and `alertWebhook` when a webhook is set).
+        It must name exactly the sealed values
         the state holds, no more and no fewer, or it does not apply. Every
         root that applies it writes a snapshot and drops every entry
         before it, so no value sealed under the old key stays in the log;
@@ -5883,6 +5995,11 @@ components:
         every entry that carries a sealed value (`putOidcKey`,
         `rotateSigningKey`, `setInstallCa`, `putExternalProvider`,
         `changePassphrase`) only while the salt is the one it sealed under.
+
+        **`setAlerting` (row 38, log version 2)** replaces the alert rules
+        and SLO targets (`{rules, slos, sealedWebhookUrl, webhookHost}`).
+        The webhook address is sealed under the master key, and the
+        writer appends it only while the salt is the one it sealed under.
 
         **`setNodeCertificateNames` (LT2, 2026-10-20)** replaces the names
         the owner listed for one node's client certificate (`{name,
@@ -6141,6 +6258,11 @@ components:
           description: |
             The provider's RSA keys, newest first, each sealed under the
             passphrase-derived key as `sealedSigningKey` is.
+        alerting:
+          oneOf:
+            - $ref: '#/components/schemas/SnapshotAlerting'
+            - type: 'null'
+          description: What `setAlerting` wrote; null until the owner saves alert settings (row 38).
         revokedSignIns:
           type: array
           items:
@@ -7250,3 +7372,267 @@ components:
         groups:
           type: array
           items: {$ref: '#/components/schemas/PermissionGroup'}
+
+    # -------- Alerts and SLOs (row 38) --------
+
+    AlertRuleKind:
+      type: string
+      enum: [machine-down, disk-full, gpu-hot, failure-rate, slo-burn]
+      description: |
+        What a rule watches, and what its `threshold` means:
+
+        - `machine-down`: an enrolled machine this root cannot reach. No
+          threshold.
+        - `disk-full`: a model or engine folder's volume, percent used.
+        - `gpu-hot`: a GPU's temperature, °C. A GPU that does not report
+          its temperature is never hot.
+        - `failure-rate`: failed requests, percent of the requests over the
+          last `forMinutes` (at least 10 requests).
+        - `slo-burn`: an SLO's error budget spent this many times faster
+          than its window allows, over the last hour.
+    AlertRule:
+      type: object
+      additionalProperties: false
+      required: [id, kind]
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+        kind: {$ref: '#/components/schemas/AlertRuleKind'}
+        enabled: {type: boolean, default: true}
+        threshold:
+          type: number
+          minimum: 0
+          default: 0
+          description: What `kind` says. Ignored by `machine-down`.
+        forMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          default: 5
+          description: |
+            How long the condition must hold before the alert fires, and how
+            long it must be clear before it resolves, so a value that flaps
+            does not post every minute.
+        machine:
+          type: [string, 'null']
+          description: One machine by name; null is every machine. Machine kinds only.
+        model:
+          type: [string, 'null']
+          description: One model; null is every model together. `failure-rate` only.
+        sloId:
+          type: [string, 'null']
+          description: One SLO; null is every SLO. `slo-burn` only.
+    SloFirstTokenPercentile:
+      type: integer
+      enum: [50, 90, 99]
+    SloTarget:
+      type: object
+      additionalProperties: false
+      required: [id, successPercent]
+      description: |
+        A target for one model, one client key or the whole install, over a
+        rolling window. Success is computed from the gateway's hourly
+        rollups, so a window may reach 90 days. A first-token target is read
+        as a percentile over the requests the gateway still keeps whole
+        (`metricsRetentionDays`), and says so; a client key's target has
+        success only, over the same kept requests.
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+        name: {type: [string, 'null'], maxLength: 120}
+        model: {type: [string, 'null'], description: Null is every model.}
+        clientKeyId: {type: [string, 'null'], description: One client key. Set with model null.}
+        windowDays: {type: integer, minimum: 1, maximum: 90, default: 30}
+        successPercent:
+          type: number
+          minimum: 50
+          maximum: 99.999
+          description: The share of requests that must be served.
+        firstTokenSeconds:
+          type: [number, 'null']
+          exclusiveMinimum: 0
+          maximum: 600
+        firstTokenPercentile:
+          oneOf:
+            - $ref: '#/components/schemas/SloFirstTokenPercentile'
+            - type: 'null'
+          description: With `firstTokenSeconds`, "this share of first tokens within that time".
+    AlertWebhookView:
+      type: object
+      required: [configured]
+      properties:
+        configured: {type: boolean}
+        host:
+          type: [string, 'null']
+          description: The webhook's host only. The address is a secret and is never shown back.
+    AlertingSettings:
+      type: object
+      required: [rules, slos, webhook, defaults]
+      properties:
+        rules:
+          type: array
+          items: {$ref: '#/components/schemas/AlertRule'}
+        slos:
+          type: array
+          items: {$ref: '#/components/schemas/SloTarget'}
+        webhook: {$ref: '#/components/schemas/AlertWebhookView'}
+        defaults:
+          type: boolean
+          description: True until the owner saves rules; `rules` is then the built-in set in effect.
+    AlertingUpdate:
+      type: object
+      additionalProperties: false
+      required: [rules, slos]
+      properties:
+        rules:
+          type: array
+          maxItems: 50
+          items: {$ref: '#/components/schemas/AlertRule'}
+        slos:
+          type: array
+          maxItems: 50
+          items: {$ref: '#/components/schemas/SloTarget'}
+        webhookUrl:
+          type: [string, 'null']
+          maxLength: 2048
+          description: Absent keeps the webhook; null or empty removes it.
+    AlertState:
+      type: string
+      enum: [firing, resolved]
+    Alert:
+      type: object
+      required: [id, ruleId, kind, state, message, startedAt]
+      properties:
+        id: {type: string, description: 'One alert: the rule and what it is about.'}
+        ruleId: {type: string}
+        kind: {$ref: '#/components/schemas/AlertRuleKind'}
+        state: {$ref: '#/components/schemas/AlertState'}
+        message: {type: string, description: 'One line, state first: "GPU 0 on nas is at 88 °C".'}
+        value: {type: [number, 'null']}
+        threshold: {type: [number, 'null']}
+        machine: {type: [string, 'null']}
+        model: {type: [string, 'null']}
+        sloId: {type: [string, 'null']}
+        link: {type: [string, 'null'], description: The console page that shows it.}
+        startedAt: {type: string, format: date-time}
+        resolvedAt: {type: [string, 'null'], format: date-time}
+    SloState:
+      type: string
+      enum: [met, at-risk, missed, no-data]
+      description: |
+        `at-risk`: met, with less than a quarter of the error budget left,
+        or the first-token target not met. `missed`: no budget left.
+    SloFirstTokenStatus:
+      type: object
+      required: [percentile, targetSeconds, keptDays]
+      properties:
+        percentile: {$ref: '#/components/schemas/SloFirstTokenPercentile'}
+        targetSeconds: {type: number}
+        measuredSeconds:
+          type: [number, 'null']
+          description: The percentile over the kept requests that streamed; null when none did.
+        met: {type: [boolean, 'null']}
+        keptDays:
+          type: number
+          description: The days of whole requests the percentile is read over (the window, or less).
+    SloStatus:
+      type: object
+      required: [id, windowDays, successPercent, requests, failures, state]
+      properties:
+        id: {type: string}
+        name: {type: [string, 'null']}
+        model: {type: [string, 'null']}
+        clientKeyId: {type: [string, 'null']}
+        clientKeyName: {type: [string, 'null']}
+        windowDays: {type: integer}
+        successPercent: {type: number, description: The target.}
+        requests: {type: integer, minimum: 0}
+        failures: {type: integer, minimum: 0}
+        measuredPercent:
+          type: [number, 'null']
+          description: Served over requests in the window; null with no requests.
+        budgetLeftPercent:
+          type: [number, 'null']
+          description: The allowed failures not yet spent, percent; below zero when overspent.
+        burnRate:
+          type: [number, 'null']
+          description: The last hour's failure share over the share the target allows; 1 spends the budget exactly over the window.
+        coveredDays:
+          type: number
+          description: The days the gateway's records reach back over this window.
+        firstToken:
+          oneOf:
+            - $ref: '#/components/schemas/SloFirstTokenStatus'
+            - type: 'null'
+        state: {$ref: '#/components/schemas/SloState'}
+    AlertWebhookState:
+      type: string
+      enum: [off, ok, failing]
+    AlertWebhookStatus:
+      type: object
+      required: [state]
+      properties:
+        state: {$ref: '#/components/schemas/AlertWebhookState'}
+        lastAttemptAt: {type: [string, 'null'], format: date-time}
+        lastSuccessAt: {type: [string, 'null'], format: date-time}
+        lastError:
+          type: [string, 'null']
+          description: 'Why the last post failed, after three tries: "connection refused", "HTTP 404".'
+    AlertWebhookPost:
+      type: object
+      description: |
+        What the root posts to the webhook, as JSON, for each alert that
+        fires or resolves. Slack, Discord, ntfy and Home Assistant take it
+        (`text` and `content` carry the line for the chat ones).
+      required: [rule, state, at, text]
+      properties:
+        rule: {type: string}
+        state: {type: string, enum: [firing, resolved, test]}
+        value: {type: [number, 'null']}
+        threshold: {type: [number, 'null']}
+        machine: {type: [string, 'null']}
+        model: {type: [string, 'null']}
+        url: {type: [string, 'null']}
+        at: {type: string, format: date-time}
+        text: {type: string}
+        content: {type: string}
+    AlertsView:
+      type: object
+      required: [evaluating, firing, recent, slos, webhook, problems]
+      properties:
+        evaluating:
+          type: boolean
+          description: False on a standby, and on a root that is locked.
+        evaluatedAt: {type: [string, 'null'], format: date-time}
+        problems:
+          type: array
+          items: {type: string}
+          description: 'Reads the last evaluation could not make, each with its cause: "Gateway metrics: connection refused".'
+        firing:
+          type: array
+          items: {$ref: '#/components/schemas/Alert'}
+        recent:
+          type: array
+          items: {$ref: '#/components/schemas/Alert'}
+          description: Resolved alerts, newest first, at most 100.
+        slos:
+          type: array
+          items: {$ref: '#/components/schemas/SloStatus'}
+        webhook: {$ref: '#/components/schemas/AlertWebhookStatus'}
+    SnapshotAlerting:
+      type: object
+      description: What `setAlerting` wrote (row 38).
+      required: [rules, slos]
+      properties:
+        rules:
+          type: array
+          items: {type: object}
+        slos:
+          type: array
+          items: {type: object}
+        sealedWebhookUrl:
+          type: [string, 'null']
+          description: The webhook address, sealed under the passphrase-derived key.
+        webhookHost: {type: [string, 'null']}
