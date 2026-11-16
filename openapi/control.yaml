@@ -994,12 +994,13 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
-    put:
+    post:
       operationId: oidcSetActiveGroup
       summary: Choose the group a person works from (row 37)
       description: |
         A bearer access token from `/oidc/token`: the person chooses for
-        themselves. `group` is one of their groups, or null for the first in
+        themselves. A POST, as every other write under `/oidc`, so it
+        passes through a machine's agent as they do. `group` is one of their groups, or null for the first in
         their list. The gateway applies it to their next request; the
         sign-in claims carry it at the next token refresh.
       requestBody:
@@ -7153,7 +7154,8 @@ components:
           description: |
             Row 37: the group `roleRouting` and `allowedModels` come from:
             the person's chosen `activeGroup`, else the first of their
-            `groups` that exists. Absent with individual access or no group.
+            `groups` that exists. Present only when that group sets one of
+            them; `/oidc/active-group` always says which group is in effect.
         roleRouting:
           $ref: '#/components/schemas/RoleRouting'
           description: Row 37. The active group's routing by role. Absent is the install's.
