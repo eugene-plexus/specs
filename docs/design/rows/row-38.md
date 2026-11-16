@@ -133,11 +133,40 @@ webhook URL is a secret (sealed, never shown back).
 - **Home** lists each firing alert with its fix, except a machine that does
   not answer, which the node list already reports; and a webhook that
   stopped answering, with its cause.
-- **Not built:** the CI acceptance in section 5. Row 12's harness starts
-  control and the gateway outside the agent, so the root would have no
-  agent proxy and no component list to find the gateway by; the evaluator
-  is covered by unit tests of each part (the rule state machine, the
-  webhook's retries, the reads' URL and token, the gateway's acceptance of
-  the token, the owner and operations views). The alert state is not
+- **The acceptance in section 5 is not built as designed.** Row 12's
+  harness starts control and the gateway outside the agent, so the root
+  would have no agent proxy and no component list to find the gateway by.
+  Instead `root-moved-acceptance.py` gained step 0: on four machines, the
+  root's evaluation reads C's gateway through A's agent proxy, with a token
+  addressed to C, and reports no failed gateway read. The rules, the
+  webhook and the views are covered by unit tests. The alert state is not
   replicated: a root that takes over starts empty and fires again what
   still holds.
+
+## Review fixes (2026-11-16)
+
+- **B1.** httpx logs each request's URL at INFO, which put the sealed
+  webhook address in the agent's log, which Updates and restarts reads. A
+  filter on `httpx` and `httpcore` replaces every address the sender posts
+  to with its scheme and host.
+- **S1, S6: what a person with an operations power reads.** An SLO alert
+  only when its SLO is a current target on a model (decided from the
+  targets in effect, not from the last SLO read, which is empty when that
+  read failed). What the gateway counted (failure rates, SLOs on a model,
+  their alerts, a failed gateway read) only when the gateway's machine is
+  inside their reach. A failed read about a machine only when that machine
+  is inside their reach.
+- **S6.** A failure-rate alert ends when the owner moves its rule to
+  another model. A machine's host history answering 404 or 503 is named
+  ("its agent is older than host history", "keeps no host history").
+- **S4.** The webhook address is read with `httpx.URL` at save and before
+  each post. A bad one is refused with 400 at save, is named as "not a
+  valid URL" in `lastError`, and `POST /v1/alerting/test` never answers 500.
+- **Two gateways.** The evaluator reads the gateway the agent's proxy picks:
+  the one on the root's own machine first, else the only one. When two
+  other machines run a gateway, it reads neither and names both in
+  `problems`.
+- **An SLO's burn needs 10 requests in the last hour** (the failure-rate
+  rule's minimum) before an `slo-burn` rule holds. Fewer is not a rate.
+- **S2. Log versions.** Row 38 merges first and keeps control
+  `LOG_VERSION = 2` (`setAlerting`). Row 40 takes 3 at its catch-up.

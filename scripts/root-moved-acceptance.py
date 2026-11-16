@@ -19,6 +19,9 @@ shell reaches any process. No model, no cloud service.
 
 Checks, in order:
 
+0.  Row 38: the root's alert evaluation, once a minute, reads C's gateway
+    through A's agent proxy with a token addressed to C, and reports no
+    failed gateway read.
 1.  B is made the standby and follows. The root reports it on the root's own
     version, caught up, its copy matching the root's (row 4b).
 2.  B's copy is made to differ as a pre-LT1 standby's did: no machine key on
@@ -63,6 +66,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -558,6 +562,40 @@ def exercise(run: Run) -> None:
 
     run.wait(
         every_node_keyed, "the root to reach all four machines with their keys", 120
+    )
+
+    # ---- 0. the root reads C's gateway for its alerts (row 38 review S5) -----
+    # The active root evaluates the alert rules once a minute, reading the
+    # gateway's metrics through its own machine's agent's proxy (A) with a token
+    # addressed to the gateway's machine (C). An evaluation after every machine
+    # answers must report no failed gateway read.
+    keyed_at = time.time()
+    seen_alerts: dict[str, Any] = {}
+
+    def evaluated_with_the_gateway() -> bool:
+        answer = run.get(control, "/v1/alerts", session_root)
+        if answer.status_code != 200:
+            return False
+        seen_alerts.clear()
+        seen_alerts.update(answer.json())
+        at = seen_alerts.get("evaluatedAt")
+        return bool(
+            seen_alerts.get("evaluating")
+            and at
+            and datetime.fromisoformat(at.replace("Z", "+00:00")).timestamp() >= keyed_at
+            and not any(p.startswith("Gateway metrics") for p in seen_alerts["problems"])
+        )
+
+    try:
+        took = run.wait(
+            evaluated_with_the_gateway,
+            "an alert evaluation that read C's gateway through A's proxy",
+            150,
+        )
+    except Failed:
+        raise Failed(f"the root's alert evaluation: {seen_alerts}") from None
+    run.ok(
+        f"0. the root's alert evaluation read C's gateway through A's proxy ({took:.0f} s)"
     )
 
     # ---- 1. B follows, on the root's version, matching -----------------------
