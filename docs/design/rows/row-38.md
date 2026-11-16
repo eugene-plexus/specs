@@ -73,3 +73,71 @@ L, about 4 days. Risks: noisy alerts (durations and resolve times); a
 webhook URL is a secret (sealed, never shown back).
 
 **Calls:** none.
+
+## What building found (2026-11-16)
+
+- **The evaluator runs in the active control root, not in the root
+  machine's agent** (default built; the design said the agent). Every read
+  it needs already takes the root's own service token: each agent's
+  `GET /v1/node/history` (the root polls `GET /v1/node` the same way), and
+  the gateway's `GET /v1/metrics` and `GET /v1/metrics/clients`, which now
+  accept the root's token and nothing else new. An agent has no credential
+  the gateway or another machine's agent takes for these; giving it one
+  would have been three new paths into those machines. The root moves on a
+  takeover: `start_root_tasks` starts the evaluator, so a promoted standby
+  starts it, and a standby or a locked root does not evaluate. The alert
+  state is therefore in `control.yaml` (`GET /v1/alerts`), not `agent.yaml`,
+  and the agent is unchanged.
+- **How the root reaches the gateway:** through its own machine's agent's
+  proxy (`/api/proxy/gateway/...`), with a 5-minute token addressed to the
+  gateway's machine, which the proxy passes unchanged. The gateway's machine
+  is found from the machines' `GET /v1/components`, every ten minutes.
+- **Rules and the webhook** are one `setAlerting` entry (log version 2;
+  `PUT /v1/alerting` is refused while the standby applies an older log). The
+  webhook address is sealed under the master key, listed in the sealed
+  inventory, and sealed again by a passphrase change. Only its host is
+  shown back.
+- **Built-in rules** apply until the owner saves rules (`defaults: true`):
+  a machine down 5 minutes, a disk over 90% for 10, a GPU over 85 °C for 5,
+  failures over 5% over 10 minutes (at least 10 requests), and an SLO
+  burning 14.4 times too fast for 5. They show on Home only; nothing is
+  sent anywhere until the owner sets a webhook.
+- **A failure-rate rule fires at once**: it is already a rate over its
+  `forMinutes`. Every other rule fires after its condition held that long.
+  All resolve after the same quiet time. A reading that could not be made
+  (a machine's history, the gateway) leaves its alerts as they were.
+- **SLOs:** success over the window from the hourly totals (rollups past
+  retention), so up to 90 days. A first-token target is a percentile
+  (50, 90 or 99) over the requests the gateway keeps whole, and says over
+  how many days. A client key's SLO has success only, over the kept
+  requests. The burn rate is the last hour's failure share over the share
+  the target allows.
+- **Who reads what:** the owner reads everything and alone sets the rules,
+  the targets and the webhook. A person with any operations power reads
+  `GET /v1/alerts` with their administration session: alerts about the
+  machines their powers reach and about models, and SLOs set on a model.
+  An SLO set on a client key, and its alerts, stay the owner's. The gateway's
+  per-key usage stays owner-only for people, as row 39 left it.
+- **Wake cost** needed the wait past retention: metrics store v16 adds
+  `waited_ms_sum` to the hourly rollup, and every group carries
+  `waitedMsSum`. Hours rolled up before v16 have it at 0 and the console
+  says those starts' wait was not kept. Energy is an estimate: the wait
+  times the machine's GPUs' mean power over the window, from host history.
+  "Keep loaded" links to the machine's backends, where the runtime's
+  unloading is turned off: a change there restarts a running runtime, so it
+  is not done in one click from the dashboard.
+- **90 days on Metrics:** raw groups now carry `latencyMeanMs` too, so a
+  day joins hours inside retention with the rollup's hours: counts summed,
+  latency the request-weighted mean. Hosts needed no agent change: its hour
+  buckets already reach 90 days.
+- **Home** lists each firing alert with its fix, except a machine that does
+  not answer, which the node list already reports; and a webhook that
+  stopped answering, with its cause.
+- **Not built:** the CI acceptance in section 5. Row 12's harness starts
+  control and the gateway outside the agent, so the root would have no
+  agent proxy and no component list to find the gateway by; the evaluator
+  is covered by unit tests of each part (the rule state machine, the
+  webhook's retries, the reads' URL and token, the gateway's acceptance of
+  the token, the owner and operations views). The alert state is not
+  replicated: a root that takes over starts empty and fires again what
+  still holds.
