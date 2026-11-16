@@ -70,14 +70,14 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=c71a9a8b4ca28748f025f97ac3a1094a6d248aad
-PIN_CONTROL=54cf8b019df2e328eae36986a020f5251ed6d106
-PIN_GATEWAY=ae23bed8eba369b5f741be680ee35fab307c5cd5
+PIN_AGENT=2eead8917be23e22f9e9efe33eacfe5275e44b02
+PIN_CONTROL=dcf086d39eac96fc62213d1eb5d4136d34b33ce7
+PIN_GATEWAY=d9a411075c7c8b33e0954be73fbb940408f6a25e
 PIN_DRIVER=5ba5881d7117679f78a03c4e97e3bac5caf80c8c
 PIN_LIBRARY=723ec68a82a682d05461f2402959f2cff983964d
 PIN_STORE=92d59cb4f703c9564b0f41203d2d36f95feb9460
 PIN_TOOL_DRIVER=16a7a3a0820044427775aa86312739ba9fc1304b
-PIN_UI=f6d82a5af5f2015bd46ad7b3f78b4e7cd609e2ab   # branch `dist`, not `main`
+PIN_UI=9f812993de0887ffea48b42dffb4e2e241ada572   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
@@ -1983,6 +1983,10 @@ Type=exec
 # the system read-only to it and gives it a private /tmp.
 DynamicUser=yes
 StateDirectory=eugene-plexus-apps/%i
+# systemd 257 and later (Debian 13, Ubuntu 26.04) mount a dynamic user's state
+# directory ID-mapped and noexec. An app may run programs it keeps there: Hindsight's
+# database unpacks PostgreSQL into it and runs initdb from it.
+ExecPaths=%S/eugene-plexus-apps/%i
 ProtectHome=yes
 # This prefix as the app sees it: empty and read-only, with the app
 # interpreters, the launcher and the app's own folder put back.

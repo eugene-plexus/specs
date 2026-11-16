@@ -179,6 +179,7 @@ jobs:
           python -m unittest discover -s scripts -p test_worktree.py -v
           python -m unittest discover -s scripts -p test_ship.py -v
           python -m unittest discover -s scripts -p test_repin_branch.py -v
+          python -m unittest discover -s scripts -p test_hindsight_acceptance.py -v
       - name: Check CPU proof contract
         run: python scripts/test_cpu_proof_contract.py
       - name: Compute gates
@@ -458,6 +459,11 @@ jobs:
       - name: One fair queue across a real install and two gateways (row 11)
         if: matrix.shard == 'L2'
         run: python specs/scripts/ld1-fair-queue-acceptance.py
+      # Row 12: the numbers a scraper and a collector read, through a real root, agent,
+      # driver and gateway, a stand-in llama-server and a stand-in OTLP collector.
+      - name: Prometheus metrics, a scrape key and an OTLP export through a real install (row 12)
+        if: matrix.shard == 'L3'
+        run: python specs/scripts/row12-metrics-acceptance.py
       - name: Responses client tools and compact through the OpenAI SDK and fixture backend (row 57)
         if: matrix.shard == 'L1'
         run: python specs/scripts/row57-responses-tools-acceptance.py

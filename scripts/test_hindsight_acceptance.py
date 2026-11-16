@@ -1,6 +1,7 @@
 """Offline checks of the Linux acceptance's evidence checks, never its install."""
 
 import importlib.util
+import re
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -64,6 +65,17 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("LoadCredential=memory_server_token:", script)
         self.assertIn("ProtectHome=yes", script)
         self.assertIn("StateDirectory=eugene-plexus-mv5b/.codex-tmp/%i", script)
+        # specs#117: newer systemd mounts the state directory noexec; pg0 runs
+        # initdb from it. The exec grant must follow the moved directory.
+        self.assertIn("ExecPaths=%S/eugene-plexus-mv5b/.codex-tmp/%i", script)
+        self.assertNotIn("eugene-plexus-apps/%i", script)
+
+    def test_app_unit_lets_an_app_run_what_it_keeps_in_its_state_directory(self) -> None:
+        installer = PATH.with_name("install.sh").read_text(encoding="utf-8")
+        unit = installer.split("write_app_units() {", 1)[1].split("\n}\n", 1)[0]
+        state = re.search(r"^StateDirectory=(\S+)$", unit, re.MULTILINE)
+        assert state is not None
+        self.assertRegex(unit, rf"(?m)^ExecPaths=%S/{re.escape(state[1])}$")
 
     def test_acceptance_uses_systemd_and_password_checks(self) -> None:
         text = PATH.read_text()

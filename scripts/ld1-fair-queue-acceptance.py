@@ -23,7 +23,7 @@ Checks (design `docs/design/rows/row-11.md` §5):
     and the second gateway's waiter leaves when the first releases;
  8. a client that disconnects while waiting frees its place at once;
  9. a gateway stopped with waiters refuses them `shutting_down` and does not hang;
-10. a v13 metrics store is moved to v14 in place.
+10. a v13 metrics store is moved forward in place (to v15 since row 12).
 """
 
 # No `from __future__ import annotations`: the stand-in's FastAPI routes import
@@ -223,8 +223,33 @@ def v13_store(path: Path) -> None:
     from eugene_plexus_gateway.metrics import _DDL
 
     ddl = _DDL
-    for column in ("queued_ms", "band", "refusal", "tier_moves", "outran_reserve"):
+    # Schema 15 (row 12) added `affinity_key` to the request row and seven sums to the
+    # rollup. The rollup's carry `NOT NULL DEFAULT 0`, which tells them from the request
+    # and attempt columns of the same names.
+    for column in (
+        "queued_ms",
+        "band",
+        "refusal",
+        "tier_moves",
+        "outran_reserve",
+        "affinity_key",
+    ):
         lines = [line for line in ddl.split("\n") if not line.strip().startswith(column + " ")]
+        ddl = "\n".join(lines)
+    for column in (
+        "first_ms_sum",
+        "first_ms_samples",
+        "prompt_tokens",
+        "cached_tokens",
+        "queued_ms_sum",
+        "refused",
+        "token_ms_sum",
+    ):
+        lines = [
+            line
+            for line in ddl.split("\n")
+            if not (line.strip().startswith(column + " ") and "NOT NULL DEFAULT 0" in line)
+        ]
         ddl = "\n".join(lines)
     ddl = ddl.replace("    affinity          TEXT,\n);", "    affinity          TEXT\n);")
     assert "queued_ms" not in ddl and "affinity          TEXT\n);" in ddl, "v13 DDL"
@@ -565,8 +590,9 @@ runpy.run_path({str(Path(__file__).resolve())!r}, run_name='__main__')
         assert any(r["requestedModel"] == "ld1-old-history" for r in history), history[:3]
         with sqlite3.connect(directory / "gateway-a" / "metrics.sqlite3") as conn:
             version = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        assert version == ("14",), version
-        ok("10. a v13 metrics store is moved to v14 in place, its history kept")
+        # Moved forward to the schema this build writes: 14 for row 11, 15 since row 12.
+        assert version == ("15",), version
+        ok("10. a v13 metrics store is moved forward in place, its history kept")
 
         # --- 1 and 2: over the limit waits; past the line, key_queue_full ------
         engine_reset()
