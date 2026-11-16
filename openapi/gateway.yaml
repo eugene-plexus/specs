@@ -5824,8 +5824,10 @@ paths:
           replica plus reading only the new text. A prediction needs each
           runtime's calibrated prefill rate (`prefill_tokens_per_second` on
           the routing view) and its mean answer time; with either missing
-          the conversation keeps waiting for its own replica, as before.
-          Off keeps every conversation waiting for its own replica.
+          the conversation behaves as when this is off. Off: where the
+          replicas share a context pool a conversation waits for its own
+          replica, and where they do not it goes at once to any replica with
+          a free slot, as before row 14.
         * **`moveFirstTokenPenaltyMs`** (`integer`, default 2,000, 0 to
           600,000; row 14) — how much sooner, in milliseconds, another
           replica's predicted first token must come before a conversation
