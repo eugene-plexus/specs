@@ -9645,8 +9645,15 @@ components:
           description: |
             Whether GPUs reach containers: Docker lists the `nvidia` runtime
             or CDI devices `nvidia.com/gpu`, or runs on Docker Desktop with
-            WSL 2. False is not a refusal: a container then runs without a
-            GPU, and the engine says what it found.
+            WSL 2 on a machine whose GPU is NVIDIA's. False is not a
+            refusal: a container then runs without a GPU, and the engine
+            says what it found.
+        gpuNote:
+          type: string
+          description: |
+            Why GPUs do not reach containers here, when the agent knows
+            (an AMD or Intel GPU under Docker Desktop, which passes only
+            NVIDIA's). Absent when GPUs reach containers or nothing is known.
         desktop:
           type: boolean
           description: |

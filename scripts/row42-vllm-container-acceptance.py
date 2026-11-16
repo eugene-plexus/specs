@@ -216,6 +216,10 @@ class Agent:
 
 def main() -> int:
     if shutil.which("docker") is None:
+        if os.environ.get("GITHUB_ACTIONS"):
+            # A runner without Docker would turn this row's evidence into a skip.
+            print("FAIL: no docker on this CI runner; the container path did not run", flush=True)
+            return 1
         print("SKIP: no docker on this machine", flush=True)
         return 0
     if os.name == "nt":

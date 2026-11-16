@@ -16,6 +16,13 @@ release_inputs = importlib.util.module_from_spec(_spec)
 sys.modules["release_inputs"] = release_inputs
 _spec.loader.exec_module(release_inputs)
 
+_agree = importlib.util.spec_from_file_location(
+    "vllm_images_agree", SCRIPTS / "vllm-images-agree.py"
+)
+assert _agree is not None and _agree.loader is not None
+agree = importlib.util.module_from_spec(_agree)
+_agree.loader.exec_module(agree)
+
 MANIFEST = json.loads((SCRIPTS.parent / "release" / "manifest.json").read_text(encoding="utf-8"))
 
 
@@ -46,6 +53,17 @@ class VllmImageTests(unittest.TestCase):
         older = copy.deepcopy(MANIFEST)
         del older["vllmImages"]
         release_inputs.check_vllm_images(older)
+
+
+class AgentPinsTests(unittest.TestCase):
+    def test_the_agents_pins_must_equal_the_manifests(self) -> None:
+        pins = {"comment": "x", **copy.deepcopy(MANIFEST["vllmImages"])}
+        self.assertEqual([], agree.disagreements(MANIFEST, pins))
+        pins["cuda"]["image"] = "vllm/vllm-openai@sha256:" + "e" * 64
+        del pins["rocm"]
+        found = agree.disagreements(MANIFEST, pins)
+        self.assertTrue(any(line.startswith("cuda.image") for line in found), found)
+        self.assertTrue(any(line.startswith("rocm: only in the manifest") for line in found))
 
 
 if __name__ == "__main__":

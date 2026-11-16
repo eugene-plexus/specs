@@ -599,6 +599,9 @@ jobs:
       - name: Run vLLM's container path with a fixture image (row 42)
         if: matrix.shard == 'L1'
         run: python specs/scripts/row42-vllm-container-acceptance.py
+      - name: The release's vLLM image pins equal the agent's (row 42)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/vllm-images-agree.py agent
       # Row 36: a real root and one enrolled agent; the agent's retry timers are
       # shortened in its own process.
       - name: Verify Machines says why an announcement was refused, and re-enrollment clears it (row 36)
