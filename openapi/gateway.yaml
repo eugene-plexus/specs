@@ -5819,7 +5819,8 @@ paths:
           count and the engine's own `engineLoad` where vLLM reports one),
           then in turn. When any replica does not report its context, the
           token step is left out and the conversations come first, as
-          before row 14. Measured with 32 agent sessions on eight replicas: 80.2%
+          before row 14. `spreadByTokensHeld` (below) turns the whole
+          row 14 order off. Measured with 32 agent sessions on eight replicas: 80.2%
           of prompt tokens reused against 60.4%, the median first token
           1.05 s against 4.00 s, because a replica whose agents are all
           thinking between turns looks empty to a count of requests in
@@ -5862,6 +5863,15 @@ paths:
           it a request of a higher band takes the place of the newest one
           of the lowest band waiting (`set_aside`); any other is refused
           (`queue_full`).
+        * **`spreadByTokensHeld`** (`boolean`, default on; row 14, DI5) —
+          the expert override for `spread`'s order. On, `spread` ranks
+          replicas as `loadBalancing` describes: tokens held, then
+          conversations per slot, expected wait, and load (the larger of
+          this gateway's requests in flight and the engine's `engineLoad`).
+          Off, it ranks by conversations per slot and then by the requests
+          this gateway has in flight, as before row 14. Read at every
+          placement. It does nothing under `least_busy` or `round_robin`.
+          The token order was checked by arithmetic only, not on hardware.
         * **`moveByFirstToken`** (`boolean`, default on; row 14, LD3) — a
           conversation waiting for room on its own replica moves to
           another replica of its tier that has room now when that replica's
