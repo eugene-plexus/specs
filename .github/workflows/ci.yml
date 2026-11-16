@@ -519,6 +519,14 @@ jobs:
       - name: Operations rights for a person who is not the owner, sabotaged (row 39)
         if: matrix.shard == 'L2' || matrix.shard == 'W2'
         run: python specs/scripts/row39-operations-acceptance.py --sabotage
+      # Row 40: a key's day across two gateways refused as insufficient_quota, a group's
+      # cent spent on a priced model while a local one stays free until it has a rate, and
+      # the root's totals as the fixture counted them; then gateway B restarted from a copy
+      # of admission.py that sends no usage (restored from the copy), and the two-gateway
+      # step must fail.
+      - name: Usage and money allowances across two gateways, sabotaged (row 40)
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
+        run: python specs/scripts/row40-allowances-acceptance.py --sabotage
       # Row 46: with its root stopped past its limit, a machine refuses another
       # machine's stop request and still answers; the refusal sabotaged must fail.
       - name: A machine cut off from its root refuses other machines' changes and still answers (row 46)

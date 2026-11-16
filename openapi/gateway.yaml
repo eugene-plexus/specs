@@ -510,6 +510,26 @@ info:
     | `still_starting` | 503, 10 | "qwen3-8b on tower is still starting after 120 s. Retry shortly." |
     | `shutting_down` | 503, 5 | "Eugene's gateway is restarting. Retry in a few seconds." |
     | `rate_limited` | 429, from the root | "This key's 60 requests a minute are used. Retry in 12 s." |
+    | `insufficient_quota` | 429, until the reset | "Your group Sales used $4.00 of its $4.00 for November. It resets on 1 December." |
+
+    **Usage allowances (row 40).** A key, a person or a permission group can
+    have a token allowance per UTC day and per calendar month and a money
+    allowance per month (`ClientKeyLimits`, `GroupPolicies`). The control
+    root counts every served request of the install, from any gateway, and
+    refuses a request before it runs once an allowance that applies is
+    spent. The refusal is OpenAI's own for a spent quota: 429 with `type`
+    and `code` `insufficient_quota`, the root's sentence (which allowance,
+    how much was used, when it resets) as the `message`, and `Retry-After`
+    in seconds until it resets. The Anthropic door says it as
+    `rate_limit_error`, the Gemini door as `RESOURCE_EXHAUSTED`. A request
+    that crosses the line while it runs finishes; the next is refused.
+    When a money allowance applies, a model with no price (no owner's rate
+    at the root, no provider price from its driver, and not local) is
+    refused the same way, because its cost cannot be counted. The gateway
+    tells the root, at `acquire`, how it sees the model's price
+    (`ModelPriceHint`), and at `release` what the request used
+    (`AdmissionUsage`: the model that served it, its tokens in and out);
+    the root prices it.
 
     A stream whose head is already sent gets the same type and words in the
     door's error frame (`response.failed` on the Responses door), with the
@@ -7329,6 +7349,17 @@ components:
         video_first_frame:
           type: boolean
           description: For a `video` model, at least one backend takes an `input_reference`.
+        provider_price:
+          $ref: '#/components/schemas/ProviderModelPrice'
+          description: |
+            Row 40: what the model's provider publishes for its tokens, as its
+            drivers report it (`DriverModel.price`), so the console can show it
+            beside the owner's rate. **Listed only when every backend serving
+            the model reports a price**, and the highest when they differ.
+            Absent for a local model and for a cloud model none of whose
+            drivers knows a price: *no price listed*, never free. The owner's
+            rate, kept at the control root (`GET /v1/usage/prices`), wins over
+            it when the root counts a request.
         video_prices:
           type: array
           items:
@@ -7432,6 +7463,24 @@ components:
             True when a request for this model may have to wait for a
             runtime to start — every eligible backend is `stopped` and
             at least one declared `startOnDemand`.
+
+    ProviderModelPrice:
+      type: object
+      additionalProperties: false
+      required: [input_per_million_micros, output_per_million_micros]
+      description: |
+        A model's token price, in millionths of a US dollar per million
+        tokens (one pico-dollar a token), as its provider publishes it.
+      properties:
+        input_per_million_micros: {type: integer, minimum: 0}
+        output_per_million_micros: {type: integer, minimum: 0}
+        source:
+          type: string
+          description: Where the driver read it (`openrouter`, the provider's own listing).
+        as_of:
+          type: string
+          format: date
+          description: The day the price was read.
 
     VideoPriceUnit:
       type: string
@@ -12382,7 +12431,11 @@ components:
         - still_starting
         - shutting_down
         - rate_limited
+        - insufficient_quota
       description: |
+        `insufficient_quota` (row 40): a usage allowance is spent, as the
+        root said.
+
         Why the queue refused a request (row 11), on its
         `X-Eugene-Refusal-Reason` header and its metrics row. "Waiting in
         line" in this document's description has the table.
