@@ -1492,6 +1492,14 @@ paths:
         here anyway still learns the way forward. A UI should read
         `policy` and render instructions instead of an install button,
         rather than discovering this by calling.
+
+        **Except its container image** (row 42): `variant: container`
+        pulls `EngineDescriptor.container.image` with Docker or Podman, as
+        an install with progress (`downloading` counts layers in
+        `message`; the byte counters stay absent, because the container
+        runtime does not report them). The pulled image becomes the one in
+        use; the one before it is kept. A pull that fails names the
+        registry's answer in `error`.
       requestBody:
         required: false
         content:
@@ -9136,6 +9144,10 @@ components:
             follow the default build, so a model is still scored against
             the card the default would use.
 
+            `container` (vLLM, row 42) pulls `EngineDescriptor.container.image`
+            with Docker or Podman instead: 422 when no container runtime can
+            be used here, naming why.
+
     EngineInstall:
       type: object
       description: |
@@ -9208,6 +9220,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EngineDescriptor"
+        containerRuntime:
+          $ref: "#/components/schemas/ContainerRuntime"
+          description: |
+            Row 42: Docker or Podman on this machine, for engines that run
+            from a container image. Absent from an agent older than row 42.
 
     ExecTrustKind:
       type: string
@@ -9515,6 +9532,167 @@ components:
             Present when this engine is a Python package rather than a
             self-contained binary, describing the environment it lives
             in. Absent for llama.cpp.
+        container:
+          $ref: "#/components/schemas/EngineContainer"
+          description: |
+            Row 42: this engine run from its official container image
+            (vLLM only). Absent for an engine that has none. When an image
+            is pulled and a container runtime can be used, `available` is
+            true and `version` is the image's.
+
+    EngineContainer:
+      type: object
+      additionalProperties: false
+      description: |
+        Row 42 (`docs/design/rows/row-42.md`): an engine run from its
+        official container image with Docker or Podman, instead of a Python
+        environment the owner installs. `POST /v1/engines/{engine}/install`
+        with `variant: container` pulls `image`, with progress; a runtime
+        whose `source` flag is `container` (the default where the image is
+        pulled) runs in it.
+      required: [image, installable]
+      properties:
+        image:
+          type: string
+          description: |
+            What a pull fetches now, always by digest
+            (`vllm/vllm-openai@sha256:...`): the agent's
+            `vllmContainerImage` when the owner set one, else the image this
+            release pins for this machine's GPUs.
+        version:
+          type: string
+          description: The engine version in `image`, when this release pins it.
+        source:
+          $ref: "#/components/schemas/ContainerImageSource"
+        variant:
+          type: string
+          description: |
+            Which pinned image fits this machine: `cuda` (a driver for CUDA
+            13), `cuda12` (a driver for CUDA 12), `rocm` (AMD), or `custom`
+            for the owner's own image.
+        untested:
+          type: boolean
+          description: |
+            Nobody on the project has run this image on this kind of GPU
+            (AMD's `rocm/vllm`). It is offered and never blocked.
+        installable:
+          type: boolean
+          description: Whether a pull can start on this machine now.
+        reason:
+          type: string
+          description: Why a pull cannot start here, with the fix. Absent when it can.
+        pulled:
+          $ref: "#/components/schemas/ManagedImage"
+
+    ContainerImageSource:
+      type: string
+      enum: [pinned, configured]
+      description: |
+        * `pinned` - the image this release pins.
+        * `configured` - the owner's `vllmContainerImage` (expert).
+
+    ManagedImage:
+      type: object
+      additionalProperties: false
+      description: |
+        A container image this agent pulled, kept as an engine build is: the
+        image in use and the one before it (`previousVersion`), so a bad
+        image has a way back with no download.
+      required: [version, image]
+      properties:
+        version:
+          type: string
+          description: The engine version in the image, or its short digest when unknown.
+        image:
+          type: string
+          description: The reference it was pulled by.
+        digest:
+          type: string
+          description: The local image ID (`sha256:...`) the container runtime reported.
+        variant:
+          type: string
+        installedAt:
+          type: string
+          format: date-time
+        sizeBytes:
+          type: integer
+          format: int64
+        previousVersion:
+          type: string
+          description: The image in use before this one, still on this machine.
+        previousImage:
+          type: string
+
+    ContainerRuntime:
+      type: object
+      additionalProperties: false
+      description: |
+        Row 42: Docker or Podman on this machine, as the agent found it at
+        start and every 10 minutes. The Engines page shows it: "Docker 27.3,
+        GPUs available", or why it cannot be used, with the fix.
+      required: [usable, gpus]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ContainerRuntimeKind"
+        version:
+          type: string
+          description: The server's version, as the runtime reports it.
+        usable:
+          type: boolean
+          description: Whether this agent's account can run containers here.
+        gpus:
+          type: boolean
+          description: |
+            Whether GPUs reach containers: Docker lists the `nvidia` runtime
+            or CDI devices `nvidia.com/gpu`, or runs on Docker Desktop with
+            WSL 2. False is not a refusal: a container then runs without a
+            GPU, and the engine says what it found.
+        desktop:
+          type: boolean
+          description: |
+            Docker Desktop: containers run in a virtual machine, so their
+            processes and GPU memory are not attributed to this machine's
+            processes ("unknown", never zero).
+        insideContainer:
+          type: boolean
+          description: |
+            Eugene itself runs in a container. No container runtime socket
+            is ever mounted for it by Eugene.
+        error:
+          type: string
+          description: Why it cannot be used, in its own words. Absent when usable.
+        fix:
+          type: string
+          description: What to do about `error`.
+        checkedAt:
+          type: string
+          format: date-time
+
+    ContainerRuntimeKind:
+      type: string
+      enum: [docker, podman]
+
+    RuntimeContainer:
+      type: object
+      additionalProperties: false
+      readOnly: true
+      description: |
+        Row 42: the container this runtime runs in. Present only for a
+        runtime started from a container image.
+      required: [name, image]
+      properties:
+        name:
+          type: string
+          description: The container's name, `ep-<agent>-<runtime>`.
+        id:
+          type: string
+          description: The container's ID, once the container runtime reported it.
+        image:
+          type: string
+          description: The image reference it was started from.
+        digest:
+          type: string
+          description: The local image ID (`sha256:...`) it runs.
 
     PythonEngine:
       type: object
@@ -10194,6 +10372,8 @@ components:
             It is never a 0 for an engine that said nothing. A gateway counts only
             its own requests, so this is where another door's use shows. Observed,
             never declared.
+        container:
+          $ref: "#/components/schemas/RuntimeContainer"
 
     StrataEffectiveLaunch:
       type: object

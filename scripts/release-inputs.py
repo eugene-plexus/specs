@@ -27,6 +27,27 @@ REPOS = (
     "workbench",
 )
 
+#: Row 42: the vLLM container images this release pins, by GPU kind. The agent
+#: carries the same pins (`engines/vllm_images.json`) and pulls them by digest.
+VLLM_IMAGE_VARIANTS = ("cuda", "cuda12", "rocm")
+
+
+def check_vllm_images(manifest):
+    """Every pinned vLLM image is named by digest, never by a moving tag."""
+    images = manifest.get("vllmImages")
+    if not isinstance(images, dict):
+        raise ValueError("release manifest names no vllmImages")
+    for variant in VLLM_IMAGE_VARIANTS:
+        pinned = images.get(variant)
+        if not isinstance(pinned, dict):
+            raise ValueError(f"release manifest names no vLLM image for {variant}")
+        if not re.fullmatch(r"[a-z0-9./_-]+@sha256:[0-9a-f]{64}", str(pinned.get("image"))):
+            raise ValueError(f"the {variant} vLLM image must be pinned by digest")
+        if not re.fullmatch(r"\d+\.\d+\.\d+", str(pinned.get("version"))):
+            raise ValueError(f"the {variant} vLLM image needs its version")
+    if set(images) - set(VLLM_IMAGE_VARIANTS):
+        raise ValueError("release manifest names an unknown vLLM image variant")
+
 
 def generate(*, check=False, resolve=False, uv="uv"):
     release = ROOT / "release"
@@ -83,6 +104,7 @@ def generate(*, check=False, resolve=False, uv="uv"):
         not re.fullmatch("[a-f0-9]{40}", v) for v in components.values()
     ):
         raise ValueError("release components must be eight full commit IDs")
+    check_vllm_images(manifest)
     for name in ("install.sh", "install.ps1"):
         path = ROOT / "scripts" / name
         before = path.read_text(encoding="utf-8")

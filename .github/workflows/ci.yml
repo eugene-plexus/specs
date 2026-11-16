@@ -265,7 +265,9 @@ jobs:
       - name: Acceptance agents never check GitHub for updates (specs#19)
         run: python scripts/acceptance-isolation-checks.py --sabotage
       - name: Verify generated release inputs
-        run: python scripts/release-inputs.py --check
+        run: |
+          python scripts/release-inputs.py --check
+          python -m unittest discover -s scripts -p test_release_inputs.py -v
       - name: Verify deterministic platform vendoring and drift detection
         run: python scripts/platform-checks.py
       - name: Check release artifact bytes and component pin agreement
