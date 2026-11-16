@@ -69,8 +69,12 @@ CHECKS: list[dict] = []
 RESULT: dict = {"checks": CHECKS}
 
 
-def source_schema_version(source: Path) -> int:
-    """Read the installed version's store constant without importing its dependencies."""
+def source_schema_version(source: Path, name: str = "SCHEMA_VERSION") -> int:
+    """Read the installed version's store constant without importing its dependencies.
+
+    The constant is an integer, or `module.NAME` naming one in a sibling module
+    of the same package (Workbench 35: `collection_store.COLLECTIONS_SCHEMA`).
+    """
     definitions = []
     for node in ast.parse(
         source.read_text(encoding="utf-8"), filename=str(source)
@@ -81,13 +85,19 @@ def source_schema_version(source: Path) -> int:
             targets = [node.target]
         else:
             continue
-        if any(isinstance(t, ast.Name) and t.id == "SCHEMA_VERSION" for t in targets):
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets):
             definitions.append(node.value)
-    assert len(definitions) == 1, f"expected one SCHEMA_VERSION definition in {source}"
+    assert len(definitions) == 1, f"expected one {name} definition in {source}"
     value = definitions[0]
+    if (
+        isinstance(value, ast.Attribute)
+        and isinstance(value.value, ast.Name)
+        and (source.parent / f"{value.value.id}.py").is_file()
+    ):
+        return source_schema_version(source.parent / f"{value.value.id}.py", value.attr)
     assert (
         isinstance(value, ast.Constant) and type(value.value) is int and value.value > 0
-    ), f"expected a positive integer SCHEMA_VERSION in {source}"
+    ), f"expected a positive integer {name} in {source}"
     return value.value
 
 
