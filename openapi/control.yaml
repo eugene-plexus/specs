@@ -5907,6 +5907,11 @@ components:
         - changePassphrase
         - setModelPrice
       description: |
+        **`setModelPrice` (row 40, log version 3)** sets (`price` an object)
+        or clears (`price` null) the owner's rate for one model:
+        `{model, price}`. Log version 3, not 2: row 38's `setAlerting` is 2,
+        and a standby with row 38 alone must not be sent row 40's op.
+
         **`retireOidcKeys` (row 5, log version 1)** keeps only the sign-in
         keys named in `keep` (`{keep: [kid]}`, at least one held key) and
         drops the others, so every token they signed stops verifying. It

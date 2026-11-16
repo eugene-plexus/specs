@@ -201,10 +201,12 @@ L, about 4 days. One adversarial review. Risks:
 
 ### Mixed versions
 
-- **Log version 2.** A standby a release behind stops at the first key or group
-  that sets an allowance and at the first `setModelPrice` (it refuses a field
-  and an op it does not know). The root refuses those writes with 409 "Update
-  <standby> first" while its standby reports log version 1, as row 5's ops do.
+- **Log version 3** (row 38 takes 2 for `setAlerting` and merges first; a standby
+  with row 38 alone says 2 and would stop on row 40's unknown op). A standby a
+  release behind stops at the first key or group that sets an allowance and at
+  the first `setModelPrice` (it refuses a field and an op it does not know). The
+  root refuses those writes with 409 "Update <standby> first" while its standby
+  reports a log version below 3, as row 5's ops do.
   A standby a release behind ignores the counts on `putClientAdmission`: it
   keeps no counters until it is updated.
 - **A gateway a release behind** sends no price hint and no usage: its requests
