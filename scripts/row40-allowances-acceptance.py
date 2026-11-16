@@ -477,6 +477,13 @@ def exercise(directory: Path, sabotage: bool) -> None:
                 },
             },
         )
+        # A model with no price at all is refused while the cent is unspent: its cost
+        # cannot be counted. (Once the cent is spent, the spent allowance is the cause.)
+        unpriced = chat("gateway-a", app_key, "unknown", person)
+        assert unpriced.status_code == 429, unpriced.text
+        assert unpriced.json()["error"]["message"].startswith(
+            "No price is set for unknown, so a money limit cannot allow it."
+        ), unpriced.text
         before = served()
         for gateway in ("gateway-a", "gateway-b"):
             answer = chat(gateway, app_key, "cloud", person)
@@ -499,11 +506,6 @@ def exercise(directory: Path, sabotage: bool) -> None:
         for gateway in ("gateway-b", "gateway-a"):
             free = chat(gateway, app_key, "local", person)
             assert free.status_code == 200, ("a local model with no price is free", free.text)
-        unpriced = chat("gateway-a", app_key, "unknown", person)
-        assert unpriced.status_code == 429, unpriced.text
-        assert unpriced.json()["error"]["message"].startswith(
-            "No price is set for unknown, so a money limit cannot allow it."
-        ), unpriced.text
         install.good(
             "control",
             "PUT",
