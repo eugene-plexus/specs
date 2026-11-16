@@ -33,10 +33,13 @@ VLLM_IMAGE_VARIANTS = ("cuda", "cuda12", "rocm")
 
 
 def check_vllm_images(manifest):
-    """Every pinned vLLM image is named by digest, never by a moving tag."""
+    """Every pinned vLLM image is named by digest, never by a moving tag. A
+    manifest from before row 42 (a patch line cut from v0.7.0) pins none."""
+    if "vllmImages" not in manifest:
+        return
     images = manifest.get("vllmImages")
     if not isinstance(images, dict):
-        raise ValueError("release manifest names no vllmImages")
+        raise ValueError("release manifest's vllmImages is not a table of images")
     for variant in VLLM_IMAGE_VARIANTS:
         pinned = images.get(variant)
         if not isinstance(pinned, dict):

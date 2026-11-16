@@ -41,6 +41,12 @@ class VllmImageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cuda12"):
             release_inputs.check_vllm_images(moved)
 
+    def test_a_manifest_from_before_row_42_pins_none_and_passes(self) -> None:
+        """A patch line cut from v0.7.0 carries a manifest with no images."""
+        older = copy.deepcopy(MANIFEST)
+        del older["vllmImages"]
+        release_inputs.check_vllm_images(older)
+
 
 if __name__ == "__main__":
     unittest.main()
