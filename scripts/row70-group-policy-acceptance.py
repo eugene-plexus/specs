@@ -339,7 +339,7 @@ def build(install: Install, root: str, session: str) -> dict[str, Any]:
             },
         )
         assert made.status_code == 201, made.text
-        # Row 40's usage allowances are answered too, null when not set.
+        # Rows 37 and 40 answer their policies too, null when not set.
         answered = made.json()["policies"]
         assert {k: answered.get(k) for k in ("queueBand", "summaryContextPercent")} == {
             "queueBand": band,

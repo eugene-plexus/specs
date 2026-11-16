@@ -191,3 +191,119 @@ Risks:
     `test_allowed_models_are_the_active_groups_only`,
     `test_a_person_cannot_pick_a_group_they_are_not_in`; the acceptance's
     person B switches active group and gets the other group's models.
+
+## What building found (2026-11-16)
+
+Built on one branch, `r37-group-routing`, in specs, control, gateway, agent
+and ui. The agent changes only by regenerating: it validates the root's
+admission answer with a model that forbids unknown fields, so an agent that
+predates the new fields would refuse every answer that carries them.
+
+- **Absent means the old behaviour, everywhere.** A group record keeps
+  `roleRouting` and `allowedModels` only when set; a person record keeps
+  `activeGroup` only when chosen; the admission answer carries
+  `roleRouting`, `allowedModels` and `modelGroup` only when the person's
+  active group sets one of them. `PoliciesInEffect.activeGroup` is said
+  only when that group sets one of them, so a person whose groups set
+  neither reads what a row 70 root said.
+- **Mixed versions fail closed.** A standby from before row 37 cannot apply
+  a group that sets either policy or a person with an `activeGroup`: update
+  standbys with the root. An agent or gateway from before row 37 refuses an
+  admission answer with the new fields, so a person whose active group sets
+  them gets a 503 there until it is updated; never a request outside their
+  models. Edge ships the agent, gateway and control together.
+- **The sign-in claim is unchanged.** `eugene_policies` keeps only the row
+  70 policies. Workbench (row 70c) refuses a claim with fields it does not
+  know, so adding the row 37 fields would have stopped every member's
+  sign-in to an older Workbench. Apps read routing from the gateway, which
+  reads the root at each request.
+- **Changes reach the next request, not the next token refresh.** The root
+  reads the group and the person's choice at every admission check. A
+  change to the person's model list ends a running request's lease (409 on
+  renew), as a change to the key's limits does; a routing change does not.
+  A change while a request waits in the gateway's line is refused at its
+  acquire (row 11 blocker 1).
+- **A group write keeps a policy it leaves out.** Inside `policies`, a
+  policy left out keeps its value and `null` clears it (row 70 cleared one
+  left out). Without this a row 70 console, which sends only the two
+  policies it knows, would clear a group's routing and models on any save.
+- **The person chooses at `POST /oidc/active-group`** (and reads it with
+  GET), with their own access token, through any machine's agent as the
+  other `/oidc` writes go. A POST, not a PUT: the agent's `/oidc` forward
+  passes GET and POST only. The owner chooses on the person's page; a
+  delegated administrator may not. Workbench Settings has no picker yet
+  (a follow-up issue on workbench).
+- **The gateway applies the person's list wherever it applied the key's.**
+  `ClientRequest.allowed_models` is a `ModelScope` (the key's list and the
+  person's) when the root verified a person whose group limits models; the
+  slot resolution, fallbacks, `GET /v1/models` and the server-run image
+  tool all read it. A `role:*` name is checked against the key only; any
+  other name the person asks for must be in their list, a slot alias too.
+  A role their group routes resolves to the group's list less what they
+  may not reach; when nothing is left, the install's list, filtered.
+- **The acceptance asks `role:agentic`, not `role:embeddings`,** for the
+  role G1 does not route: the fixture drivers serve chat only, and the
+  check is the same (the install's list, filtered).
+- **The sabotage is made in the sabotaged gateway's own process** (its
+  resolution skips the person's list before the app starts), so no file
+  changes and nothing needs restoring.
+
+## Call R37-SELF, Choice 3: default built (2026-11-16)
+
+A person still chooses their active group, but it decides **routing by role
+only**. Model limits come from **every** group they are in that sets a
+model list: a model must be in all of those lists (a group with no list
+adds no limit; with none, the key's list applies as before). Choosing a
+group with no list, or a wider one, never widens what they reach; leaving
+a group widens it at their next request. This replaces "`allowedModels`
+from the active group" above.
+
+- The admission answer carries `modelLimits` (each limiting group's
+  `{id, name}` and list, sorted by name) and `routingGroup` (with
+  `roleRouting`); `allowedModels` and `modelGroup` are gone from it. The
+  gateway's 403 names the first group whose list leaves the model out.
+- `PoliciesInEffect` carries `modelLimits` the same way; the person page
+  says "m1 (from Sales)", or every list when several narrow them.
+
+## The second model's review, answered (2026-11-16)
+
+- **B1, a slow body wrote back an old record.** `POST /oidc/active-group`
+  read the person, awaited the body, then wrote the whole record it read: a
+  person holding the body back undid a disable, a removed group, revoked
+  grants and a password reset. It now reads the body first and writes a
+  `setPersonActiveGroup` entry that changes only `activeGroup` on the record
+  as it is when the entry applies (an older standby cannot apply it). Test:
+  `test_oidc_active_group.py::test_a_slow_body_*`.
+- **S1, matching on the event loop.** `*` patterns are matched by finding
+  the parts left to right (linear), in the gateway and in the vendored
+  `client_admission.py` (agent and control); a name over 256 characters is
+  never matched; a group's entry holds at most 8 `*`.
+- **S2, a row 37 console against a row 70 root.** The console sends
+  `roleRouting` and `allowedModels` only when the root's group records
+  carry them, so a save there is not a 422.
+- **S3, a route the group's own list leaves out** is a 422 naming the model
+  (settings never lie).
+- **S4, the acceptance's sabotage step** now requires a 200 from m3 and m3's
+  count to rise, after waiting with a person's request.
+- **S5, one change a minute.** A second change within a minute is a 429
+  `slow_down` with `Retry-After`; each change is a log record.
+- Notes: the Responses door's 403 carries `model_not_allowed`; the owner's
+  token gets 403 `not_a_person`; a person's check that an agent answers
+  with a 500 says an agent older than its root cannot pass on group models.
+
+## Caught up with row 38 (2026-11-16)
+
+Row 38 took log version 2 for `setAlerting`; row 37 takes **log version 3**
+for `setPersonActiveGroup` and for the fields an older standby refuses (a
+group's `roleRouting` and `allowedModels`, a person's `activeGroup`). The
+root refuses to write any of them (409, naming the standby) while its
+standby reports less, as rows 5 and 38 do; a row 70 policy still saves.
+control, gateway and ui were replayed onto `main` as one commit each.
+
+## Caught up with row 40 (2026-11-16)
+
+Row 40 took log version 3 for `setModelPrice`, so row 37 moves to **log
+version 4**: `setPersonActiveGroup`, a group's `roleRouting` and
+`allowedModels`, and a person's `activeGroup`, under the same rule. Rows 37
+and 40 share the group write rule (a policy left out keeps its value; `null`
+clears it).
