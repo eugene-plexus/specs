@@ -3348,6 +3348,35 @@ components:
             as ids).
         capabilities:
           $ref: '#/components/schemas/Capabilities'
+        price:
+          $ref: '#/components/schemas/DriverModelPrice'
+          description: |
+            Row 40: the provider's published price for this model's tokens,
+            when the driver knows it. An OpenRouter account reads it from the
+            listing (`pricing.prompt` and `pricing.completion`, dollars a
+            token); an OpenAI, Anthropic or Gemini account from Eugene's price
+            table (`specs/docs/data/model-prices.json`, copied into the driver
+            and refreshed at each release). Absent for a local engine and for
+            a model the driver has no price for. The owner's own rate, kept at
+            the control root, wins over it.
+
+    DriverModelPrice:
+      type: object
+      additionalProperties: false
+      required: [inputPerMillionMicros, outputPerMillionMicros, source]
+      description: |
+        Millionths of a US dollar for each million tokens (one pico-dollar a
+        token). A provider price finer than that is rounded up.
+      properties:
+        inputPerMillionMicros: {type: integer, minimum: 0}
+        outputPerMillionMicros: {type: integer, minimum: 0}
+        source:
+          type: string
+          enum: [openrouter, table]
+        asOf:
+          type: string
+          format: date
+          description: The day the listing was read, or the table's date.
 
     DriverCatalogue:
       type: object
