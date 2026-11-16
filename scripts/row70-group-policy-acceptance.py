@@ -339,13 +339,13 @@ def build(install: Install, root: str, session: str) -> dict[str, Any]:
             },
         )
         assert made.status_code == 201, made.text
-        # Row 37 adds `roleRouting` and `allowedModels` (null: not set) beside them.
+        # Rows 37 and 40 answer their policies too, null when not set.
         answered = made.json()["policies"]
-        assert {k: answered[k] for k in ("queueBand", "summaryContextPercent")} == {
+        assert {k: answered.get(k) for k in ("queueBand", "summaryContextPercent")} == {
             "queueBand": band,
             "summaryContextPercent": percent,
         }, answered
-        assert answered.get("roleRouting") is None and answered.get("allowedModels") is None
+        assert all(v is None for k, v in answered.items() if k not in ("queueBand", "summaryContextPercent")), answered
         groups[name] = made.json()["id"]
     people = {}
     for name, member_of in (("A", ["G1"]), ("B", ["G1", "G2"])):

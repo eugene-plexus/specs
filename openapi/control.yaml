@@ -195,6 +195,10 @@ tags:
       per-component code.
   - name: meta
     description: Health and version.
+  - name: usage
+    description: |
+      Row 40: what each key, person and group used, the allowances that
+      apply, and the owner's price for each model.
   - name: alerts
     description: |
       Alert rules, SLO targets and the alert webhook, evaluated by the active
@@ -622,12 +626,132 @@ paths:
             Shared concurrency/rate allowance exhausted. `X-Eugene-Refusal-Reason`
             says which (row 11): the gateway keeps a request refused for
             `concurrency` in its queue and asks again, and refuses one refused
-            for `rate`.
+            for `rate`. Row 40: `allowance`, a token or money
+            allowance of the key, the person or one of their groups is spent
+            (or the model has no price under a money allowance); `detail` is
+            the sentence for the caller and `Retry-After` the seconds until
+            the allowance resets. The gateway refuses the request.
           headers:
             Retry-After: {schema: {type: integer, minimum: 1}}
             X-Eugene-Refusal-Reason:
               schema: {$ref: '#/components/schemas/AdmissionRefusalReason'}
         '503': {description: Authority unavailable; no local fallback allowance.}
+
+  /v1/usage:
+    get:
+      tags: [usage]
+      operationId: getUsage
+      summary: Usage and allowances per key, person and group (row 40)
+      description: |
+        What each key lineage, person and permission group used, across every
+        gateway of the install, in one UTC day, one calendar month and an
+        optional range of days, with the allowances that apply and what is
+        left of them. Costs are at the install's prices (`GET
+        /v1/usage/prices`) as they were when each request was counted.
+
+        The owner sees every key, person and group. A directory
+        administrator (row 39) sees people and groups but no keys: one who
+        may manage people or groups sees all of them, one who manages the
+        membership of some groups sees those groups and their members. Active
+        root only. Each subject keeps its newest 62 days and 13 months with
+        use; an older period answers zero, and `kept` says how many are kept.
+        Allowances are always reported for the current UTC day and month,
+        whatever `day` and `month` ask for.
+      parameters:
+        - name: day
+          in: query
+          required: false
+          schema: {type: string, format: date}
+          description: The UTC day. Absent, today.
+        - name: month
+          in: query
+          required: false
+          schema: {type: string, pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'}
+          description: The calendar month, `YYYY-MM`. Absent, this month.
+        - name: from
+          in: query
+          required: false
+          schema: {type: string, format: date}
+          description: First day of a range, with `to`. Both or neither.
+        - name: to
+          in: query
+          required: false
+          schema: {type: string, format: date}
+          description: Last day of the range (included). At most 62 days after `from`.
+      responses:
+        '200':
+          description: The usage report.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UsageReport'}
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '422':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+  /oidc/usage:
+    get:
+      tags: [usage]
+      operationId: getOwnUsage
+      summary: A signed-in person's own usage (row 40)
+      description: |
+        The caller's own usage today and this month, and the allowances that
+        apply to them (their own groups'), for an app such as Workbench to
+        show. Authenticated with the person's access token from this root
+        (`Authorization: Bearer`, as `/oidc/userinfo`); no other credential.
+        Under the issuer, beside `userinfo`, because an app reaches the root
+        there. Answers only for the person the token names. `subjects` holds
+        one `person` subject and one `group` subject for each of their groups
+        that sets an allowance. A group's totals carry no breakdown by model
+        (`models` is empty): what the other members used is theirs.
+      responses:
+        '200':
+          description: The person's usage.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UsageReport'}
+        '401':
+          description: No valid access token from this root, or the person's sign-in ended.
+  /v1/usage/prices:
+    get:
+      tags: [usage]
+      operationId: getModelPrices
+      summary: The owner's price for each served model (row 40)
+      description: |
+        The rates the owner set. Owner or directory administrator. A model
+        not listed has no owner rate: a cloud model is counted at its
+        provider's published price (the gateway's `/v1/models` lists it as
+        `provider_price`), a local model costs nothing, and a cloud model
+        with neither has an unknown cost.
+      responses:
+        '200':
+          description: The owner's prices.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelPriceList'}
+    put:
+      tags: [usage]
+      operationId: setModelPrice
+      summary: Set or clear the owner's price for one model (owner only, row 40)
+      description: |
+        Sets the rate a model is counted at from the next request; requests
+        already counted keep the cost they had. `price: null` clears the
+        owner's rate, and the model falls back to its provider's price or to
+        free for a local model. Replicated (`setModelPrice`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ModelPriceWrite'}
+      responses:
+        '200':
+          description: The owner's prices after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelPriceList'}
+        '422':
+          $ref: 'components/common.yaml#/components/responses/Problem'
 
   /v1/auth/client-keys/{keyId}/limits:
     put:
@@ -4665,6 +4789,15 @@ components:
     AdmissionRefusalReason:
       $ref: 'components/client-keys.yaml#/components/schemas/AdmissionRefusalReason'
 
+    ModelPrice:
+      $ref: 'components/client-keys.yaml#/components/schemas/ModelPrice'
+
+    ModelPriceHint:
+      $ref: 'components/client-keys.yaml#/components/schemas/ModelPriceHint'
+
+    AdmissionUsage:
+      $ref: 'components/client-keys.yaml#/components/schemas/AdmissionUsage'
+
     ClientKey:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKey'
 
@@ -5811,7 +5944,7 @@ components:
             Absent until it has pulled since this root started. Log
             version 1 adds `retireOidcKeys` and `changePassphrase`: this
             root refuses to write either while its standby reports less,
-            because the standby's copy would stop there. Log version 3
+            because the standby's copy would stop there. Log version 4
             (row 37) adds `setPersonActiveGroup`, and the group and person
             fields of row 37, under the same rule.
 
@@ -5962,18 +6095,24 @@ components:
         - setNodeCertificateNames
         - retireOidcKeys
         - changePassphrase
+        - setModelPrice
         - setAlerting
         - setPersonActiveGroup
       description: |
-        **`setPersonActiveGroup` (row 37, log version 3)** sets one
+        **`setModelPrice` (row 40, log version 3)** sets (`price` an object)
+        or clears (`price` null) the owner's rate for one model:
+        `{model, price}`. Log version 3, not 2: row 38's `setAlerting` is 2,
+        and a standby with row 38 alone must not be sent row 40's op.
+
+        **`setPersonActiveGroup` (row 37, log version 4)** sets one
         person's `activeGroup` and nothing else of their record: `{id,
         activeGroup}`, where `activeGroup` is one of their groups or null.
         It is how a person's own choice at `/oidc/active-group` is written,
         applied to the record as it is then, so a choice cannot write back
-        anything the owner changed meanwhile. Log version 3 also covers a
+        anything the owner changed meanwhile. Log version 4 also covers a
         group record that sets `roleRouting` or `allowedModels` and a person
         record with `activeGroup`: the root refuses to write any of them
-        (409) while its standby reports a log version below 3.
+        (409) while its standby reports a log version below 4.
 
         **`retireOidcKeys` (row 5, log version 1)** keeps only the sign-in
         keys named in `keep` (`{keep: [kid]}`, at least one held key) and
@@ -6104,6 +6243,23 @@ components:
           type: array
           maxItems: 1000
           items: {$ref: '#/components/schemas/AccessAuditEvent'}
+        clientUsage:
+          type: object
+          additionalProperties: true
+          description: |
+            Row 40: the usage counters per key lineage, person and group, per
+            UTC day (62 kept) and calendar month (13 kept), and the subjects
+            of each running request a person was verified for (`open`, by
+            request id), so its release counts for them. Written by
+            `putClientAdmission` entries (`usageOpen` at an acquire, `usage`
+            at a release). A root before row 40 ignores it.
+        modelPrices:
+          type: object
+          additionalProperties: {$ref: '#/components/schemas/ModelPrice'}
+          description: |
+            Row 40: the owner's price for each model, by model id, as
+            `setModelPrice` wrote it (`{model, price}`; `price: null`
+            removes it).
         clientKeys:
           type: array
           items: {$ref: '#/components/schemas/ClientKey'}
@@ -7225,12 +7381,12 @@ components:
         policies:
           $ref: '#/components/schemas/GroupPolicies'
           description: |
-            The group's policies. Inside, a policy set to `null` is cleared
-            and a policy left out keeps its current value (row 37; row 70
-            cleared one left out too), so a console that predates a policy
-            never clears it. Omitted from a replace, the group keeps all its
-            current policies. Omitted from a create, the group sets none. An
-            older root refuses this field (`additionalProperties: false`).
+            The group's policies: a policy set inside is set, a `null` one is
+            cleared, and an absent one keeps its current value (rows 37 and 40), so a
+            console that predates a policy never clears it. Omitted from a
+            replace, the group keeps every current policy. Omitted from a
+            create, the group sets none. An older root refuses this field
+            (`additionalProperties: false`).
 
     GroupPolicies:
       type: object
@@ -7246,9 +7402,10 @@ components:
         R37-SELF, Choice 3).
 
         In a write, a policy left out keeps the group's current value and
-        `null` clears it (row 37), so a console that predates a policy never
-        clears it. A standby from before row 37 cannot apply a group that
-        sets `roleRouting` or `allowedModels`; update standbys with the root.
+        `null` clears it (rows 37 and 40), so a console that predates a
+        policy never clears it. The root refuses to write a group that sets
+        `roleRouting` or `allowedModels` while its standby reports a log
+        version below 4 (row 37).
       properties:
         roleRouting:
           oneOf:
@@ -7282,6 +7439,161 @@ components:
           minimum: 50
           maximum: 95
           description: The percent of a model's context at which Workbench starts summarising a long chat. With no policy, Workbench uses 80.
+        tokensPerDay:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 1000000000000
+          description: |
+            Row 40: how many tokens (in and out) the group's members may use
+            together in one UTC day, across every gateway: one allowance for
+            the whole group, counted from each request of a member that the
+            root verified (an app such as Workbench sends the person's token).
+            A person whose groups set it is refused while every one of those
+            groups has spent it (the most generous applies). A person's own
+            limit is a group of one. Never in `PoliciesInEffect`. An older
+            root refuses it, and an older standby stops at a group that sets
+            it until it is updated.
+        tokensPerMonth:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 1000000000000000
+          description: Row 40. As `tokensPerDay`, for one calendar month (UTC).
+        costPerMonthMicros:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 1000000000000000
+          description: |
+            Row 40: how much the group's members may spend together in one
+            calendar month (UTC), in millionths of a US dollar, at the
+            install's prices. While it is the only allowance that admits a
+            member, a model with no price is refused to them.
+
+    ModelPriceList:
+      type: object
+      additionalProperties: false
+      required: [prices]
+      description: The owner's price for each model that has one (row 40).
+      properties:
+        prices:
+          type: array
+          items: {$ref: '#/components/schemas/OwnerModelPrice'}
+    OwnerModelPrice:
+      type: object
+      additionalProperties: false
+      required: [model, inputPerMillionMicros, outputPerMillionMicros]
+      properties:
+        model: {type: string, minLength: 1, maxLength: 256}
+        inputPerMillionMicros: {type: integer, minimum: 0, maximum: 1000000000000}
+        outputPerMillionMicros: {type: integer, minimum: 0, maximum: 1000000000000}
+    ModelPriceWrite:
+      type: object
+      additionalProperties: false
+      required: [model, price]
+      properties:
+        model: {type: string, minLength: 1, maxLength: 256}
+        price:
+          oneOf:
+            - $ref: '#/components/schemas/ModelPrice'
+            - type: 'null'
+          description: The rate, or null to clear the owner's rate.
+    UsageSubjectKind:
+      type: string
+      enum: [key, person, group]
+    UsageAllowanceKind:
+      type: string
+      enum: [tokensPerDay, tokensPerMonth, costPerMonth]
+    UsageReport:
+      type: object
+      additionalProperties: false
+      required: [day, month, subjects, kept]
+      description: Row 40, `GET /v1/usage` and `GET /oidc/usage`.
+      properties:
+        day: {type: string, format: date, description: The UTC day each subject's `day` reports.}
+        month: {type: string, description: The calendar month (`YYYY-MM`) each subject's `month` reports.}
+        from: {type: string, format: date}
+        to: {type: string, format: date}
+        kept:
+          type: object
+          additionalProperties: false
+          required: [days, months]
+          description: How many days and months of counters the root keeps.
+          properties:
+            days: {type: integer}
+            months: {type: integer}
+        subjects:
+          type: array
+          items: {$ref: '#/components/schemas/UsageSubject'}
+    UsageSubject:
+      type: object
+      additionalProperties: false
+      required: [kind, id, name, day, month, allowances]
+      properties:
+        kind: {$ref: '#/components/schemas/UsageSubjectKind'}
+        id:
+          type: string
+          description: A key's lineage (its first key's id), a person's id, or a group's id.
+        name:
+          type: string
+          description: The key's, person's or group's name now. A subject that no longer exists keeps its id as its name.
+        day: {$ref: '#/components/schemas/UsageTotals'}
+        month: {$ref: '#/components/schemas/UsageTotals'}
+        range: {$ref: '#/components/schemas/UsageTotals'}
+        allowances:
+          type: array
+          items: {$ref: '#/components/schemas/UsageAllowance'}
+    UsageTotals:
+      type: object
+      additionalProperties: false
+      required: [requests, promptTokens, completionTokens, tokens, costUsd, unpricedRequests, models]
+      properties:
+        requests: {type: integer, minimum: 0}
+        promptTokens: {type: integer, minimum: 0}
+        completionTokens: {type: integer, minimum: 0}
+        tokens: {type: integer, minimum: 0}
+        costUsd:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{12}$'
+          description: |
+            US dollars, exact: a decimal with twelve places (one pico-dollar).
+            A string, so no reader rounds it through a float.
+        unpricedRequests:
+          type: integer
+          minimum: 0
+          description: Requests whose model had no price when they were counted. Their cost is unknown and is not in `costUsd`.
+        models:
+          type: array
+          description: The same counts by the model that served each request. Past 32 models in one period, the rest are under `*`.
+          items: {$ref: '#/components/schemas/UsageModelTotals'}
+    UsageModelTotals:
+      type: object
+      additionalProperties: false
+      required: [model, requests, promptTokens, completionTokens, costUsd, unpricedRequests]
+      properties:
+        model: {type: string}
+        requests: {type: integer, minimum: 0}
+        promptTokens: {type: integer, minimum: 0}
+        completionTokens: {type: integer, minimum: 0}
+        costUsd: {type: string, pattern: '^[0-9]+\.[0-9]{12}$'}
+        unpricedRequests: {type: integer, minimum: 0}
+    UsageAllowance:
+      type: object
+      additionalProperties: false
+      required: [kind, limit, used, left, resetsAt, spent]
+      description: |
+        One allowance that applies to the subject, and how much of it is
+        used. `limit`, `used` and `left` are token counts for a token
+        allowance and exact US dollar strings (twelve places) for
+        `costPerMonth`.
+      properties:
+        kind: {$ref: '#/components/schemas/UsageAllowanceKind'}
+        limit: {type: string}
+        used: {type: string}
+        left: {type: string}
+        spent: {type: boolean, description: True when the next request is refused for it.}
+        resetsAt: {type: string, format: date-time}
+        setBy:
+          type: string
+          description: For a person, the id of the group that sets it. Absent for a key's or a group's own allowance.
 
     PoliciesInEffect:
       type: object

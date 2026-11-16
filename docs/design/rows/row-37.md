@@ -299,3 +299,11 @@ group's `roleRouting` and `allowedModels`, a person's `activeGroup`). The
 root refuses to write any of them (409, naming the standby) while its
 standby reports less, as rows 5 and 38 do; a row 70 policy still saves.
 control, gateway and ui were replayed onto `main` as one commit each.
+
+## Caught up with row 40 (2026-11-16)
+
+Row 40 took log version 3 for `setModelPrice`, so row 37 moves to **log
+version 4**: `setPersonActiveGroup`, a group's `roleRouting` and
+`allowedModels`, and a person's `activeGroup`, under the same rule. Rows 37
+and 40 share the group write rule (a policy left out keeps its value; `null`
+clears it).

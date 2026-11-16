@@ -3348,6 +3348,38 @@ components:
             as ids).
         capabilities:
           $ref: '#/components/schemas/Capabilities'
+        price:
+          $ref: '#/components/schemas/DriverModelPrice'
+          description: |
+            Row 40: the price the provider itself reports for this model's
+            tokens, when its listing carries one: an OpenRouter account reads
+            `pricing.prompt` and `pricing.completion` (dollars a token). Absent
+            for a local engine and for every provider whose listing carries no
+            price: Eugene keeps no price table of its own, because a list
+            written down once shows yesterday's prices as facts. The owner's
+            own rate, kept at the control root, wins over it.
+
+    DriverModelPrice:
+      type: object
+      additionalProperties: false
+      required: [inputPerMillionMicros, outputPerMillionMicros, source]
+      description: |
+        Millionths of a US dollar for each million tokens (one pico-dollar a
+        token). A provider price finer than that is rounded up.
+      properties:
+        inputPerMillionMicros: {type: integer, minimum: 0}
+        outputPerMillionMicros: {type: integer, minimum: 0}
+        source:
+          $ref: '#/components/schemas/DriverPriceSource'
+        asOf:
+          type: string
+          format: date
+          description: The day the listing was read.
+
+    DriverPriceSource:
+      type: string
+      enum: [openrouter]
+      description: Where a driver read a model's price (row 40). Only a provider's own listing.
 
     DriverCatalogue:
       type: object
