@@ -153,3 +153,54 @@ code closely. Risks:
 - **Root in the container:** the image runs as root inside; the model is
   read only, the port is loopback unless the profile says otherwise, and
   no Docker socket is ever given to Eugene by this row.
+
+## 8. What building found (2026-11-16)
+
+- **Where the container runtime is reported:** `EngineList.containerRuntime`
+  (`GET /v1/engines`), not the control root's `Node`: the Engines page
+  reads that list already, and `Node` lives in `control.yaml`, which this
+  row does not touch (no root deploy is needed first).
+- **The image pins are per GPU kind:** `release/manifest.json` `vllmImages`
+  {`cuda`: v0.33.0, `cuda12`: v0.32.0-cu129, `rocm`: AMD's `rocm/vllm`
+  0.29.0, untested}, by digest; the agent carries the same pins in
+  `engines/vllm_images.json`. The CUDA 12 image exists because v0.33.0's
+  default image is CUDA 13 (driver R580+): a CUDA 12 driver gets the last
+  release with a `-cu129` tag. The two copies are kept equal by hand;
+  `ship.py` could copy them in a later row.
+- **No per-runtime image (`containerImage`) was built.** Only the agent's
+  `vllmContainerImage` (Config, owner only, by digest). A per-runtime image
+  would be a new image field an operations token must not set, and the hold
+  on an older image is row 13/73's (a rollout over images); not needed here.
+  The profile gains `source` and `shmSizeGiB`, neither naming a file,
+  image, volume, device or variable, so an operations token may set them.
+- **`--pull never`:** a runtime start never pulls; a missing image says
+  "pull it on the Engines page". A pull is only an install, and the image
+  pulled is in use at the next start (no staging; row 13's checked update
+  over images is later work). The image before it is kept; the one before
+  that is removed (`docker image rm` of the recorded ID only).
+- **Env values never reach a command line:** `-e NAME` pairs, values in
+  the CLI's own environment. `--security-opt no-new-privileges` is added;
+  no `--init`, as upstream's own `docker run` has none.
+- **The tokenizer must be inside the model's folder** in a container (a
+  draft model's folder is mounted read only, as designed); elsewhere the
+  launch is refused, naming the folder rule and the way out (your own vLLM).
+- **Card pins** (`CUDA_VISIBLE_DEVICES`, UUIDs from row 43) become
+  `--gpus '"device=..."'` (Docker parses the value as CSV, so a list is
+  quoted inside it) or Podman's CDI `nvidia.com/gpu=<id>`; ROCm gets
+  `/dev/kfd` and `/dev/dri`. With no GPU on the host and none reaching
+  containers, no GPU option is passed and vLLM says what it found.
+- **Default `source`:** the container when an image is pulled, a container
+  runtime can be used and no vLLM program is set (`vllmBinary` or the
+  runtime's `binary`); otherwise the owner's own vLLM.
+- **Labels carry an agent ID** (a hash of the agent's data folder) beside
+  the node name: two agents on one host never sweep each other's containers.
+  The orphan sweep is `docker rm -f` of every container with this agent's
+  label, at start, before any runtime starts.
+- **Host history:** the container's main pid (`docker inspect`) joins the
+  engine pids on native Docker; on Docker Desktop GPU memory for Eugene is
+  "unknown" with the reason, never 0.
+- **Not run:** real vLLM in its image on a GPU (no GPU on the runners), and
+  a chat through a gateway in the acceptance (the engine is reached on its
+  own port; routing does not depend on how a runtime started). SELinux
+  hosts (Fedora, RHEL) may need a relabel option on the model mount; not
+  handled, not tested.
