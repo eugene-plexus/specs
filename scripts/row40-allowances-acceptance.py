@@ -57,6 +57,11 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import yaml
 
+# At module level, not in `fixture_app`: this file's annotations are strings, and
+# FastAPI resolves `request: Request` in the module's globals (else it reads it as a
+# query parameter and answers 422, as ld1's stand-in found).
+from fastapi import Request
+
 HERE = Path(__file__).resolve().parent
 NODE = "tower"
 APP_OWNER = f"app:workbench@{NODE}"
@@ -260,7 +265,7 @@ def fixture_app() -> Any:
     can hang up before its end; the usage rides on its last frame."""
     import asyncio
 
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI
     from fastapi.responses import StreamingResponse
 
     app = FastAPI()
