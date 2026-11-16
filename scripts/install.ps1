@@ -142,7 +142,7 @@ $PIN = @{
     "library"          = "723ec68a82a682d05461f2402959f2cff983964d"
     "store"            = "92d59cb4f703c9564b0f41203d2d36f95feb9460"
     "tool-driver"      = "16a7a3a0820044427775aa86312739ba9fc1304b"
-    "ui"               = "d167a44186df9ada255d6a2a00ac7ef664201f5e"  # branch `dist`, not `main`
+    "ui"               = "0b1bb5d64dbb724366452d083a848b6961b773ea"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
