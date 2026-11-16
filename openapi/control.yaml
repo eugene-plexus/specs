@@ -685,7 +685,7 @@ paths:
           $ref: 'components/common.yaml#/components/responses/Problem'
         '422':
           $ref: 'components/common.yaml#/components/responses/Problem'
-  /v1/usage/me:
+  /oidc/usage:
     get:
       tags: [usage]
       operationId: getOwnUsage
@@ -695,8 +695,9 @@ paths:
         apply to them (their own groups'), for an app such as Workbench to
         show. Authenticated with the person's access token from this root
         (`Authorization: Bearer`, as `/oidc/userinfo`); no other credential.
-        Answers only for the person the token names. `subjects` holds one
-        `person` subject and one `group` subject for each of their groups
+        Under the issuer, beside `userinfo`, because an app reaches the root
+        there. Answers only for the person the token names. `subjects` holds
+        one `person` subject and one `group` subject for each of their groups
         that sets an allowance.
       responses:
         '200':
@@ -7226,7 +7227,7 @@ components:
       type: object
       additionalProperties: false
       required: [day, month, subjects, kept]
-      description: Row 40, `GET /v1/usage` and `GET /v1/usage/me`.
+      description: Row 40, `GET /v1/usage` and `GET /oidc/usage`.
       properties:
         day: {type: string, format: date, description: The UTC day each subject's `day` reports.}
         month: {type: string, description: The calendar month (`YYYY-MM`) each subject's `month` reports.}
