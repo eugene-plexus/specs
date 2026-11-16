@@ -209,7 +209,7 @@ disk. `mlx_lm` can save a prompt cache to a file.
 - **Measured on CPU** (b12428, `win-cpu-x64`, this PC, the acceptance
   script): Stories15M, 70 tokens read cold in 3.4 ms, 72 reused after
   reading back; LFM2-350M (a hybrid, convolution and attention), 70 tokens
-  in 58 ms cold, 69 of 73 reused after reading back (8.8 ms). Save and read
+  in 58 ms cold, 69 of 73 reused after reading back (9.8 ms). Save and read
   back took under 0.1 s for 1-2 MiB. The GPU measurements in "Measure
   first" were not run: this PC's card is held by the live install.
 - **Only an engine that listens on loopback saves.** llama-server's slot
