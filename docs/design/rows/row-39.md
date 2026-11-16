@@ -216,3 +216,24 @@ R39-DELETE (Models includes deleting model files).
   (`/v1/catalogue/*`) and plans and forgets model deletions. The gateway's
   metrics summary is readable; its request log and client usage are not.
   Pause and resume (row 35) stay the owner's.
+
+## Review findings answered (2026-11-16)
+
+- **B1.** With an operations token a runtime declaration or change, and a
+  library profile, may not set environment variables, the working
+  directory, the program, extra arguments, an address other machines
+  reach, or a file outside the Library's folders (`chatTemplateFile`,
+  `projectorPath`, `draftModelPath` and every flag named `*Path`, `*File`,
+  `*Dir`). The 403 names the field; a value already declared is kept. Reads
+  with an operations token carry no environment values or extra arguments.
+- **Update all is the owner's.** It re-checks the session that started it.
+- **The record.** Refused and failed attempts keep under their own cap of
+  1,000, so they never evict a change; a catalogue search is not recorded;
+  a download names its repository; the owner's rows are marked from the
+  `owner` flag.
+- **A log follow** opened with an operations token ends at the token's end.
+- **Up to 15 minutes**, not 10: a token lasts 10 and every verifier allows 5
+  for clocks that disagree. The delegation editor says so.
+- **Tests never reach the live install.** agent, library, gateway and
+  control tests refuse any httpx request to loopback 8079-8083 and
+  8279-8283.

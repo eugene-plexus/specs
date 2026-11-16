@@ -674,7 +674,11 @@ def check_owner_routes(run: Run, token: str, session: str) -> None:
         (
             "the agent's settings",
             run.call(
-                "PATCH", "agent-a", "/v1/config", token, json={"logLevel": "DEBUG"}
+                "PATCH",
+                "agent-a",
+                "/v1/config",
+                token,
+                json={"maxTrustBundleAgeHours": 5},
             ),
             (403,),
             "Only the owner",
@@ -728,6 +732,25 @@ def check_owner_routes(run: Run, token: str, session: str) -> None:
             "",
         ),
         (
+            "a runtime that reads a file outside the Library",
+            run.call(
+                "POST",
+                "agent-a",
+                "/v1/runtimes",
+                token,
+                json={
+                    "name": "r39-template",
+                    "engine": "llama_cpp",
+                    "modelPath": str(run.dirs["a"] / "models" / "r39.gguf"),
+                    "autoStart": False,
+                    "autoDriver": False,
+                    "flags": {"chatTemplateFile": str(run.dirs["a"] / "node.yaml")},
+                },
+            ),
+            (403,),
+            "(flags.chatTemplateFile)",
+        ),
+        (
             "the logs",
             run.call("GET", "agent-a", "/v1/logs", token),
             (403,),
@@ -753,7 +776,7 @@ def step_owners(run: Run, session: str) -> None:
     token = run.token_for_a(session)
     check_owner_routes(run, token, session)
     config = run.call("GET", "agent-a", "/v1/config", run.owner_a).json()
-    if config.get("logLevel") == "DEBUG":
+    if config.get("maxTrustBundleAgeHours") == 5:
         raise Failed("A's settings changed under Dana's token")
     run.ok(
         "on A Dana is refused an engine install (403, Updates and restarts), the agent's, "
@@ -806,12 +829,31 @@ def step_sabotage(run: Run) -> None:
     run.stop_agent("a")
     run.wait_released(["agent-a", "machine-a", "gateway", "library", "driver"])
     run.start_agent("a", sabotage=True)
+    # Review S2: the sabotaged A answers for its library and gateway as well
+    # before step 3 runs, so a refusal there is the gate's and not a gap.
+    for part in ("library", "gateway"):
+        run.wait(
+            lambda part=part: (
+                run.call("GET", "agent-a", f"/api/proxy/{part}/healthz").status_code
+                == 200
+            ),
+            f"A's {part} after the restart",
+            90,
+        )
     run.grant({"operateModels": True, "operationsMachines": ["agent-a"]})
     session = run.dana_signs_in()
     token = run.token_for_a(session)
     try:
         check_owner_routes(run, token, session)
     except Failed as caught:
+        # Review S2: only the sabotaged check counts; any other failure is
+        # a failure of the run.
+        said = str(caught)
+        if (
+            "reached what is not hers: the agent's settings:" not in said
+            or "; " in said.split("the agent's settings:", 1)[1].split("}", 1)[-1]
+        ):
+            raise
         run.ok(
             f"sabotage caught: with PATCH /v1/config in the table, step 3 fails ({caught})"
         )
