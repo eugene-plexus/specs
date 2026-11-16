@@ -243,6 +243,12 @@ components:
       type: object
       additionalProperties: false
       required: [keyId, keyName]
+      description: |
+        Row 37: an agent or gateway from before row 37 refuses an answer that
+        carries `roleRouting`, `allowedModels` or `modelGroup` (its model
+        forbids unknown fields), so a person whose active group sets either
+        is refused with a 503 there until it is updated: it fails closed,
+        never open. The root sends them only when that group sets them.
       properties:
         keyId: {type: string}
         keyName: {type: string}
@@ -270,6 +276,58 @@ components:
             groups sets a band. Absent for a key with no person, a release, or
             a person whose groups set none: the key's own band, or the
             install's default, applies. Never taken from the caller.
+        roleRouting:
+          $ref: '#/components/schemas/RoleRouting'
+          description: |
+            The verified person's routing by model role (row 37), from their
+            active group (`Person.activeGroup`). Present only when the root
+            verified a person and that group routes at least one role. A
+            request for `role:<role>` that this names tries these models in
+            order, after the gateway drops every model outside the allowed
+            set; a role it does not name uses the install's slot. Absent: the
+            install's routing for every role, as before row 37. Never taken
+            from the caller.
+        allowedModels:
+          type: array
+          maxItems: 64
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 256}
+          description: |
+            The models the verified person may reach (row 37), from their
+            active group: exact ids or patterns with `*`, as the key's
+            `allowedModels`. The gateway allows a model only when this and
+            the key's own list both allow it, for the model asked for, every
+            fallback and every model a server-run tool calls. A `role:<role>`
+            name is not checked against it: the role's models are. Present
+            only when the root verified a person and that group limits
+            models; absent is no limit beyond the key's. Empty allows none.
+        modelGroup:
+          $ref: '#/components/schemas/ModelGroup'
+          description: |
+            The group `roleRouting` and `allowedModels` come from (row 37),
+            so a refusal names it. Present when either is.
+    RoleRouting:
+      type: object
+      description: |
+        Row 37: for each model role, the models a person's requests for
+        `role:<role>` try, in order. A role not named here uses the
+        install's slot (`modelSlots`). The keys are `ModelRole` values
+        (`components/common.yaml`); a root refuses any other.
+      maxProperties: 16
+      additionalProperties:
+        type: array
+        minItems: 1
+        maxItems: 16
+        uniqueItems: true
+        items: {type: string, minLength: 1, maxLength: 256}
+    ModelGroup:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      description: A permission group, as a refusal names it (row 37).
+      properties:
+        id: {type: string, minLength: 1, maxLength: 64}
+        name: {type: string, minLength: 1, maxLength: 80}
     AdmissionRefusalReason:
       type: string
       enum: [concurrency, rate]

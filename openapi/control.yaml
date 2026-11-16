@@ -970,6 +970,69 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
+  /oidc/active-group:
+    get:
+      operationId: oidcActiveGroup
+      summary: Which of their groups a person works from (row 37)
+      description: |
+        A bearer access token from `/oidc/token`, as `/oidc/userinfo`. The
+        person's groups and the one whose models and routing they work
+        from. An app (Workbench Settings) shows it as "Work with".
+      responses:
+        '200':
+          description: The person's groups and the group in effect.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActiveGroupState'}
+        '401':
+          description: '`invalid_token`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '503':
+          description: '`temporarily_unavailable`: the root is a standby; ask the active one.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+    put:
+      operationId: oidcSetActiveGroup
+      summary: Choose the group a person works from (row 37)
+      description: |
+        A bearer access token from `/oidc/token`: the person chooses for
+        themselves. `group` is one of their groups, or null for the first in
+        their list. The gateway applies it to their next request; the
+        sign-in claims carry it at the next token refresh.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ActiveGroupRequest'}
+      responses:
+        '200':
+          description: Chosen.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActiveGroupState'}
+        '400':
+          description: '`invalid_request`: the body is not `{group}`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '401':
+          description: '`invalid_token`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '403':
+          description: '`not_a_member`: the person is not in that group.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '503':
+          description: '`temporarily_unavailable`: the root is a standby, or locked.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
   /oidc/revoke:
     post:
       operationId: oidcRevoke
@@ -4474,6 +4537,12 @@ components:
     QueueBand:
       $ref: 'components/client-keys.yaml#/components/schemas/QueueBand'
 
+    RoleRouting:
+      $ref: 'components/client-keys.yaml#/components/schemas/RoleRouting'
+
+    ModelGroup:
+      $ref: 'components/client-keys.yaml#/components/schemas/ModelGroup'
+
     AdmissionRefusalReason:
       $ref: 'components/client-keys.yaml#/components/schemas/AdmissionRefusalReason'
 
@@ -6077,6 +6146,15 @@ components:
       type: object
       required: [id, name, passwordVerifier, disabled, createdAt, passwordChangedAt]
       properties:
+        activeGroup:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            Row 37: the one of their `groups` whose `roleRouting` and
+            `allowedModels` apply to them. Absent is the first in their
+            list. Kept only when set; a standby from before row 37 cannot
+            apply a person who has one. Cleared when they leave the group.
         administration: {$ref: '#/components/schemas/AdministrationGrants'}
         administrationVersion:
           type: integer
@@ -6139,6 +6217,15 @@ components:
       required: [id, name, disabled, createdAt, passwordChangedAt]
       properties:
         administration: {$ref: '#/components/schemas/AdministrationGrants'}
+        activeGroup:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            Row 37: the one of their `groups` whose `roleRouting` and
+            `allowedModels` apply to them. Absent is the first in their
+            list. Kept only when set; a standby from before row 37 cannot
+            apply a person who has one. Cleared when they leave the group.
         groups:
           type: [array, 'null']
           maxItems: 64
@@ -6357,6 +6444,14 @@ components:
       type: object
       additionalProperties: false
       properties:
+        activeGroup:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 64
+          description: |
+            Row 37, owner only: the group whose models and routing the person
+            works from, one of their groups after this change; null for the
+            first in their list. A group they are not in is refused (422).
         groups:
           type: [array, 'null']
           maxItems: 64
@@ -6986,10 +7081,11 @@ components:
         policies:
           $ref: '#/components/schemas/GroupPolicies'
           description: |
-            The group's policies, replaced whole: a `null` or absent policy
-            inside is not set. Omitted from a replace, the group keeps its
-            current policies, so a console that predates policies never
-            clears them. Omitted from a create, the group sets none. An
+            The group's policies. Inside, a policy set to `null` is cleared
+            and a policy left out keeps its current value (row 37; row 70
+            cleared one left out too), so a console that predates a policy
+            never clears it. Omitted from a replace, the group keeps all its
+            current policies. Omitted from a create, the group sets none. An
             older root refuses this field (`additionalProperties: false`).
 
     GroupPolicies:
@@ -6999,8 +7095,33 @@ components:
         Policies a permission group sets for its members (row 70). Not set
         is no policy: a person whose groups set none gets the install's
         default. A person in several groups gets the most generous value of
-        each: the highest queue band, the larger percent.
+        each: the highest queue band, the larger percent. `roleRouting` and
+        `allowedModels` (row 37) are not combined: they come from the
+        person's active group alone (`Person.activeGroup`).
+
+        In a write, a policy left out keeps the group's current value and
+        `null` clears it (row 37), so a console that predates a policy never
+        clears it. A standby from before row 37 cannot apply a group that
+        sets `roleRouting` or `allowedModels`; update standbys with the root.
       properties:
+        roleRouting:
+          oneOf:
+            - $ref: '#/components/schemas/RoleRouting'
+            - type: 'null'
+          description: |
+            Row 37: the models the members' requests for each role try, in
+            order. A role not named, or null, uses the install's routing.
+            Models outside `allowedModels` are dropped when a request runs;
+            a role whose list keeps none uses the install's list, filtered.
+        allowedModels:
+          type: [array, 'null']
+          maxItems: 64
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 256}
+          description: |
+            Row 37: the models the members may reach: exact ids or patterns
+            with `*`. Null is every model. An app key's own `allowedModels`
+            still applies too. Changes apply to a member's next request.
         queueBand:
           oneOf:
             - $ref: '#/components/schemas/QueueBand'
@@ -7018,11 +7139,29 @@ components:
       description: |
         The policies that apply to a person now (row 70), from the groups
         they are in: the most generous value of each. An absent value is no
-        policy. Individual access (`groups` null) sets none. The same object
-        is the `eugene_policies` sign-in claim.
+        policy. Individual access (`groups` null) sets none. The
+        `eugene_policies` sign-in claim is this object without the row 37
+        fields (`activeGroup`, `roleRouting`, `allowedModels` and their
+        `setBy`): an app reads its routing from the gateway, and a
+        Workbench from before row 37 refuses a claim with fields it does
+        not know.
       properties:
         queueBand: {$ref: '#/components/schemas/QueueBand'}
         summaryContextPercent: {type: integer, minimum: 50, maximum: 95}
+        activeGroup:
+          type: string
+          description: |
+            Row 37: the group `roleRouting` and `allowedModels` come from:
+            the person's chosen `activeGroup`, else the first of their
+            `groups` that exists. Absent with individual access or no group.
+        roleRouting:
+          $ref: '#/components/schemas/RoleRouting'
+          description: Row 37. The active group's routing by role. Absent is the install's.
+        allowedModels:
+          type: array
+          maxItems: 64
+          items: {type: string}
+          description: Row 37. The active group's model list. Absent is every model.
         setBy: {$ref: '#/components/schemas/PoliciesSetBy'}
 
     PoliciesSetBy:
@@ -7038,6 +7177,43 @@ components:
           type: array
           maxItems: 64
           items: {type: string}
+        roleRouting:
+          type: array
+          maxItems: 1
+          items: {type: string}
+          description: Row 37. The active group, when it routes a role.
+        allowedModels:
+          type: array
+          maxItems: 1
+          items: {type: string}
+          description: Row 37. The active group, when it limits models.
+
+    ActiveGroupRequest:
+      type: object
+      additionalProperties: false
+      required: [group]
+      properties:
+        group:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 64
+          description: One of the person's groups, or null for the first in their list.
+
+    ActiveGroupState:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          maxItems: 64
+          items: {$ref: '#/components/schemas/OidcGroup'}
+          description: The person's groups, in the order the owner lists them.
+        activeGroup:
+          type: [string, 'null']
+          description: The group they chose; null when they chose none.
+        inEffect:
+          type: [string, 'null']
+          description: The group whose models and routing apply now; null with no group.
 
     PermissionGroupList:
       type: object
