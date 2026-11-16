@@ -7,10 +7,11 @@ inference drivers (m1, m2, m3) in front of one counting OpenAI-compatible
 fixture, and the gateway. No model, engine, installed service or provider.
 
 The install routes `role:chat` and `role:agentic` to m3, then m1. Two groups:
-G1 (models m1, m2; chat -> m2, m1) and G2 (models m3; chat -> m3). Person A is
-in [G1]; person B is in [G2, G1], so B works from G2 until B chooses G1. Each
-person signs in to an app (`app:workbench@<node>`) and sends its key and their
-token, as Workbench does.
+G1 (models m1, m2; chat -> m2, m1) and G2 (no model list; chat -> m1). Person A
+is in [G1]; person B is in [G2, G1], so B works from G2 until B chooses G1, and
+G1's model list limits B whichever group B works from (call R37-SELF, Choice
+3, default built). Each person signs in to an app (`app:workbench@<node>`) and
+sends its key and their token, as Workbench does.
 
 1. A asks `role:chat`: m2 answers. A's `/v1/models` lists m1, m2 and the
    roles A can use, not m3. A asks m3: 403 `model_not_allowed` naming G1.
@@ -18,17 +19,22 @@ token, as Workbench does.
    m1; m3 is dropped, not tried, and m1 answers.
 2. Sabotage: a second gateway whose resolution skips the person's model list
    (patched in that process before its app starts; no file is changed, so
-   nothing needs restoring). Step 1's `role:agentic` must then reach m3, and
-   the check must fail there.
-3. B asks `role:chat`: m3 answers (G2, the first of B's groups). B asks m1:
-   403 naming G2. B chooses G1 at `/oidc/active-group`, through the agent's
-   `/oidc` as an app reaches it: B's `role:chat` is m2, and m3 is refused
-   naming G1. A person cannot choose a group they are not in.
+   nothing needs restoring). Asked through it with A's token, step 1's
+   `role:agentic` must be served by m3, and m3's count must rise.
+3. B asks `role:chat`: m1 answers (G2's routing, the first of B's groups). B
+   asks m3: 403 naming G1, though B works from G2, which sets no list. B
+   chooses G1 at `/oidc/active-group`, through the agent's `/oidc` as an app
+   reaches it: B's `role:chat` is m2, and m3 is still refused naming G1. A
+   second change within a minute is a 429 with `Retry-After`. A person cannot
+   choose a group they are not in.
 4. A key with no person: the install's routing (`role:chat` is m3), and m3
    is reachable.
 5. m2's driver stops: A's `role:chat` fails over to m1, inside G1's list.
-6. The owner takes m1 out of G1: A's next request for m1 is refused, with no
-   token refresh, and m1 is not called.
+6. The owner takes m1 out of G1 (and out of its chat route, which may name
+   only G1's own models): A's next request for m1 is refused, with no token
+   refresh, and m1 is not called.
+7. The owner takes B out of G1: B's next request for m3 is served, since G2
+   sets no model list (leaving a group widens at the next request).
 
 Run with a Python that has agent, control, gateway and inference-driver
 installed (CI's cross-component job has them).
@@ -48,8 +54,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -207,17 +212,6 @@ def serve(kind: str, directory: Path, port: int) -> None:
 def _challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode()).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-
-
-@contextmanager
-def must_fail(label: str) -> Iterator[None]:
-    """The block must raise `AssertionError`: a check the sabotage breaks."""
-    try:
-        yield
-    except AssertionError as caught:
-        ok(f"sabotage caught: {label} ({caught})")
-        return
-    raise AssertionError(f"sabotage NOT caught: {label} passed against a broken rule")
 
 
 class Install:
@@ -409,13 +403,16 @@ def refused_naming(answer: httpx.Response, model: str, group: str) -> None:
     ), error
 
 
-def check_agentic_for_a(install: Install, gateway: str, key: str, proof: str) -> None:
-    """Step 1's last check, kept apart so the sabotage run can expect it to fail."""
+def agentic_for_a(
+    install: Install, gateway: str, key: str, proof: str
+) -> tuple[int, str, int]:
+    """Step 1's last request: `(status, the model that answered, how many
+    times m3 was called for it)`."""
     before = install.good("fixture", "GET", "/stats")
-    who = answered_by(chat(install, gateway, key, "role:agentic", proof))
+    answer = chat(install, gateway, key, "role:agentic", proof)
     after = install.good("fixture", "GET", "/stats")
-    assert after["m3"] == before["m3"], f"m3 was tried for A ({before} -> {after})"
-    assert who == "m1", f"role:agentic for A was answered by {who}, not m1"
+    who = answered_by(answer) if answer.status_code == 200 else ""
+    return answer.status_code, who, after["m3"] - before["m3"]
 
 
 def listed(install: Install, gateway: str, key: str, proof: str | None) -> set[str]:
@@ -565,7 +562,7 @@ def exercise(directory: Path) -> None:
         groups: dict[str, dict[str, Any]] = {}
         for name, models, chat_list in (
             ("G1", ["m1", "m2"], ["m2", "m1"]),
-            ("G2", ["m3"], ["m3"]),
+            ("G2", None, ["m1"]),
         ):
             made = install.call(
                 "control",
@@ -621,7 +618,7 @@ def exercise(directory: Path) -> None:
         ok(
             "step 1: A asking m3 is refused 403 model_not_allowed, naming G1; m3 is not called"
         )
-        check_agentic_for_a(install, "gateway", key, proof_a)
+        assert agentic_for_a(install, "gateway", key, proof_a) == (200, "m1", 0)
         ok(
             "step 1: A's role:agentic (not routed by G1) uses the install's m3, m1: m3 dropped, m1 answers"
         )
@@ -630,25 +627,31 @@ def exercise(directory: Path) -> None:
         # 2. Sabotage: a gateway that skips the person's model list
         # ---------------------------------------------------------------- #
         install.start("gateway-sabotaged")
+        # Ready for a person's request, as the sabotaged one is: A's key and
+        # token, and the role A asks for.
         install.wait(
             lambda: (
-                {"m1", "m2", "m3"} <= listed(install, "gateway-sabotaged", plain, None)
+                "role:agentic" in listed(install, "gateway-sabotaged", key, proof_a)
             ),
-            "the sabotaged gateway routes m1, m2 and m3",
+            "the sabotaged gateway serves A's role:agentic",
         )
-        with must_fail(
-            "step 1's role:agentic for A against a gateway that skips G1's models"
-        ):
-            check_agentic_for_a(install, "gateway-sabotaged", key, proof_a)
+        sabotaged = agentic_for_a(install, "gateway-sabotaged", key, proof_a)
+        assert sabotaged == (200, "m3", 1), (
+            f"sabotage NOT caught as expected: {sabotaged}, not (200, 'm3', 1)"
+        )
+        ok(
+            "sabotage caught: a gateway that skips G1's models serves A's role:agentic from m3"
+        )
         install.stop("gateway-sabotaged")
 
         # ---------------------------------------------------------------- #
         # 3. Person B, in G2 then G1
         # ---------------------------------------------------------------- #
-        assert answered_by(chat(install, "gateway", key, "role:chat", proof_b)) == "m3"
-        refused_naming(chat(install, "gateway", key, "m1", proof_b), "m1", "G2")
+        assert answered_by(chat(install, "gateway", key, "role:chat", proof_b)) == "m1"
+        refused_naming(chat(install, "gateway", key, "m3", proof_b), "m3", "G1")
         ok(
-            "step 3: B works from G2, the first of B's groups: role:chat is m3, m1 is refused naming G2"
+            "step 3: B works from G2: role:chat is m1 (G2's route); m3 is refused naming G1,"
+            " whose list applies though B works from G2 (R37-SELF)"
         )
         through_agent = install.call(
             "agent", "POST", "/oidc/active-group", proof_b, json={"group": g1}
@@ -660,6 +663,12 @@ def exercise(directory: Path) -> None:
         ok(
             "step 3: B chooses G1 through the agent's /oidc: role:chat is m2, m3 is refused naming G1"
         )
+        again = install.call(
+            "agent", "POST", "/oidc/active-group", proof_b, json={"group": g2}
+        )
+        assert again.status_code == 429, again.text
+        assert 1 <= int(again.headers["Retry-After"]) <= 60, again.headers
+        ok("step 3: a second change within a minute is refused 429 with Retry-After")
         elsewhere = install.good(
             "control",
             "POST",
@@ -711,13 +720,10 @@ def exercise(directory: Path) -> None:
             json={
                 "name": "G1",
                 "apps": [client_id],
-                "policies": {"allowedModels": ["m2"]},
+                "policies": {"allowedModels": ["m2"], "roleRouting": {"chat": ["m2"]}},
             },
         )
         assert edited.status_code == 200, edited.text
-        assert edited.json()["policies"]["roleRouting"] == {"chat": ["m2", "m1"]}, (
-            edited.text
-        )
         before = install.good("fixture", "GET", "/stats")
         refused_naming(chat(install, "gateway", key, "m1", proof_a), "m1", "G1")
         assert install.good("fixture", "GET", "/stats")["m1"] == before["m1"]
@@ -725,6 +731,21 @@ def exercise(directory: Path) -> None:
         ok(
             "step 6: m1 taken out of G1 is refused at A's next request, with no token refresh"
         )
+
+        # ---------------------------------------------------------------- #
+        # 7. B leaves G1: G2 sets no list, so m3 is B's at the next request
+        # ---------------------------------------------------------------- #
+        refused_naming(chat(install, "gateway", key, "m3", proof_b), "m3", "G1")
+        left = install.call(
+            "control",
+            "PATCH",
+            f"/v1/people/{people['B']['id']}",
+            owner,
+            json={"groups": [g2]},
+        )
+        assert left.status_code == 200, left.text
+        assert answered_by(chat(install, "gateway", key, "m3", proof_b)) == "m3"
+        ok("step 7: B taken out of G1 reaches m3 at the next request (G2 sets no list)")
     finally:
         install.close()
 

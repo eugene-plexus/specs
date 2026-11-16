@@ -247,3 +247,46 @@ predates the new fields would refuse every answer that carries them.
 - **The sabotage is made in the sabotaged gateway's own process** (its
   resolution skips the person's list before the app starts), so no file
   changes and nothing needs restoring.
+
+## Call R37-SELF, Choice 3: default built (2026-11-16)
+
+A person still chooses their active group, but it decides **routing by role
+only**. Model limits come from **every** group they are in that sets a
+model list: a model must be in all of those lists (a group with no list
+adds no limit; with none, the key's list applies as before). Choosing a
+group with no list, or a wider one, never widens what they reach; leaving
+a group widens it at their next request. This replaces "`allowedModels`
+from the active group" above.
+
+- The admission answer carries `modelLimits` (each limiting group's
+  `{id, name}` and list, sorted by name) and `routingGroup` (with
+  `roleRouting`); `allowedModels` and `modelGroup` are gone from it. The
+  gateway's 403 names the first group whose list leaves the model out.
+- `PoliciesInEffect` carries `modelLimits` the same way; the person page
+  says "m1 (from Sales)", or every list when several narrow them.
+
+## The second model's review, answered (2026-11-16)
+
+- **B1, a slow body wrote back an old record.** `POST /oidc/active-group`
+  read the person, awaited the body, then wrote the whole record it read: a
+  person holding the body back undid a disable, a removed group, revoked
+  grants and a password reset. It now reads the body first and writes a
+  `setPersonActiveGroup` entry that changes only `activeGroup` on the record
+  as it is when the entry applies (an older standby cannot apply it). Test:
+  `test_oidc_active_group.py::test_a_slow_body_*`.
+- **S1, matching on the event loop.** `*` patterns are matched by finding
+  the parts left to right (linear), in the gateway and in the vendored
+  `client_admission.py` (agent and control); a name over 256 characters is
+  never matched; a group's entry holds at most 8 `*`.
+- **S2, a row 37 console against a row 70 root.** The console sends
+  `roleRouting` and `allowedModels` only when the root's group records
+  carry them, so a save there is not a 422.
+- **S3, a route the group's own list leaves out** is a 422 naming the model
+  (settings never lie).
+- **S4, the acceptance's sabotage step** now requires a 200 from m3 and m3's
+  count to rise, after waiting with a person's request.
+- **S5, one change a minute.** A second change within a minute is a 429
+  `slow_down` with `Retry-After`; each change is a log record.
+- Notes: the Responses door's 403 carries `model_not_allowed`; the owner's
+  token gets 403 `not_a_person`; a person's check that an agent answers
+  with a 500 says an agent older than its root cannot pass on group models.
