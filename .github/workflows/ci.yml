@@ -545,6 +545,12 @@ jobs:
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
+      # Row 37: a group's routing by role and its models, through a real root,
+      # agent, drivers and gateway, with a gateway that skips the person's model
+      # list caught (patched in its own process; no file changes).
+      - name: Routing by role and models per permission group, and a skipped model list caught (row 37)
+        if: matrix.shard == 'L1' || matrix.shard == 'W3'
+        run: python specs/scripts/row37-group-routing-acceptance.py
       - name: Tool pictures through MCP and Job Sites, vision replay and newest-picture limits (row 29)
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         env:

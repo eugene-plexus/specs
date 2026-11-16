@@ -47,6 +47,8 @@ PINNED_STEPS = {
     "a43-container-unlock-acceptance.py": (EVERY, "both"),
     # Row 70 (2026-10-21): group policies at the root and through an agent.
     "row70-group-policy-acceptance.py": (EVERY, "both"),
+    # Row 37: routing by role and models per permission group.
+    "row37-group-routing-acceptance.py": (EVERY, "both"),
     "row29-tool-pictures-acceptance.py": (EVERY, "both"),
     # Row 4 (2026-10-22): a promoted root's address reaches every machine.
     "root-moved-acceptance.py": (EVERY, "both"),
