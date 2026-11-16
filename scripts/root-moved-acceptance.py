@@ -82,7 +82,7 @@ NODES = {name: f"agent-{name}" for name in AGENTS}
 #: Ports this run never takes: the defaults and the live install's (+200).
 NEVER = set(range(8079, 8084)) | set(range(8279, 8284))
 #: The checks a full run passes.
-CHECKS = 6
+CHECKS = 7  # 0 (row 38) and 1-6 (row 4)
 #: How long a node waits for its own pull or a push, and then some.
 PULL_BOUND = 90.0
 #: What a standby whose copy differs from the root's logs (control, row 4b).
