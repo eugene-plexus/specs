@@ -649,9 +649,10 @@ paths:
         administrator (row 39) sees people and groups but no keys: one who
         may manage people or groups sees all of them, one who manages the
         membership of some groups sees those groups and their members. Active
-        root only. Day counters are kept for 62 days and month counters for
-        13 months; a period older than that answers zero, and `kept` says
-        how long counters are kept.
+        root only. Each subject keeps its newest 62 days and 13 months with
+        use; an older period answers zero, and `kept` says how many are kept.
+        Allowances are always reported for the current UTC day and month,
+        whatever `day` and `month` ask for.
       parameters:
         - name: day
           in: query
@@ -698,7 +699,8 @@ paths:
         Under the issuer, beside `userinfo`, because an app reaches the root
         there. Answers only for the person the token names. `subjects` holds
         one `person` subject and one `group` subject for each of their groups
-        that sets an allowance.
+        that sets an allowance. A group's totals carry no breakdown by model
+        (`models` is empty): what the other members used is theirs.
       responses:
         '200':
           description: The person's usage.
@@ -7135,11 +7137,12 @@ components:
         policies:
           $ref: '#/components/schemas/GroupPolicies'
           description: |
-            The group's policies, replaced whole: a `null` or absent policy
-            inside is not set. Omitted from a replace, the group keeps its
-            current policies, so a console that predates policies never
-            clears them. Omitted from a create, the group sets none. An
-            older root refuses this field (`additionalProperties: false`).
+            The group's policies: a policy set inside is set, a `null` one is
+            cleared, and an absent one keeps its current value (row 40), so a
+            console that predates a policy never clears it. Omitted from a
+            replace, the group keeps every current policy. Omitted from a
+            create, the group sets none. An older root refuses this field
+            (`additionalProperties: false`).
 
     GroupPolicies:
       type: object
