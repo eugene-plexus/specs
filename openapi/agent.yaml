@@ -5075,6 +5075,64 @@ paths:
               schema:
                 $ref: "#/components/schemas/ModelCopyClearResult"
 
+  /v1/prompt-cache:
+    get:
+      tags: [runtimes]
+      operationId: getPromptCacheOnDisk
+      summary: What this machine keeps of its engines' prompt caches on disk.
+      description: |
+        Row 15 (DI2, `docs/design/deepinfer-lessons.md`; call DI-C4). Before
+        the agent stops or restarts a llama.cpp runtime, it saves the
+        conversations the engine's slots hold to files in this machine's
+        private Eugene folder (`<config folder>/prompt-cache`), and reads
+        them back into the slots when the runtime is next ready, so the
+        next turn of each does not reread its whole prompt. A crash saves
+        nothing.
+
+        **The files are copies of people's chats** (the token ids and the
+        engine's state for them). They are never readable through any
+        route: this answers counts, sizes and dates only. They expire
+        `days` after their last use, the least recently used go first
+        above `capBytes`, a runtime's files go with the runtime, and
+        turning the setting off deletes them all.
+
+        **A file is read back only by the launch it was saved by:** the
+        same runtime, model file, engine build and command line (cache
+        type, context and slot layout included). Each launch gets its own
+        folder, keyed on those, so a mismatch is a miss and never a load.
+
+        Operator-only.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The files kept now, and the limits they are kept under.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptCacheOnDisk"
+    delete:
+      tags: [runtimes]
+      operationId: clearPromptCacheOnDisk
+      summary: Delete every saved conversation on this machine.
+      description: |
+        Deletes every file of the prompt cache on disk. It stops nothing and
+        does not switch the setting off: a running model's conversations
+        stay in its memory and are saved again at its next planned stop.
+        Deleting nothing is a success. A file the system would not delete
+        is counted in `notDeleted`, and `reason` names the first cause.
+
+        Operator-only: it deletes files on this host.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: What was deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptCacheOnDiskCleared"
+
   /v1/config:
     get:
       tags: [config]
@@ -10117,6 +10175,8 @@ components:
           $ref: "#/components/schemas/RuntimeSpeculation"
         promptCache:
           $ref: "#/components/schemas/RuntimePromptCache"
+        diskPromptCache:
+          $ref: "#/components/schemas/RuntimeDiskPromptCache"
         engineLoad:
           type:
             - integer
@@ -10334,6 +10394,127 @@ components:
         default. `off` is a cache of zero bytes.
         `unsupported` is a build that does not list the flag, so nothing was
         passed.
+
+    RuntimeDiskPromptCache:
+      type: object
+      readOnly: true
+      additionalProperties: false
+      required: [saving, conversations, bytes]
+      description: |
+        The prompt cache on disk for this runtime (row 15,
+        `GET /v1/prompt-cache`): whether this run saves its conversations at
+        a planned stop and reads them back at its next start, read from the
+        command line it was started with and this machine's setting now, and
+        what is saved for it. Absent for a runtime that does not run on
+        llama.cpp, and for a search model.
+      properties:
+        saving:
+          type: boolean
+          description: |
+            True when a planned stop of this run saves its conversations and
+            its next start reads them back. False when the setting is off,
+            the engine was started without Eugene's folder (an older start,
+            a build without `--slot-save-path`, an engine other machines can
+            reach, or a folder set by hand), and `note` says which.
+        conversations:
+          type: integer
+          minimum: 0
+          description: |
+            Saved conversations its next start would read back (the engine
+            reads back at most one per slot).
+        bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Their size on disk.
+        note:
+          type: [string, "null"]
+          description: Why it does not save, or what applies at the next start.
+
+    PromptCacheOnDisk:
+      type: object
+      additionalProperties: false
+      required: [enabled, days, capBytes, bytes, conversations, runtimes]
+      description: |
+        What this machine keeps of its engines' prompt caches on disk, and
+        the limits it keeps them under (`GET /v1/prompt-cache`). Counts,
+        sizes and dates only; never what the conversations say.
+      properties:
+        enabled:
+          type: boolean
+          description: The setting `diskPromptCache` now. Off deletes every file.
+        days:
+          type: integer
+          minimum: 1
+          description: A file not used for this many days is deleted (`diskPromptCacheDays`).
+        capBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Above this size the least recently used files are deleted
+            (`diskPromptCacheGib`).
+        bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        conversations:
+          type: integer
+          minimum: 0
+          description: Saved conversations, one file each.
+        oldest:
+          type: [string, "null"]
+          format: date-time
+          description: When the least recently used file was last used. Null with no files.
+        newest:
+          type: [string, "null"]
+          format: date-time
+          description: When the most recently used file was last used. Null with no files.
+        folder:
+          type: [string, "null"]
+          description: The folder on this machine. Null when this agent has none.
+        runtimes:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromptCacheOnDiskRuntime"
+          description: One entry per runtime with saved conversations.
+
+    PromptCacheOnDiskRuntime:
+      type: object
+      additionalProperties: false
+      required: [runtime, conversations, bytes]
+      properties:
+        runtime:
+          type: string
+        conversations:
+          type: integer
+          minimum: 0
+        bytes:
+          type: integer
+          format: int64
+          minimum: 0
+
+    PromptCacheOnDiskCleared:
+      type: object
+      additionalProperties: false
+      required: [conversations, bytesFreed, notDeleted]
+      description: What `DELETE /v1/prompt-cache` deleted.
+      properties:
+        conversations:
+          type: integer
+          minimum: 0
+          description: Files deleted.
+        bytesFreed:
+          type: integer
+          format: int64
+          minimum: 0
+        notDeleted:
+          type: integer
+          minimum: 0
+          description: Files the system would not delete.
+        reason:
+          type: [string, "null"]
+          description: The first cause a file was not deleted, as the system gave it.
 
     RuntimeSpeculation:
       type: object
