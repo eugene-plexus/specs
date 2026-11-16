@@ -790,11 +790,21 @@ def verify(
     backup = sorted(
         p.name for p in ctx.workbench_db().parent.glob("workbench.sqlite3.schema-*.bak")
     )
-    check(
-        f"TO: migration kept a schema-{seeded['schema']} backup",
-        f"workbench.sqlite3.schema-{seeded['schema']}.bak" in backup,
-        backup,
-    )
+    if expected_schema == seeded["schema"]:
+        # No migration was due between these versions, so none ran and no
+        # backup is owed; a backup here would mean the store was rewritten.
+        check(
+            f"TO: no migration was due (schema {seeded['schema']} kept), so no backup",
+            schema == seeded["schema"]
+            and f"workbench.sqlite3.schema-{seeded['schema']}.bak" not in backup,
+            backup,
+        )
+    else:
+        check(
+            f"TO: migration kept a schema-{seeded['schema']} backup",
+            f"workbench.sqlite3.schema-{seeded['schema']}.bak" in backup,
+            backup,
+        )
     control_token = api.call(
         control, "POST", "/v1/auth/login", body={"passphrase": PASSPHRASE}
     )["sessionToken"]
