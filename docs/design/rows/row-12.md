@@ -27,8 +27,8 @@ GenAI names are pinned to the semantic-conventions release current at build time
 | `eugene_affinity_total` | counter | model, outcome (hit, new, moved) |
 | `eugene_wake_total`, `eugene_wake_wait_seconds` | counter, histogram | model, runtime |
 | `eugene_in_flight`, `eugene_runtime_slots` | gauge | runtime, node |
-| `eugene_budget_reserved_tokens`, `eugene_budget_pool_tokens` | gauge | runtime |
-| `eugene_queue_waiting` | gauge | runtime, band |
+| `eugene_budget_reserved_tokens`, `eugene_budget_pool_tokens` | gauge | runtime, node |
+| `eugene_queue_waiting` | gauge | runtime, node, band |
 | `eugene_queue_wait_seconds` | histogram | band, outcome |
 | `eugene_queue_refused_total` | counter | reason, band |
 | `eugene_circuit_open` | gauge | driver |
@@ -144,3 +144,29 @@ control `test_metrics_purpose_needs_read_metrics`; agent `test_engine_metrics_ar
 - **MET-PEOPLE: Choice 2.** No person names in any exported metric, the Prometheus page included. Series per key stay.
 - **MET-NAMES: Choice 2.** `eugene_*` names for every metric.
 - **MET-ENGINE: Choice 1.** Each agent serves its own engines' metrics.
+
+## What building found (2026-11-15)
+
+**Built as designed, with the answered calls applied.**
+
+- **Names (MET-NAMES, Choice 2).** Every name starts with `eugene_`; none is a GenAI name. The door view is `eugene_request_duration_seconds{door,model,outcome}`, `eugene_time_to_first_token_seconds{model}` and `eugene_time_per_output_token_seconds{model}`; the backend view is `eugene_attempts_total`, `eugene_attempt_duration_seconds{driver,runtime,node,served}` and `eugene_tokens_total`. The table in section 2 holds for the other names. Added, not in the table: `eugene_telemetry_series_dropped_total{family}`, `eugene_telemetry_spans_dropped_total`, `eugene_metrics_enabled`. `eugene_build_info` has `component`, `version`, `commit` and no `semconv`.
+- **People (MET-PEOPLE, Choice 2).** No `person` label anywhere, so the `telemetryExportPersonLabels` setting is not built. `eugene_client_key_info{key_id,key_name}` is on the Prometheus page only; an OTLP payload leaves it out.
+- **Spans.** `eugene.latency.time_to_first_token` (on the attempt) and `eugene.latency.time_in_queue` (on the door's span); the pinned conventions do not define `gen_ai.latency.*`. Spans are written from the finished request row, so their times are the row's: the door spans the request, attempts follow each other from its start. A caller's `traceparent` is continued, and one it did not sample is not traced. **`traceparent` is not sent to the driver**: a driver makes no span of its own yet, so nothing would read it.
+- **Telemetry needs the request store.** Counters are made from the rows the store records, so `metricsEnabled: false` leaves the counters empty. `/metrics` says so with `eugene_metrics_enabled 0`.
+- **Rollups (MET-RU).** `MetricsGroup.latencyMs` is no longer required: a `source: rollup` group has `latencyMeanMs`, `latencyMaxMs` and `tokensPerSecondMean` (a mean is not given as `p50`). The rollup also gained `token_ms_sum` (not in the design), because tokens over the time of requests that reported none would understate the rate. The rollup now attributes a request to the same attempt the live summary does and leaves refused requests out of its counts. Hours rolled up before v15 have the new columns at zero.
+- **gateway#19** is built here: `affinity_key` (v15) and `MetricRequest.affinityKey`. It is null when `conversationAffinity` is off.
+- **Access.** The gateway and the agent each check `limits.readMetrics` themselves, besides the authority's own refusal, and each is covered by a test that fails when the other is removed. Platform `client_admission.py` takes purpose `metrics`.
+- **`--metrics`** is now always passed to llama-server, in `engines/speculation.py` (the ENG file), with one assertion changed in `tests/test_speculation.py`.
+
+**Review fixes (2026-11-15).**
+
+- A collector credential is trimmed when it is read from the config, and one a header cannot hold (a control character inside it) is refused with "the collector credential has a character a header cannot hold" and is never sent. An export failure says its own words only for a connect error, a timeout, a status and a bad address; any other says its exception type and nothing more, because the HTTP library quotes the header it refused. The cause is logged once for each change.
+- The scrape key has `allowedTools: []` as well as `allowedModels: []`: an absent `allowedTools` permits every tool, and the root admits a search (purpose `search`) with no model.
+- `eugene_budget_reserved_tokens`, `eugene_budget_pool_tokens` and `eugene_queue_waiting` carry `node`, so two machines' same-named runtimes are two series.
+- An address that is not a URL (`http://[bad`) is named in `lastError`, and the exporter sends again when any export setting changes, not only the address.
+- A standalone agent asks its own registry for every read of `/metrics`, so a revoked key or a withdrawn grant stops at once; an enrolled one keeps the root's answer for 15 s. The gateway keeps it for 10 s. A revoked key is refused by the gateway's own key policy before the kept answer is read.
+- A browser that opens the agent's `/metrics` (no credential, asks for html) is sent to the console's `/metrics/` page, which the path hides.
+- The agent logs why an engine's `/metrics` could not be read, once for each change.
+- `scripts/row12-metrics-acceptance.py` runs in the specs integration (shard L3): a real root, agent, driver and gateway, a stand-in llama-server that serves `/metrics` only when started with `--metrics`, and a stand-in OTLP collector.
+
+**Mixed versions.** A standby control root one release behind loops on a key record that has `readMetrics` (it refuses a field it does not know): update the standby before making the first scrape key, as for row 11's `band`. A gateway one release behind refuses a `readMetrics` key for inference, for the same reason. A key without it is answered as before.

@@ -295,6 +295,10 @@ tags:
       driver and engine it supervises, one stream, each line stamped at
       receipt and tagged with its source (2026-09-27). Read from any
       console through `node:<name>`, like `docker logs`.
+  - name: metrics
+    description: |
+      This machine's engines as Prometheus series (row 12), for a scraper
+      that holds a client key with `readMetrics`.
   - name: sites
     description: |
       A Job Site this machine hosts (`job-sites-own-enrollment.md` §2.4,
@@ -305,6 +309,38 @@ tags:
     description: Health and version.
 
 paths:
+  /metrics:
+    get:
+      tags: [metrics]
+      operationId: getPrometheusMetrics
+      summary: This machine's engines in Prometheus text format (row 12).
+      description: |
+        What a Prometheus scraper reads from this agent: for each engine
+        runtime it supervises that is running, `eugene_engine_*` series with the
+        labels `node`, `runtime`, `model` and `engine`, and the engine's own
+        series under upstream's names with the same labels. The agent reads
+        each running engine's own `/metrics` when the scrape arrives, in
+        parallel, two seconds each; an engine that does not answer makes
+        `eugene_engine_scrape_ok` 0 and nothing else. **A counter the engine
+        does not have has no series, never a 0.**
+
+        Each machine serves its own engines: Prometheus already reports a
+        machine that is down, and gathering through the gateway would slow
+        every scrape to the slowest machine.
+
+        An operator session, or a client key with `readMetrics`. No credential
+        is a 401; a key without the grant is a 403.
+      responses:
+        "200":
+          description: Prometheus text exposition format, version 0.0.4.
+          content:
+            text/plain:
+              schema: {type: string}
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
   /v1/logs:
     get:
       tags: [logs]
