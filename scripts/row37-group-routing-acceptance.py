@@ -57,6 +57,12 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import yaml
 
+# At module level: the fixture's routes annotate `request` with it, and with
+# postponed annotations FastAPI resolves the name in this module's globals; an
+# import inside the factory left it unresolved, so `request` read as a query
+# parameter (a 422 for every answer).
+from fastapi import Request
+
 NODE_NAME = "r37-agent"
 APP_OWNER = f"app:workbench@{NODE_NAME}"
 CALLBACK = "http://127.0.0.1:9/callback"
@@ -97,7 +103,7 @@ def _sabotage_gateway() -> None:
 
 
 def fixture_app() -> Any:
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI
 
     app = FastAPI()
     counts = dict.fromkeys(MODELS, 0)
