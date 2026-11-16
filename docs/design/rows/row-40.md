@@ -144,16 +144,15 @@ L, about 4 days. One adversarial review. Risks:
   `test_usage_release.py` exist in the gateway (the hint, the listing, the
   release); the owner-rate rules are tested at the root
   (`control/tests/test_usage.py`).
-- **Provider prices.** An OpenRouter account reads `pricing.prompt` and
-  `pricing.completion` from its listing (dollars a token as strings; `-1`,
-  missing, or a float is no price). OpenAI, Anthropic and Gemini accounts read
-  `docs/data/model-prices.json`, copied into the driver by
-  `vendor-platform.py`. Default built: the table holds only models with one
-  flat price for input and one for output (a model priced by prompt length,
-  such as Gemini 2.5 Pro, is left out, so its cost is unknown, never
-  understated), and it is refreshed by hand before a release; no script
-  fetches prices, because none of the three publishes them in a form a
-  script can read. Its `asOf` says when the prices were taken.
+- **Provider prices: no table (orchestrator's call, 2026-11-16).** Prices come
+  only from the owner's rates and from a price a provider itself reports: an
+  OpenRouter account reads `pricing.prompt` and `pricing.completion` from its
+  listing (dollars a token as strings; `-1`, missing, or a float is no price).
+  §2's price table for OpenAI, Anthropic and Gemini (`docs/data/model-prices.json`)
+  was built and then removed: a list written down once, from memory, would show
+  stale prices as facts, against "settings never lie". A model whose provider
+  reports no price, and which the owner has not priced, is unpriced: counted as
+  such, never as free, and refused under a money limit with the reason.
 - **Money is exact.** A rate is whole micro-dollars a million tokens, which is
   one pico-dollar a token, so a request's cost is the integer
   `prompt * input + completion * output` pico-dollars. Counters keep
@@ -172,9 +171,9 @@ L, about 4 days. One adversarial review. Risks:
 - **Counting.** A release that ends a lease still held counts once, for the key's
   lineage, the person the acquire verified and their groups then (the acquire's
   log entry remembers the person, `usageOpen`). A second release of one request
-  counts nothing. Day counters are kept 62 days and month counters 13 months, at
-  most 32 models a period (the rest under `*`), pruned once a UTC day, so the
-  replicated state stays bounded; the count rides on the release's existing
+  counts nothing. Each subject keeps its newest 62 days and 13 months with use,
+  at most 32 models a period (the rest under `*`), held by count on every count
+  (see the review below); the count rides on the release's existing
   `putClientAdmission` entry, so counting adds no log entries.
 - **Allowances do not cut a running request**: they are left out of the policy a
   lease is bound to, and out of every admission answer.
@@ -193,11 +192,12 @@ L, about 4 days. One adversarial review. Risks:
   only to a root that answers them.
 - **A standalone agent** (a machine that joined no install) refuses a token or
   money allowance with a sentence that says why: no root counts it there.
-- **Known gaps.** A stream the client cuts before its end counts nothing (the
-  gateway learns the tokens at the end). A fallback to a cloud model with no
-  price inside a request that was admitted on a priced model counts as
-  unpriced and is not refused: the gateway's routing does not yet skip
-  unpriced fallback targets under a money allowance.
+- **Known gap.** A fallback to a cloud model with no price inside a request
+  admitted on a priced model is priced at the admitted model (review S1); a
+  fallback whose provider reports a price is priced at it. The gateway's routing
+  does not skip unpriced fallback targets under a money allowance.
+- **A deleted key, person or group** keeps its counters (bounded, at most 75
+  periods); nothing prunes subjects that no longer exist.
 
 ### Mixed versions
 
@@ -216,3 +216,43 @@ L, about 4 days. One adversarial review. Risks:
   root enforces no allowance, which it does not know.
 - **A console a release behind** does not offer allowances or prices; a root
   before row 40 refuses a group or key write that sets one.
+
+## Review (2026-11-16): two blockers and six should-fix, all fixed
+
+- **B1, a cut answer counted nothing.** A stream that ends without the backend's
+  count (the caller hangs up, the Stop button, the backend fails after its first
+  token, the gateway stops a repetition), and a non-streamed request whose caller
+  left after a backend was asked, now release the gateway's estimate: the
+  queue's prompt estimate (else the request's size, four bytes a token) and the
+  output forwarded (at least a token a fragment, at most four characters a
+  token), marked `estimated`. The gateway's `BoundClient` notes each backend
+  asked and each fragment forwarded on the request's admission. A backend that
+  failed before any output, with the caller still waiting, counts nothing.
+- **B2, counters pruned against one record's date.** A root whose clock was a
+  year ahead for one release wiped every counter, and later a subject could hold
+  more periods than `validate` accepts, so the root could not reload its own
+  snapshot. Now each subject keeps its newest 62 days and newest 13 months *by
+  count*, on every count; no state `counted` writes can fail `validate`. Default
+  built, not the reviewer's second idea: a record is **not** moved to the newest
+  day counted. After a clock that ran a year ahead, that would count every later
+  request into the future day while the allowance reads today's: free use for a
+  year. A stray future period is one of the 75 kept and wipes nothing.
+- **S1, served under another name.** A release whose serving model has no price
+  at the root is priced at the model its lease was acquired for; the gateway
+  also gives a served name it does not route the hint of the model asked for.
+- **S2, an older console cleared allowances.** On `PUT .../limits` and on a group
+  replace, an allowance (or any group policy) left out keeps its value and `null`
+  clears it. The console sends `null` to clear one the key had.
+- **S3, a lost release was silent.** It is logged and retried in the background,
+  with a growing pause, for up to 30 s (a lease's life).
+- **S4, a missing count became 0.** It is the B1 estimate, marked `estimated`.
+- **S5, who reads whose usage** is pinned by tests: the owner sees all; a
+  directory administrator no keys; a membership administrator only their groups
+  and members; a person only themselves, and their groups' totals without any
+  per-model breakdown of other members' use.
+- **S6, allowances reported for a past period.** Allowance state is always now:
+  the current UTC day and month, whatever period the report shows.
+- The acceptance now streams two of step 1's requests, cuts one stream after its
+  first fragment (it must still count), and its sabotage must fail for the
+  sabotage's own reason ("the root counted both gateways' requests").
+

@@ -2,16 +2,19 @@
 
 Real processes on OS-assigned loopback ports (never 8079-8083), with all state
 in a temporary folder and no `EUGENE_PLEXUS_*` variable reaching a child: one
-control root, one agent enrolled with the `gateway` grant, the a6 fixture
-backend behind three drivers (`local` is local, `cloud` is external, `unknown`
-is neither), and two gateways, A and B. Every answer uses 7 tokens in and 3
-out. Linux and Windows. Do not run this against a live install.
+control root, one agent enrolled with the `gateway` grant, this script's own
+fixture backend behind three drivers (`local` is local, `cloud` is
+external, `unknown` is neither), and two gateways, A and B. Every answer uses 7
+tokens in and 3 out; a streamed one comes in six fragments over 1.5 s. Linux
+and Windows. Do not run this against a live install.
 
-1. A key with 100 tokens a day sends 10 requests, alternating A and B: all
-   served. The 11th is refused on A and on B, as OpenAI's 429
-   `insufficient_quota`, with the root's sentence and `Retry-After`; the
-   root's total for the key is 100 tokens in 10 requests, as the fixture
-   counted them.
+1. A key with 100 tokens a day sends 10 requests, alternating A and B, two of
+   them streamed to their end: all served. The 11th is refused on A and on B,
+   as OpenAI's 429 `insufficient_quota`, with the root's sentence and
+   `Retry-After`; the root's total for the key is 100 tokens in 10 requests,
+   as the fixture counted them. Then a client hangs up on a stream after its
+   first fragment: the root still counts that request (the gateway's
+   estimate), so closing early never makes a request free.
 2. A person in a group with $0.01 a month, through an app key and their own
    sign-in: the owner prices `cloud` at $500 a million tokens, so two
    requests spend the group's cent (one on A, one on B), and the third is
@@ -84,12 +87,15 @@ def load(name: str) -> Any:
 
 
 @contextmanager
-def must_fail(label: str) -> Iterator[None]:
-    """The block must raise `AssertionError`: the check the sabotage breaks."""
+def must_fail(label: str, expect: str) -> Iterator[None]:
+    """The block must raise `AssertionError` saying `expect`: the check the
+    sabotage breaks, failing for the reason the sabotage gives it, not another."""
     try:
         yield
     except AssertionError as caught:
-        ok(f"sabotage caught: {label} ({str(caught)[:200]})")
+        said = str(caught)
+        assert expect in said, f"sabotage failed {label} for another reason: {said[:300]}"
+        ok(f"sabotage caught: {label} ({said[:200]})")
         return
     raise AssertionError(f"sabotage NOT caught: {label} passed with gateway B uncounted")
 
@@ -248,7 +254,76 @@ class Install:
         return str(exchanged.json()["access_token"])
 
 
+def fixture_app() -> Any:
+    """An OpenAI-compatible backend for three models: every answer uses 7 tokens
+    in and 3 out. A streamed answer comes in six fragments over 1.5 s, so a client
+    can hang up before its end; the usage rides on its last frame."""
+    import asyncio
+
+    from fastapi import FastAPI, Request
+    from fastapi.responses import StreamingResponse
+
+    app = FastAPI()
+    counts = {model: 0 for model in ("local", "cloud", "unknown")}
+    usage = {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}
+
+    @app.get("/healthz")
+    async def health() -> Any:
+        return {}
+
+    @app.get("/stats")
+    async def stats() -> Any:
+        return counts
+
+    @app.get("/{model}/v1/models")
+    async def models(model: str) -> Any:
+        return {"data": [{"id": model, "object": "model"}]}
+
+    @app.get("/{model}/props")
+    async def props(model: str) -> Any:
+        return {"default_generation_settings": {"n_ctx": 4096}}
+
+    @app.post("/{model}/v1/chat/completions")
+    async def chat(model: str, request: Request) -> Any:
+        body = await request.json()
+        if "ROW40" in json.dumps(body):
+            counts[model] += 1
+
+        def frame(delta: dict[str, Any], finish: str | None = None, **extra: Any) -> str:
+            choice = {"index": 0, "delta": delta, "finish_reason": finish}
+            return "data: " + json.dumps({"model": model, "choices": [choice], **extra}) + "\n\n"
+
+        if body.get("stream"):
+
+            async def stream() -> Any:
+                for _ in range(6):
+                    yield frame({"content": "word "})
+                    await asyncio.sleep(0.25)
+                yield frame({}, "stop", usage=usage)
+                yield "data: [DONE]\n\n"
+
+            return StreamingResponse(stream(), media_type="text/event-stream")
+        return {
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "fixture-ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": usage,
+        }
+
+    return app
+
+
 def serve_fixture_or_component(kind: str, directory: Path, port: int) -> None:
+    if kind == "fixture":
+        import uvicorn
+
+        uvicorn.run(fixture_app(), host="127.0.0.1", port=port, log_level="error")
+        return
     load("a6-local-only-acceptance.py").serve(kind, directory, port)
 
 
@@ -358,9 +433,16 @@ def exercise(directory: Path, sabotage: bool) -> None:
             )
             return str(made["token"])
 
-        def chat(gateway: str, token: str, model: str, person: str | None = None) -> Any:
+        def chat(
+            gateway: str,
+            token: str,
+            model: str,
+            person: str | None = None,
+            *,
+            stream: bool = False,
+        ) -> Any:
             headers = {"X-Eugene-Person-Token": person} if person else {}
-            return install.call(
+            answer = install.call(
                 gateway,
                 "POST",
                 "/v1/chat/completions",
@@ -369,9 +451,13 @@ def exercise(directory: Path, sabotage: bool) -> None:
                 json={
                     "model": model,
                     "max_tokens": 8,
-                    "messages": [{"role": "user", "content": "A6_PRIVATE row 40"}],
+                    "stream": stream,
+                    "messages": [{"role": "user", "content": "ROW40 private words"}],
                 },
             )
+            if stream and answer.status_code == 200:
+                assert "data: [DONE]" in answer.text, answer.text[-300:]
+            return answer
 
         def served() -> dict[str, int]:
             return dict(install.good("fixture", "GET", "/stats"))
@@ -400,7 +486,10 @@ def exercise(directory: Path, sabotage: bool) -> None:
             token = mint(name, tokensPerDay=100)
             before = served()["local"]
             for n in range(10):
-                answer = chat("gateway-a" if n % 2 == 0 else "gateway-b", token, "local")
+                # Two of the ten are streamed to their end, one through each gateway.
+                answer = chat(
+                    "gateway-a" if n % 2 == 0 else "gateway-b", token, "local", stream=n in (2, 5)
+                )
                 assert answer.status_code == 200, (n, answer.status_code, answer.text)
             # The release reaches the root as the answer's end goes out; a moment for it.
             install.wait(
@@ -424,8 +513,32 @@ def exercise(directory: Path, sabotage: bool) -> None:
             assert served()["local"] - before == 10, "the fixture served exactly ten"
 
         two_gateway_day("Daily")
+
+        # --- 1b: a stream the caller hangs up on still counts (review B1) --------
+        cut_token = mint("Cut short")
+        with install.client.stream(
+            "POST",
+            install.url("gateway-b") + "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {cut_token}"},
+            json={
+                "model": "local",
+                "stream": True,
+                "messages": [{"role": "user", "content": "ROW40 cut"}],
+            },
+        ) as streamed:
+            assert streamed.status_code == 200
+            for line in streamed.iter_lines():
+                if '"content"' in line:
+                    break  # one fragment read; the caller hangs up here
+        install.wait(
+            lambda: usage_of("key", key_id("Cut short"))["day"]["requests"] == 1,
+            "the root counted the stream the caller cut",
+            seconds=15,
+        )
+        cut_day = usage_of("key", key_id("Cut short"))["day"]
+        assert cut_day["promptTokens"] > 0 and cut_day["completionTokens"] >= 1, cut_day
         ok(
-            "1. 100 tokens a day across two gateways: ten served, the 11th refused on A and B as insufficient_quota"
+            "1. 100 tokens a day across two gateways, two streamed, and a cut stream counted: the 11th refused on A and B"
         )
 
         # --- 2: a group's cent, priced and unpriced models -----------------------
@@ -572,7 +685,10 @@ def exercise(directory: Path, sabotage: bool) -> None:
                 "the sabotaged gateway-b routes local",
                 seconds=45,
             )
-            with must_fail("step 1 with gateway B's releases uncounted"):
+            with must_fail(
+                "step 1 with gateway B's releases uncounted",
+                "timed out: the root counted both gateways' requests",
+            ):
                 two_gateway_day("Daily, gateway B uncounted")
             ok("4. admission.py restored from its copy, hash as before")
 
