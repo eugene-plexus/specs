@@ -2280,8 +2280,20 @@ paths:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
         '409':
           description: |
-            This root is already active, or the standby is behind and
-            `force` was not set. `detail` reports the gap.
+            This root is already active, or `force` was not set and the
+            standby is behind or cannot say how far behind it is (it has
+            not read the active root since it started, or its replication
+            is not running). `detail` reports the gap, or why it is not
+            known and the last entry applied.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '500':
+          description: |
+            The promotion was not written (the log refused the entry).
+            This node is still a standby and follows the active root
+            again. `detail` names the cause.
           content:
             application/problem+json:
               schema:

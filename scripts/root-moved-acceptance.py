@@ -670,6 +670,17 @@ def exercise(run: Run) -> None:
     )
 
     # ---- 3. A and D stop; B is promoted; C follows within 60 s ---------------
+    # The promotion is not forced, and a standby refuses one while it cannot
+    # say how far behind it is (control#16). The wait above read the root's
+    # report; the promotion goes by the copy's own reading.
+    def knows_it_is_level() -> bool:
+        health = run.get(copy, "/healthz")
+        return bool(
+            health.status_code == 200
+            and health.json().get("details", {}).get("lagEntries") == 0
+        )
+
+    run.wait(knows_it_is_level, "B's copy to read its own lag as 0", 60)
     epoch = run.get(control, "/v1/control/status", session_root).json()["epoch"]
     machine_c = run.node("c")["machine"]
     run.stop("d")

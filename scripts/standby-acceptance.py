@@ -711,7 +711,20 @@ def exercise(root: Path) -> int:
             )
             wait_for(caught_up, "the standby to catch up again", 60)
             follow_standby_port(session_b)
-            epoch =call("control", "GET", "/v1/control/status", session_root).json()[
+
+            # The promotion below is not forced, and a standby refuses one
+            # while it cannot say how far behind it is (control#16). The root's
+            # report above is the root's view; what the promotion goes by is
+            # the standby's own reading, so wait for that.
+            def knows_it_is_level() -> bool:
+                health = call("standby", "GET", "/healthz")
+                return bool(
+                    health.status_code == 200
+                    and health.json().get("details", {}).get("lagEntries") == 0
+                )
+
+            wait_for(knows_it_is_level, "the standby to read its own lag as 0", 60)
+            epoch = call("control", "GET", "/v1/control/status", session_root).json()[
                 "epoch"
             ]
             stop("control")
