@@ -3,14 +3,14 @@
   "python": "3.12",
   "uvMinimum": "0.12.18",
   "components": {
-    "agent": "628a806908c50ca6a7e0e1f5ea6850d0c2e911a4",
-    "control": "0d84d3c5fe0e3e924b5f3bac1dc3bbc373966953",
+    "agent": "fa3f7ded44a94e8e7a12d40498e658ac325e1234",
+    "control": "d067e9f8acea2fc1d37f5d4a60a148fb07566ad0",
     "gateway": "b29eff87b610133fc6b08db655f3b0b9e0739b97",
-    "library": "34a80aa70e6dd0f2f7b2a8937779310ae1381a74",
-    "store": "57fae66f52a0b665906f10e892568b94526574f6",
-    "tool-driver": "9298d549a3243a5b4a6a7b560f2c2f10ff8b231e",
-    "ui": "9fff36f24a8bca52b95e6eb04c6585d7f696c010",
-    "inference-driver": "723b1bc8b90c60b3685674bc668aa79d593f42f7"
+    "library": "f6487f7611bec3259da2cc771c1596a2c127b547",
+    "store": "e69f109cadd467c097efe229abc6a1c734848a36",
+    "tool-driver": "4ec9254427eeec8f834c550654f751b158498406",
+    "ui": "20cc679c50431bba0df7ec14342762823fc31186",
+    "inference-driver": "22f8f77604eabe8e9215a05b7efcfcaaf0920f11"
   },
   "dependenciesSha256": "51eff13a14bc6dc31446aa03bd2e3683f887fa3c34f083dfbf86e1a1eee44def",
   "vllmImages": {
