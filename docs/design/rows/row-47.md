@@ -135,3 +135,8 @@ attributed).
 - **R47-LEAVE: Choice 1.** What a removed person added to a team
   collection stays with the team, marked "added by a former member"; the
   owner can delete it.
+- **R47-OUTSIDE: Choice 1, as built (answered 2026-11-21).** Each
+  collection has "Outside models may read it", off by default. Its
+  manager sets it; for a shared project, the project's owner. When it is
+  off, a cloud or unplaced model gets nothing from the collection, and the
+  chat says why.
