@@ -83,6 +83,11 @@ normalized-content SHA-256 digests. Every consumer checks its copies offline in
 CI; the central generator's `--check` verifies the full workspace against the
 canonical snapshot. `platform-checks.py` deliberately damages a copy and checks
 that integrity verification catches it and regeneration restores it.
+A consumer's offline check compares only with its own lock, so a repository
+never re-vendored passes it (specs#135: five copies of `_http.py` stayed a
+month behind). `vendored-source-check.py` compares every consumer's copies,
+fetched from GitHub, with the source: in CI at each candidate branch or else
+the repository's `main`, and in Release qualification at the pins that ship.
 
 The additive run protocol is also vendored to its three consumers. Library
 compares its exposed schema to the snapshot. UI generates the new protocol types

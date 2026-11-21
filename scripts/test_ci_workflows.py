@@ -259,6 +259,19 @@ class WiringTests(unittest.TestCase):
         self.assertLess(setup, install)
         self.assertLess(install, acceptance)
 
+    def test_vendored_copies_are_compared_with_the_source(self) -> None:
+        """specs#135: CI at each candidate or main; Release qualification at the pins."""
+        steps = workflow("ci.yml")["jobs"]["s10-instruments"]["steps"]
+        gate = next(s["run"] for s in steps if "vendored-source-check.py" in s.get("run", ""))
+        self.assertIn("--at main", gate)
+        self.assertIn('--branch="$CI_BRANCH"', gate)
+        for repository in ("agent", "inference-driver", "library", "site-host", "store", "ui"):
+            self.assertIn(f'--ref "{repository}=', gate)
+        steps = workflow("release-qualification.yml")["jobs"]["candidate"]["steps"]
+        release = next(s["run"] for s in steps if "vendored-source-check.py" in s.get("run", ""))
+        self.assertNotIn("--at", release)
+        self.assertNotIn("--ref", release)
+
     def test_release_candidate_inline_imports_resolve(self) -> None:
         steps = workflow("release-qualification.yml")["jobs"]["candidate"]["steps"]
         script = next(step["run"] for step in steps if step.get("id") == "pins")

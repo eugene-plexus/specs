@@ -77,6 +77,11 @@ jobs:
             - name: Resolve every shipped nested pin
               id: nested
               run: python scripts/release_gate.py resolve --agent ../agent --output candidate.json
+            # specs#135: a component's own check-vendored.py compares only with
+            # the digests it recorded; this compares every vendored copy at the
+            # pins that ship with its source in this commit.
+            - name: Every vendored copy that ships equals its source here
+              run: python scripts/vendored-source-check.py
             - uses: actions/upload-artifact@v4
               with:
                   name: release-candidate

@@ -691,8 +691,11 @@ a container root, one adversarial review, and `ship.py`.
   older version as before. A worker that joined before LT1 and has no list
   yet treats the root as an older machine until its first pull, as its agent
   starts, brings the list. The copies in library, inference-driver,
-  tool-driver and store are not re-vendored; their calls with a token go to
-  their own agent on this machine.
+  tool-driver and store were not re-vendored at first; their calls with a
+  token go to their own agent on this machine. site-host was left out too,
+  although the review's `client_for` change named it. **specs#135
+  (2026-11-21)** re-vendored all five, and `scripts/vendored-source-check.py`
+  now fails CI when any copy differs from `platform/`.
 
 **Not built, or not measured.**
 - **Key rotation** (two pins over an overlap): built in row 3

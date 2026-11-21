@@ -270,6 +270,32 @@ jobs:
           python -m unittest discover -s scripts -p test_release_inputs.py -v
       - name: Verify deterministic platform vendoring and drift detection
         run: python scripts/platform-checks.py
+      # specs#135: each repository's own check compares its copies with its own
+      # VENDORED.json, which a repository never re-vendored records as stale
+      # too. This reads every consumer's copies (at its candidate, else its
+      # main: a ship moves the pins after the merge) and compares them with the
+      # source here. Release qualification runs it at the pins that ship.
+      - name: Every vendored copy in the component repositories equals its source here (specs#135)
+        if: runner.os == 'Linux'
+        env:
+          CI_BRANCH: ${{ github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name || '' }}
+          AGENT_REF: ${{ needs.plan.outputs.agent_ref }}
+          CONTROL_REF: ${{ needs.plan.outputs.control_ref }}
+          GATEWAY_REF: ${{ needs.plan.outputs.gateway_ref }}
+          INFERENCE_DRIVER_REF: ${{ needs.plan.outputs.inference_driver_ref }}
+          LIBRARY_REF: ${{ needs.plan.outputs.library_ref }}
+          STORE_REF: ${{ needs.plan.outputs.store_ref }}
+          TOOL_DRIVER_REF: ${{ needs.plan.outputs.tool_driver_ref }}
+          SITE_HOST_REF: ${{ needs.plan.outputs.site_host_ref }}
+          UI_REF: ${{ inputs.ui_ref }}
+          WORKBENCH_REF: ${{ inputs.workbench_ref }}
+        run: |
+          python -m unittest discover -s scripts -p test_vendored_source_check.py -v
+          python scripts/vendored-source-check.py --at main --branch="$CI_BRANCH" \
+            --ref "agent=$AGENT_REF" --ref "control=$CONTROL_REF" --ref "gateway=$GATEWAY_REF" \
+            --ref "inference-driver=$INFERENCE_DRIVER_REF" --ref "library=$LIBRARY_REF" \
+            --ref "store=$STORE_REF" --ref "tool-driver=$TOOL_DRIVER_REF" \
+            --ref "site-host=$SITE_HOST_REF" --ref "ui=$UI_REF" --ref "workbench=$WORKBENCH_REF"
       - name: Check release artifact bytes and component pin agreement
         run: python scripts/release-artifacts-checks.py
       - name: Release script and release lines, offline (row 6)
