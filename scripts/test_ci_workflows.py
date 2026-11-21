@@ -272,6 +272,17 @@ class WiringTests(unittest.TestCase):
         self.assertNotIn("--at", release)
         self.assertNotIn("--ref", release)
 
+    def test_release_qualification_skips_the_merge_gates_vendored_check(self) -> None:
+        """specs#135 review: Release qualification calls ci.yml with no refs, so
+        the `--at main` step there would compare a release line with main."""
+        qualification = workflow("release-qualification.yml")
+        self.assertEqual("./.github/workflows/ci.yml", qualification["jobs"]["integration"]["uses"])
+        steps = workflow("ci.yml")["jobs"]["s10-instruments"]["steps"]
+        gate = next(s for s in steps if "vendored-source-check.py" in s.get("run", ""))
+        # In a called workflow `github.workflow` is the caller's name.
+        self.assertIn(f"github.workflow != '{qualification['name']}'", gate["if"])
+        self.assertIn("runner.os == 'Linux'", gate["if"])
+
     def test_release_candidate_inline_imports_resolve(self) -> None:
         steps = workflow("release-qualification.yml")["jobs"]["candidate"]["steps"]
         script = next(step["run"] for step in steps if step.get("id") == "pins")

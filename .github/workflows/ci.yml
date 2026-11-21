@@ -274,9 +274,12 @@ jobs:
       # VENDORED.json, which a repository never re-vendored records as stale
       # too. This reads every consumer's copies (at its candidate, else its
       # main: a ship moves the pins after the merge) and compares them with the
-      # source here. Release qualification runs it at the pins that ship.
+      # source here. Release qualification runs it at the pins that ship, in its
+      # own candidate job; when it calls this workflow, `github.workflow` is its
+      # name, and this step is skipped: a release line's source compared with
+      # the components' main would fail for no fault.
       - name: Every vendored copy in the component repositories equals its source here (specs#135)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && github.workflow != 'Release qualification'
         env:
           CI_BRANCH: ${{ github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name || '' }}
           AGENT_REF: ${{ needs.plan.outputs.agent_ref }}

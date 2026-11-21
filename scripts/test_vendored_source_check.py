@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import re
 import sys
 import unittest
+import urllib.error
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -128,44 +131,191 @@ class ResolveTests(unittest.TestCase):
             pin = re.search(rf"(?m)^PIN_{name}=([0-9a-f]{{40}})", INSTALLER).group(1)
             self.assertEqual(pin, chosen[repository], repository)
 
-    def test_a_ref_then_a_branch_replace_the_pin(self) -> None:
-        store = agent_files("feature", workbench="c" * 40, site_host="d" * 40)
+    def test_a_ref_then_a_branch_replace_the_pin_each_as_a_commit(self) -> None:
+        heads = {("agent", "feature"): "e" * 40, ("ui", "feature"): "f" * 40}
+        store = agent_files("e" * 40, workbench="c" * 40, site_host="d" * 40)
+        said: dict[str, str] = {}
         chosen = check.resolve(
             set(EXPECTED),
-            {"library": "1" * 40},
+            {"library": "1" * 40, "control": ""},
             installer=INSTALLER,
             fetch=fetcher(store),
-            has_branch=lambda repository: repository in {"agent", "ui", "library"},
+            lookup=lambda repository, branch: heads.get((repository, branch)),
             branch="feature",
+            said=said,
         )
         self.assertEqual("1" * 40, chosen["library"])
-        self.assertEqual("feature", chosen["ui"])
-        self.assertEqual("feature", chosen["agent"])
-        # site-host and Workbench at the pins of the agent in use.
+        self.assertEqual("f" * 40, chosen["ui"])
+        self.assertEqual("e" * 40, chosen["agent"])
+        self.assertEqual("branch feature", said["ui"])
+        # site-host and Workbench at the pins of the agent in use, read by commit.
         self.assertEqual("c" * 40, chosen["workbench"])
         self.assertEqual("d" * 40, chosen["site-host"])
         self.assertEqual(
             re.search(r"(?m)^PIN_GATEWAY=([0-9a-f]{40})", INSTALLER).group(1), chosen["gateway"]
         )
+        for repository, commit in chosen.items():
+            self.assertRegex(commit, r"^[0-9a-f]{40}$", repository)
 
-    def test_the_merge_gate_reads_main_where_no_candidate_exists(self) -> None:
+    def test_the_merge_gate_reads_each_main_at_its_commit(self) -> None:
+        """specs#135 review S1: a branch name read through the raw host may be
+        five minutes old; every name becomes the commit GitHub names now."""
+        mains = {repository: format(i, "x") * 40 for i, repository in enumerate(sorted(EXPECTED))}
+        heads = {**{(r, "main"): c for r, c in mains.items()}, ("ui", "feature"): "f" * 40}
+        asked: list[tuple[str, str]] = []
+
+        def lookup(repository: str, branch: str) -> str | None:
+            asked.append((repository, branch))
+            return heads.get((repository, branch))
+
         chosen = check.resolve(
             set(EXPECTED),
-            {"store": "2" * 40},
+            {"store": "2" * 40, "gateway": "my-branch"},
             installer=INSTALLER,
             fetch=fetcher({}),  # nothing read from the agent: no pins needed
-            has_branch=lambda repository: repository == "ui",
+            lookup=lambda r, b: lookup(r, b) or ("9" * 40 if b == "my-branch" else None),
             branch="feature",
             at="main",
         )
         self.assertEqual("2" * 40, chosen["store"])
-        self.assertEqual("feature", chosen["ui"])
-        for repository in set(EXPECTED) - {"store", "ui"}:
-            self.assertEqual("main", chosen[repository], repository)
+        self.assertEqual("9" * 40, chosen["gateway"])
+        self.assertEqual("f" * 40, chosen["ui"])
+        for repository in set(EXPECTED) - {"store", "ui", "gateway"}:
+            self.assertEqual(mains[repository], chosen[repository], repository)
+            self.assertIn((repository, "main"), asked)
+
+    def test_a_branch_github_does_not_have_fails(self) -> None:
+        with self.assertRaisesRegex(ValueError, "GitHub has no branch 'gone'"):
+            check.resolve(
+                set(EXPECTED), {"library": "gone"}, installer=INSTALLER, fetch=fetcher({})
+            )
+
+    def test_a_ref_that_names_no_consumer_fails(self) -> None:
+        with self.assertRaisesRegex(ValueError, "names no consumer.*librray"):
+            check.resolve(set(EXPECTED), {"librray": ""}, installer=INSTALLER, fetch=fetcher({}))
+
+    def test_a_consumer_with_no_known_pin_names_a_remedy_that_works(self) -> None:
+        repositories = set(EXPECTED) | {"newcomer"}
+        with self.assertRaisesRegex(ValueError, "newcomer: this check knows no pin.*--at main"):
+            check.resolve(
+                repositories, {}, installer=INSTALLER, fetch=fetcher(agent_files(AGENT_PIN))
+            )
+        # The remedies named: a ref, or the merge gate's main.
+        chosen = check.resolve(
+            repositories,
+            {"newcomer": "3" * 40},
+            installer=INSTALLER,
+            fetch=fetcher(agent_files(AGENT_PIN)),
+        )
+        self.assertEqual("3" * 40, chosen["newcomer"])
+        chosen = check.resolve(
+            repositories,
+            {},
+            installer=INSTALLER,
+            fetch=fetcher({}),
+            lookup=lambda repository, branch: "4" * 40 if branch == "main" else None,
+            at="main",
+        )
+        self.assertEqual("4" * 40, chosen["newcomer"])
 
     def test_an_unreadable_agent_pin_fails(self) -> None:
         with self.assertRaisesRegex(ValueError, "Workbench pin"):
             check.resolve({"agent", "workbench"}, {}, installer=INSTALLER, fetch=fetcher({}))
+
+
+class _Answer:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.body
+
+
+def _opener(*outcomes: object):
+    """urlopen that answers with each outcome in turn: bytes, or an exception."""
+    calls: list[str] = []
+    queue = list(outcomes)
+
+    def urlopen(url: str, timeout: float) -> _Answer:
+        calls.append(url)
+        outcome = queue.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return _Answer(outcome)  # type: ignore[arg-type]
+
+    return urlopen, calls
+
+
+def _http_error(code: int) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError("u", code, "said so", None, None)  # type: ignore[arg-type]
+
+
+COMMIT = "a" * 40
+
+
+class FetchTests(unittest.TestCase):
+    """specs#135 review: bounded retries, fail closed, by commit only (no network)."""
+
+    def fetch(self, *outcomes: object):
+        urlopen, calls = _opener(*outcomes)
+        waits: list[float] = []
+        try:
+            got = check.fetch_raw(
+                "library", COMMIT, "VENDORED.json", urlopen=urlopen, sleep=waits.append
+            )
+        except check.FetchError as error:
+            got = error
+        return got, calls, waits
+
+    def test_a_429_a_503_and_a_timeout_are_tried_again(self) -> None:
+        got, calls, waits = self.fetch(_http_error(429), _http_error(503), TimeoutError(), b"ok")
+        self.assertEqual(b"ok", got)
+        self.assertEqual(4, len(calls))
+        self.assertEqual(list(check.BACKOFF_SECONDS), waits)
+        self.assertIn(f"/library/{COMMIT}/VENDORED.json", calls[0])
+
+    def test_after_the_last_try_it_fails_closed_naming_the_url_and_status(self) -> None:
+        got, calls, _ = self.fetch(*[_http_error(502)] * check.ATTEMPTS)
+        self.assertIsInstance(got, check.FetchError)
+        self.assertEqual(check.ATTEMPTS, len(calls))
+        self.assertIn(calls[0], str(got))
+        self.assertIn("HTTP 502", str(got))
+
+    def test_a_timeout_inside_urlerror_counts_as_a_timeout(self) -> None:
+        reason = urllib.error.URLError(TimeoutError("timed out"))
+        got, calls, _ = self.fetch(reason, b"ok")
+        self.assertEqual((b"ok", 2), (got, len(calls)))
+
+    def test_a_404_is_missing_and_not_tried_again(self) -> None:
+        got, calls, waits = self.fetch(_http_error(404))
+        self.assertIsNone(got)
+        self.assertEqual((1, []), (len(calls), waits))
+
+    def test_a_403_fails_at_once(self) -> None:
+        got, calls, _ = self.fetch(_http_error(403), b"never")
+        self.assertIsInstance(got, check.FetchError)
+        self.assertIn("HTTP 403", str(got))
+        self.assertEqual(1, len(calls))
+
+    def test_a_branch_name_is_never_fetched(self) -> None:
+        urlopen, calls = _opener(b"stale")
+        with self.assertRaisesRegex(ValueError, "not a commit"):
+            check.fetch_raw("library", "main", "VENDORED.json", urlopen=urlopen)
+        self.assertEqual([], calls)
+
+
+class MainTests(unittest.TestCase):
+    def test_a_misspelt_ref_name_fails_without_a_traceback(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            code = check.main(["--root", str(SCRIPTS), "--ref", "tool_driver="])
+        self.assertEqual(1, code)
+        self.assertIn("names no consumer in platform/manifest.json: tool_driver", err.getvalue())
 
 
 class VendorTests(unittest.TestCase):
