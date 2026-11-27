@@ -341,9 +341,12 @@ class Run:
             raise Failed(
                 f"the stop file did not end the agent within {STOP_WITHIN_SECONDS} s"
             ) from None
+        # A Windows console host can exit after its parent. Use the remaining
+        # original stop budget, not a fixed one-second sample (specs#144).
+        remaining = max(0, STOP_WITHIN_SECONDS - (time.perf_counter() - started))
+        _, alive = psutil.wait_procs(family, timeout=remaining)
         took = time.perf_counter() - started
-        time.sleep(1)
-        left = [p for p in family if p.is_running() and p.status() != psutil.STATUS_ZOMBIE]
+        left = [p for p in alive if p.is_running() and p.status() != psutil.STATUS_ZOMBIE]
         for process in left:
             with contextlib.suppress(psutil.Error, OSError):
                 process.kill()
