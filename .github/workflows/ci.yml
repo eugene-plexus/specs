@@ -881,7 +881,7 @@ jobs:
       # old key is refused after, the root dying mid-change, and a worker off
       # for the whole change of the root's key recovering by itself.
       - name: A machine key changes with no stop in traffic
-        if: always()
+        if: ${{ !cancelled() }}
         run: >-
           python3 specs/scripts/lt1-machine-tls-acceptance.py --sources .
           --output "$RUNNER_TEMP/lt1-key-change" --labels key-change,root-key-change,key-schedule

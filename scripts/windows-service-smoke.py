@@ -11,7 +11,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
 import winreg
@@ -23,6 +22,8 @@ import win32event
 import win32service
 import win32serviceutil
 import win32evtlog
+
+from ci_cleanup import temporary_directory
 
 
 def open_service_process(name):
@@ -61,7 +62,7 @@ def main():
     ):
         raise SystemExit("Set EP_SERVICE_SMOKE=1 on an elevated disposable CI runner")
     name = "EPServiceSmoke" + uuid.uuid4().hex[:12]
-    with tempfile.TemporaryDirectory(prefix="ep-service-smoke-") as temp:
+    with temporary_directory(prefix="ep-service-smoke-") as temp:
         root = Path(temp)
         venv = root / "venv"
         subprocess.run(

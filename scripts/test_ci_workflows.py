@@ -136,6 +136,15 @@ def can_run_on_windows(job: dict) -> bool:
 
 
 class WiringTests(unittest.TestCase):
+    def test_tls_checks_run_after_failure_but_do_not_hold_cancelled_runs(self) -> None:
+        job = workflow("ci.yml")["jobs"]["lt1-machine-tls"]
+        check = next(step for step in job["steps"]
+                     if step.get("name") == "A machine key changes with no stop in traffic")
+        self.assertEqual(check["if"], "${{ !cancelled() }}")
+        artifacts = [step for step in job["steps"]
+                     if step.get("uses", "").startswith("actions/upload-artifact@")]
+        self.assertTrue(all(step["if"] == "always()" for step in artifacts))
+
     def test_nested_acceptance_jobs_check_out_specs_when_called_by_a_component(self) -> None:
         ci = workflow("ci.yml")
         source = ci["jobs"]["plan"]["steps"][0]["with"]
