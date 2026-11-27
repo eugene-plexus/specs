@@ -1445,4 +1445,5 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: pytest
+      # Match Workbench's own CI; serial execution adds an avoidable long tail.
+      - run: pytest -n auto
