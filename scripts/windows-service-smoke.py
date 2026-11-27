@@ -17,9 +17,41 @@ import uuid
 import winreg
 
 import httpx
+import win32api
+import win32con
+import win32event
 import win32service
 import win32serviceutil
 import win32evtlog
+
+
+def open_service_process(name):
+    """Keep the exact process handle while SCM still reports its PID."""
+    # StartService can return in START_PENDING, where the PID is not valid.
+    win32serviceutil.WaitForServiceStatus(name, win32service.SERVICE_RUNNING, 45)
+    manager = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_CONNECT)
+    try:
+        service = win32service.OpenService(manager, name, win32service.SERVICE_QUERY_STATUS)
+        try:
+            pid = win32service.QueryServiceStatusEx(service)["ProcessId"]
+            if not pid:
+                raise AssertionError("the test service has no running process")
+            return win32api.OpenProcess(win32con.SYNCHRONIZE, False, pid)
+        finally:
+            win32service.CloseServiceHandle(service)
+    finally:
+        win32service.CloseServiceHandle(manager)
+
+
+def wait_for_process_exit(handle):
+    # SERVICE_STOPPED can precede process exit. Its cwd still holds the temp
+    # directory open until the process exits (specs#140). Do not hide a hang.
+    try:
+        if win32event.WaitForSingleObject(handle, 45_000) != win32event.WAIT_OBJECT_0:
+            print("FAIL: the test service process did not exit within 45 seconds", flush=True)
+            raise AssertionError("the test service process did not exit within 45 seconds")
+    finally:
+        handle.Close()
 
 
 def main():
@@ -63,6 +95,7 @@ def main():
             "spawn": {"configFile": str(driver_config)},
         }]}), encoding="utf-8")
         installed = False
+        process_handle = None
         try:
             win32serviceutil.InstallService(
                 "eugene_plexus_agent.winservice.EugenePlexusAgentService",
@@ -91,6 +124,7 @@ def main():
                     ],
                 )
             win32serviceutil.StartService(name)
+            process_handle = open_service_process(name)
             with httpx.Client(trust_env=False, timeout=2) as client:
                 deadline = time.perf_counter() + 45
                 while time.perf_counter() < deadline:
@@ -157,18 +191,22 @@ def main():
                 )
             raise
         finally:
-            if installed:
-                try:
-                    if (
-                        win32serviceutil.QueryServiceStatus(name)[1]
-                        != win32service.SERVICE_STOPPED
-                    ):
-                        win32serviceutil.StopService(name)
-                        win32serviceutil.WaitForServiceStatus(
-                            name, win32service.SERVICE_STOPPED, 45
-                        )
-                finally:
-                    win32serviceutil.RemoveService(name)
+            try:
+                if installed:
+                    try:
+                        if (
+                            win32serviceutil.QueryServiceStatus(name)[1]
+                            != win32service.SERVICE_STOPPED
+                        ):
+                            win32serviceutil.StopService(name)
+                            win32serviceutil.WaitForServiceStatus(
+                                name, win32service.SERVICE_STOPPED, 45
+                            )
+                    finally:
+                        win32serviceutil.RemoveService(name)
+            finally:
+                if process_handle is not None:
+                    wait_for_process_exit(process_handle)
     print(json.dumps({"service": name, "removed": True}))
 
 

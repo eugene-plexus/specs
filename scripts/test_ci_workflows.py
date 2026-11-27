@@ -136,6 +136,20 @@ def can_run_on_windows(job: dict) -> bool:
 
 
 class WiringTests(unittest.TestCase):
+    def test_nested_acceptance_jobs_check_out_specs_when_called_by_a_component(self) -> None:
+        ci = workflow("ci.yml")
+        source = ci["jobs"]["plan"]["steps"][0]["with"]
+        for job in ci["jobs"].values():
+            uses = job.get("uses", "")
+            if not uses.startswith("./.github/workflows/"):
+                continue
+            for name, nested in workflow(uses.rsplit("/", 1)[1])["jobs"].items():
+                checkout = next(step for step in nested["steps"]
+                                if step.get("uses", "").startswith("actions/checkout@"))
+                with self.subTest(workflow=uses, job=name):
+                    self.assertEqual(checkout.get("with", {}).get("repository"), source["repository"])
+                    self.assertEqual(checkout["with"]["ref"], source["ref"])
+
     def test_row23_folder_access_uses_real_operating_systems(self) -> None:
         job = workflow("ci.yml")["jobs"]["folder-access"]
         self.assertEqual(

@@ -18,8 +18,6 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from ci_receipt import make_receipt
-
 CHECKS = (
     "full",
     "runtime",
@@ -285,6 +283,8 @@ def main() -> None:
     print(json.dumps({"base": base, "candidates": refs}, indent=2))
     head = git(root, "rev-parse", arguments.head).strip()
     if arguments.receipt:
+        from ci_receipt import make_receipt
+
         receipt_base = base if re.fullmatch(r"[a-f0-9]{40}", base) and base != "0" * 40 else head
         arguments.receipt.write_text(json.dumps(make_receipt(head, receipt_base, selected, refs, main_refs),
                                                 indent=2) + "\n", encoding="utf-8")

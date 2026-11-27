@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -22,6 +23,20 @@ from ci_plan import (
 )
 
 
+class StandaloneTests(unittest.TestCase):
+    def test_gate_planner_import_does_not_require_receipt_tools(self) -> None:
+        # Release fixtures and gate-only consumers copy this standalone helper.
+        source = Path(__file__).with_name("ci_plan.py").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory(prefix="ep-ci-standalone-") as folder:
+            Path(folder, "ci_plan.py").write_text(source, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, "-I", "-c",
+                 "import sys; sys.path.insert(0, sys.argv[1]); import ci_plan", folder],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class Fixture(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="ep-ci-plan-")
@@ -36,6 +51,7 @@ class Fixture(unittest.TestCase):
         self.write("scripts/install.sh", "PIN_AGENT=" + "a" * 40 + "\necho install\n")
         self.write("scripts/install.ps1", '  "agent" = "' + "a" * 40 + '"\nWrite-Output install\n')
         self.base = self.commit()
+
 
     def command(self, *arguments: str) -> str:
         return subprocess.check_output(["git", "-C", str(self.root), *arguments], text=True).strip()
