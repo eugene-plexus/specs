@@ -166,7 +166,7 @@ installs runtime packages plus a separate test runner. From the parent directory
 containing the sibling repositories, inside a disposable virtual environment:
 
 ```sh
-python -m pip install -r specs/scripts/requirements-acceptance.txt -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver
+python -m pip install -c specs/release/constraints.txt -r specs/scripts/requirements-acceptance.txt -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver
 python -m pip check
 ```
 

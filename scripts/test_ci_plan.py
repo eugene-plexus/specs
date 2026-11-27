@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -18,7 +19,22 @@ from ci_plan import (
     plan,
     remote_branch,
     resolve_refs,
+    resolve_main_refs,
 )
+
+
+class StandaloneTests(unittest.TestCase):
+    def test_gate_planner_import_does_not_require_receipt_tools(self) -> None:
+        # Release fixtures and gate-only consumers copy this standalone helper.
+        source = Path(__file__).with_name("ci_plan.py").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory(prefix="ep-ci-standalone-") as folder:
+            Path(folder, "ci_plan.py").write_text(source, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, "-I", "-c",
+                 "import sys; sys.path.insert(0, sys.argv[1]); import ci_plan", folder],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class Fixture(unittest.TestCase):
@@ -35,6 +51,7 @@ class Fixture(unittest.TestCase):
         self.write("scripts/install.sh", "PIN_AGENT=" + "a" * 40 + "\necho install\n")
         self.write("scripts/install.ps1", '  "agent" = "' + "a" * 40 + '"\nWrite-Output install\n')
         self.base = self.commit()
+
 
     def command(self, *arguments: str) -> str:
         return subprocess.check_output(["git", "-C", str(self.root), *arguments], text=True).strip()
@@ -199,6 +216,26 @@ class BranchTests(Fixture):
         self.assertEqual(refs, {"agent": "b" * 40, "site_host": "c" * 40})
         self.assertNotIn(("agent", "row"), asked)
         self.assertEqual(len(asked), len(REF_INPUTS) - 1)
+
+    def test_frontend_candidates_are_resolved_on_automatic_branch_pushes(self) -> None:
+        refs = resolve_refs("row", {}, lambda repo, branch: "a" * 40)
+        self.assertEqual(refs["ui"], "a" * 40)
+        self.assertEqual(refs["workbench"], "a" * 40)
+
+    def test_explicit_branch_and_default_sources_are_frozen_to_commits(self) -> None:
+        refs = resolve_refs("", {"ui": "row"}, lambda repo, branch: "c" * 40)
+        self.assertEqual(refs["ui"], "c" * 40)
+        mains = resolve_main_refs(lambda repo, branch: "d" * 40)
+        self.assertEqual(set(mains), set(REF_INPUTS))
+        self.assertEqual(set(mains.values()), {"d" * 40})
+        with self.assertRaisesRegex(RuntimeError, "immutable"):
+            resolve_main_refs(lambda repo, branch: None)
+
+    def test_workbench_candidate_selects_integration_without_selecting_unrelated_gates(self) -> None:
+        selected = plan(self.root, self.base, self.commit(), candidates=frozenset({"workbench"}))
+        self.assertTrue(selected["runtime"])
+        self.assertTrue(selected["instruments"])
+        self.assertFalse(selected["full"])
 
     def test_a_failed_branch_lookup_names_git_s_own_error(self) -> None:
         failure = subprocess.CalledProcessError(

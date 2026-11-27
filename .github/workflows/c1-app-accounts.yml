@@ -63,6 +63,9 @@ jobs:
         os: [windows-latest, ubuntu-24.04]
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
       # For the harness alone, which is stdlib only; the install brings its
       # own Python through uv.
       - uses: actions/setup-python@v6

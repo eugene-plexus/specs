@@ -156,6 +156,35 @@ def own_certificate(directory: Path) -> tuple[Path, Path]:
     return cert_file, key_file
 
 
+def descendants(parent: psutil.Process) -> list[psutil.Process]:
+    """Check each parent/child age before claiming or killing descendants.
+
+    psutil 7.2's recursive walk compares every descendant to the root's age.
+    Windows leaves stale PPIDs behind, so a reused intermediate PID can claim
+    an unrelated process older than that intermediate parent (specs#144).
+    The direct children() walk verifies each immediate edge instead.
+    """
+    found: list[psutil.Process] = []
+    pending = [parent]
+    seen = {parent.pid}
+    while pending:
+        current = pending.pop()
+        try:
+            children = current.children()
+        except psutil.NoSuchProcess:
+            continue
+        if not current.is_running():
+            # children() refreshes its PID map; keep edges only if the same
+            # parent process survived that enumeration.
+            continue
+        for child in children:
+            if child.pid not in seen:
+                seen.add(child.pid)
+                found.append(child)
+                pending.append(child)
+    return found
+
+
 class Run:
     def __init__(self, harness: Path, output: Path) -> None:
         self.harness_path = harness
@@ -227,7 +256,7 @@ class Run:
         """A run that could not finish must not leave its agent or control running."""
         assert self.proc is not None
         with contextlib.suppress(psutil.Error, OSError):
-            for process in psutil.Process(self.proc.pid).children(recursive=True):
+            for process in reversed(descendants(psutil.Process(self.proc.pid))):
                 with contextlib.suppress(psutil.Error, OSError):
                     process.kill()
         with contextlib.suppress(OSError):
@@ -331,7 +360,17 @@ class Run:
 
     def stops_by_the_file(self) -> str:
         assert self.proc is not None
-        family = psutil.Process(self.proc.pid).children(recursive=True)
+        parent = psutil.Process(self.proc.pid)
+        family = descendants(parent)
+        for process in [parent, *family]:
+            try:
+                print(
+                    f"shutdown process: pid={process.pid} ppid={process.ppid()} "
+                    f"created={process.create_time():.6f} name={self._name(process)}",
+                    flush=True,
+                )
+            except (psutil.Error, OSError) as exc:
+                print(f"shutdown process: pid={process.pid} metadata unavailable: {exc}", flush=True)
         (self.root / "stop").touch()
         started = time.perf_counter()
         try:
@@ -341,9 +380,16 @@ class Run:
             raise Failed(
                 f"the stop file did not end the agent within {STOP_WITHIN_SECONDS} s"
             ) from None
+        # A Windows console host can exit after its parent. Use the remaining
+        # original stop budget, not a fixed one-second sample (specs#144).
+        remaining = max(0, STOP_WITHIN_SECONDS - (time.perf_counter() - started))
+        _, alive = psutil.wait_procs(family, timeout=remaining)
         took = time.perf_counter() - started
-        time.sleep(1)
-        left = [p for p in family if p.is_running() and p.status() != psutil.STATUS_ZOMBIE]
+        left = []
+        for process in alive:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                    left.append(process)
         for process in left:
             with contextlib.suppress(psutil.Error, OSError):
                 process.kill()

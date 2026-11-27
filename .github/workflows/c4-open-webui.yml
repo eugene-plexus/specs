@@ -60,6 +60,9 @@ jobs:
         os: [windows-latest, ubuntu-24.04]
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

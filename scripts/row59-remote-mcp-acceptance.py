@@ -44,10 +44,12 @@ import secrets
 import socket
 import subprocess
 import sys
-import tempfile
 import time
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
+
+from ci_cleanup import temporary_directory
 
 import httpx
 import yaml
@@ -71,6 +73,41 @@ TAVILY_URL = "https://github.com/eugene-plexus"
 
 class AddressCheckFailed(AssertionError):
     """Step 2 failed: an address the default reach must refuse was not refused."""
+
+
+def stop_process(process: subprocess.Popen, *, graceful: bool) -> None:
+    """Let the agent's stop file close its children before ending the fixture."""
+    if graceful:
+        try:
+            process.wait(timeout=45)
+            return
+        except subprocess.TimeoutExpired:
+            print("FAIL: the agent did not stop within 45 seconds", flush=True)
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+    if graceful:
+        raise AssertionError("the agent did not stop within 45 seconds")
+
+
+def cleanup_processes(directory: Path, processes, logs, client) -> None:
+    stop_requested = False
+    with ExitStack() as cleanup:
+        cleanup.callback(client.close)
+        for log in logs:
+            cleanup.callback(log.close)
+
+        def end(name, process):
+            stop_process(process, graceful=name == "agent" and stop_requested)
+
+        # Every process and resource is cleaned even if another cleanup fails.
+        for name, process in processes:
+            cleanup.callback(end, name, process)
+        (directory / "agent/stop").touch()
+        stop_requested = True
 
 
 def harness():
@@ -342,7 +379,7 @@ def exercise(directory: Path, *, sabotage: bool) -> None:
     assert not set(ports.values()) & set(range(8079, 8084)), ports
     hosts = {name: "127.0.0.1" for name in ports}
     hosts["mcp"] = lan
-    processes: list[subprocess.Popen] = []
+    processes: list[tuple[str, subprocess.Popen]] = []
     logs = []
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
     env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
@@ -404,7 +441,7 @@ def exercise(directory: Path, *, sabotage: bool) -> None:
                 *(["--sabotage"] if sabotage else []),
             ]
         processes.append(
-            subprocess.Popen(
+            (name, subprocess.Popen(
                 command,
                 cwd=work,
                 env={**env, "ROW59_MCP_TOKEN": MCP_TOKEN} if name == "mcp" else env,
@@ -412,7 +449,7 @@ def exercise(directory: Path, *, sabotage: bool) -> None:
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
+            ))
         )
         wait(lambda: client.get(base(name) + "/healthz").status_code == 200, name)
 
@@ -741,23 +778,13 @@ def exercise(directory: Path, *, sabotage: bool) -> None:
             flush=True,
         )
     finally:
-        (directory / "agent/stop").touch()
-        for process in reversed(processes):
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        for log in logs:
-            log.close()
-        client.close()
+        cleanup_processes(directory, processes, logs, client)
 
 
 def run(sabotage: bool) -> None:
     temporary = HERE.parent.parent / ".codex-tmp"
     temporary.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="row59-", dir=temporary) as tmp:
+    with temporary_directory(prefix="row59-", dir=temporary) as tmp:
         directory = Path(tmp)
         try:
             exercise(directory, sabotage=sabotage)

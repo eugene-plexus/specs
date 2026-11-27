@@ -79,6 +79,9 @@ jobs:
         os: ${{ fromJSON(inputs.platforms || '["macos-15","macos-26"]') }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
       # For the harness alone, which is stdlib only. The install brings its
       # own Python through uv, and the MLX recipe brings another.
       - uses: actions/setup-python@v6
@@ -142,6 +145,9 @@ jobs:
         os: ${{ fromJSON(inputs.platforms || '["macos-15","macos-26"]') }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

@@ -136,6 +136,29 @@ def can_run_on_windows(job: dict) -> bool:
 
 
 class WiringTests(unittest.TestCase):
+    def test_tls_checks_run_after_failure_but_do_not_hold_cancelled_runs(self) -> None:
+        job = workflow("ci.yml")["jobs"]["lt1-machine-tls"]
+        check = next(step for step in job["steps"]
+                     if step.get("name") == "A machine key changes with no stop in traffic")
+        self.assertEqual(check["if"], "${{ !cancelled() }}")
+        artifacts = [step for step in job["steps"]
+                     if step.get("uses", "").startswith("actions/upload-artifact@")]
+        self.assertTrue(all(step["if"] == "always()" for step in artifacts))
+
+    def test_nested_acceptance_jobs_check_out_specs_when_called_by_a_component(self) -> None:
+        ci = workflow("ci.yml")
+        source = ci["jobs"]["plan"]["steps"][0]["with"]
+        for job in ci["jobs"].values():
+            uses = job.get("uses", "")
+            if not uses.startswith("./.github/workflows/"):
+                continue
+            for name, nested in workflow(uses.rsplit("/", 1)[1])["jobs"].items():
+                checkout = next(step for step in nested["steps"]
+                                if step.get("uses", "").startswith("actions/checkout@"))
+                with self.subTest(workflow=uses, job=name):
+                    self.assertEqual(checkout.get("with", {}).get("repository"), source["repository"])
+                    self.assertEqual(checkout["with"]["ref"], source["ref"])
+
     def test_row23_folder_access_uses_real_operating_systems(self) -> None:
         job = workflow("ci.yml")["jobs"]["folder-access"]
         self.assertEqual(
@@ -179,17 +202,9 @@ class WiringTests(unittest.TestCase):
         for repo in ("specs", "agent", "workbench"):
             self.assertIn("eugene-plexus/" + repo, repos)
         self.assertIn("needs.plan.outputs.agent_ref", repos["eugene-plexus/agent"]["ref"])
-        # Workbench's ref comes from a lookup step: a given candidate, else its
-        # same-named branch only when it exists, else main (a specs-only branch
-        # has no Workbench branch, and a missing ref fails the checkout).
-        self.assertEqual(repos["eugene-plexus/workbench"]["ref"], "${{ steps.workbench.outputs.ref }}")
-        chooser = next(s for s in steps if s.get("id") == "workbench")
-        self.assertIn("inputs.workbench_ref", chooser["env"]["GIVEN"])
-        self.assertIn("git ls-remote --exit-code --heads", chooser["run"])
-        self.assertIn('echo "ref=${ref:-main}"', chooser["run"])
-        self.assertLess(steps.index(chooser), next(
-            i for i, s in enumerate(steps)
-            if s.get("with", {}).get("repository") == "eugene-plexus/workbench"))
+        self.assertEqual(repos["eugene-plexus/workbench"]["ref"],
+                         "${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}")
+        self.assertNotIn("git ls-remote", "\n".join(s.get("run", "") for s in steps))
         commands = "\n".join(s.get("run", "") for s in steps)
         self.assertIn("mv5b-hindsight-acceptance.py", commands)
         self.assertIn(".codex-tmp", commands)
@@ -464,12 +479,10 @@ class WiringTests(unittest.TestCase):
         self.assertEqual(step["env"]["PREVIOUS"], "${{ github.event.before }}")
         self.assertEqual(step["run"], 'python3 scripts/previous_push.py "$PREVIOUS"')
         self.assertGreater(int(guard["timeout-minutes"]), 55)
-        checks = next(
-            step["run"]
-            for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
-            if step.get("name") == "Check CI planning"
-        )
-        self.assertIn("test_ship.py", checks)
+        acceptance = next(step for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
+                          if step.get("name", "").startswith("Delivery acceptance"))
+        self.assertIn("scripts/delivery-acceptance.py", acceptance["run"])
+        self.assertIn('"test_ship"', Path(__file__).with_name("delivery-acceptance.py").read_text())
 
     def test_no_ci_job_asks_for_more_than_its_callers_grant(self) -> None:
         # A called workflow's job asking for more than its caller grants fails
