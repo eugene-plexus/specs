@@ -15,7 +15,10 @@ import os
 import re
 import subprocess
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+from ci_receipt import make_receipt
 
 CHECKS = (
     "full",
@@ -39,8 +42,7 @@ COMPONENTS = {
     "tool-driver",
     "ui",
 }
-# CI's `<input>_ref` inputs and the repository each names. ui and workbench
-# keep their own candidate jobs (inputs.ui_ref, inputs.workbench_ref).
+# CI's `<input>_ref` inputs and the repository each names.
 REF_INPUTS = {
     "agent": "agent",
     "control": "control",
@@ -50,8 +52,10 @@ REF_INPUTS = {
     "store": "store",
     "tool_driver": "tool-driver",
     "site_host": "site-host",
+    "ui": "ui",
+    "workbench": "workbench",
 }
-OUTPUTS = (*CHECKS, "base", *(f"{name}_ref" for name in REF_INPUTS))
+OUTPUTS = (*CHECKS, "base", "main_refs", *(f"{name}_ref" for name in REF_INPUTS))
 ORGANIZATION = "https://github.com/eugene-plexus"
 
 
@@ -110,6 +114,8 @@ def plan(
             name for name in COMPONENTS if before["components"][name] != after["components"][name]
         }
         tested = pins | (candidates & COMPONENTS)
+        if "workbench" in candidates:
+            selected.update(runtime=True, instruments=True)
         if tested:
             selected.update(runtime=True, instruments=True, container=True)
             if tested & {"agent", "inference-driver"}:
@@ -190,7 +196,12 @@ def resolve_refs(
     refs = {}
     for name, repository in REF_INPUTS.items():
         if given.get(name):
-            refs[name] = given[name]
+            value = given[name]
+            if not re.fullmatch(r"[a-f0-9]{40}", value):
+                value = lookup(repository, value) or ""
+            if not re.fullmatch(r"[a-f0-9]{40}", value):
+                raise RuntimeError(f"Could not resolve {repository} candidate {given[name]!r} to a commit")
+            refs[name] = value
         elif branch:
             commit = lookup(repository, branch)
             if commit:
@@ -198,11 +209,25 @@ def resolve_refs(
     return refs
 
 
+def resolve_main_refs(lookup: Callable[[str, str], str | None] = remote_branch) -> dict[str, str]:
+    """Freeze fallback sources once, so each job and the reuse receipt agree."""
+    def resolve(item: tuple[str, str]) -> tuple[str, str]:
+        name, repository = item
+        commit = lookup(repository, "main")
+        if not commit or not re.fullmatch(r"[a-f0-9]{40}", commit):
+            raise RuntimeError(f"Could not resolve {repository}/main to an immutable commit")
+        return name, commit
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        return dict(pool.map(resolve, REF_INPUTS.items()))
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="")
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--full", action="store_true")
+    parser.add_argument("--receipt", type=Path, help="record immutable inputs for branch-ci reuse")
     parser.add_argument(
         "--branch",
         default="",
@@ -248,6 +273,7 @@ def main() -> None:
         )
         base = branch_base(root, arguments.head)
     refs = resolve_refs(arguments.branch, given)
+    main_refs = resolve_main_refs() if arguments.receipt else {}
     selected = plan(
         root,
         base,
@@ -257,11 +283,17 @@ def main() -> None:
     )
     print(json.dumps(selected, indent=2))
     print(json.dumps({"base": base, "candidates": refs}, indent=2))
+    head = git(root, "rev-parse", arguments.head).strip()
+    if arguments.receipt:
+        receipt_base = base if re.fullmatch(r"[a-f0-9]{40}", base) and base != "0" * 40 else head
+        arguments.receipt.write_text(json.dumps(make_receipt(head, receipt_base, selected, refs, main_refs),
+                                                indent=2) + "\n", encoding="utf-8")
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a", encoding="utf-8", newline="\n") as stream:
             for name, enabled in selected.items():
                 stream.write(f"{name}={str(enabled).lower()}\n")
             stream.write(f"base={base}\n")
+            stream.write(f"main_refs={json.dumps(main_refs, sort_keys=True)}\n")
             for name in REF_INPUTS:
                 stream.write(f"{name}_ref={refs.get(name, '')}\n")
 

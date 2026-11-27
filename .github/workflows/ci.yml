@@ -152,6 +152,9 @@ jobs:
       # The planner's base, and each component candidate: a given input, or
       # on a branch push the component's same-named branch; empty is the pin.
       base: ${{ steps.select.outputs.base }}
+      main_refs: ${{ steps.select.outputs.main_refs }}
+      ui_ref: ${{ steps.select.outputs.ui_ref }}
+      workbench_ref: ${{ steps.select.outputs.workbench_ref }}
       agent_ref: ${{ steps.select.outputs.agent_ref }}
       control_ref: ${{ steps.select.outputs.control_ref }}
       gateway_ref: ${{ steps.select.outputs.gateway_ref }}
@@ -169,7 +172,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: python -m pip install PyYAML==6.0.3
+      - run: python -m pip install PyYAML==6.0.3 packaging==25.0
+      - name: Check acceptance dependency constraints before the matrix
+        run: python scripts/ci_dependencies.py
       - name: Check CI planning
         run: |
           python -m unittest discover -s scripts -p 'test_ci*.py' -v
@@ -177,9 +182,10 @@ jobs:
           python -m unittest discover -s scripts -p test_release_gate.py -v
           python -m unittest discover -s scripts -p test_roadmap_issues.py -v
           python -m unittest discover -s scripts -p test_worktree.py -v
-          python -m unittest discover -s scripts -p test_ship.py -v
           python -m unittest discover -s scripts -p test_repin_branch.py -v
           python -m unittest discover -s scripts -p test_hindsight_acceptance.py -v
+      - name: Delivery acceptance (isolated repositories and simulated GitHub)
+        run: python scripts/delivery-acceptance.py
       - name: Check CPU proof contract
         run: python scripts/test_cpu_proof_contract.py
       - name: Compute gates
@@ -196,25 +202,34 @@ jobs:
           STORE_REF: ${{ inputs.store_ref }}
           TOOL_DRIVER_REF: ${{ inputs.tool_driver_ref }}
           SITE_HOST_REF: ${{ inputs.site_host_ref }}
+          UI_REF: ${{ inputs.ui_ref }}
+          WORKBENCH_REF: ${{ inputs.workbench_ref }}
         shell: python {0}
         run: |
           import os, subprocess, sys
-          command = [sys.executable, 'scripts/ci_plan.py', '--base', os.environ.get('CI_BASE', ''), '--head', 'HEAD']
+          command = [sys.executable, 'scripts/ci_plan.py', '--base', os.environ.get('CI_BASE', ''), '--head', 'HEAD', '--receipt', 'ci-inputs.json']
           if os.environ.get('CI_FULL') == 'true':
               command.append('--full')
           if os.environ.get('CI_BRANCH'):
               # One argument, so a branch named like an option stays a value.
               command.append(f"--branch={os.environ['CI_BRANCH']}")
-          for name in ('agent', 'control', 'gateway', 'inference_driver', 'library', 'store', 'tool_driver', 'site_host'):
+          for name in ('agent', 'control', 'gateway', 'inference_driver', 'library', 'store', 'tool_driver', 'site_host', 'ui', 'workbench'):
               if os.environ.get(f'{name.upper()}_REF'):
                   command += ['--ref', f"{name}={os.environ[f'{name.upper()}_REF']}"]
           subprocess.run(command, check=True)
+      - name: Record immutable CI inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-inputs-${{ github.run_attempt }}
+          path: ci-inputs.json
+          retention-days: 14
+          if-no-files-found: error
 
   # A reduced plan tests what changed since the previous push to main and
   # trusts that push's own run for the rest. Ships push merged work first and
   # their pin commit alone (P11), so a reduced run on main passes only once
-  # the run of the push before it has passed: Edge never publishes a pin
-  # commit over merged work whose full run failed or has not finished.
+  # the run of the push before it has passed. This protects CI coverage;
+  # Edge separately requires a verified image, and stable releases require CI.
   # No job-level `permissions: actions: read`: a called workflow's job may not
   # ask for more than its caller grants, even when skipped, and Release
   # qualification and the components' Candidate integration grant contents
@@ -282,16 +297,16 @@ jobs:
         if: runner.os == 'Linux' && github.workflow != 'Release qualification'
         env:
           CI_BRANCH: ${{ github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name || '' }}
-          AGENT_REF: ${{ needs.plan.outputs.agent_ref }}
-          CONTROL_REF: ${{ needs.plan.outputs.control_ref }}
-          GATEWAY_REF: ${{ needs.plan.outputs.gateway_ref }}
-          INFERENCE_DRIVER_REF: ${{ needs.plan.outputs.inference_driver_ref }}
-          LIBRARY_REF: ${{ needs.plan.outputs.library_ref }}
-          STORE_REF: ${{ needs.plan.outputs.store_ref }}
-          TOOL_DRIVER_REF: ${{ needs.plan.outputs.tool_driver_ref }}
-          SITE_HOST_REF: ${{ needs.plan.outputs.site_host_ref }}
-          UI_REF: ${{ inputs.ui_ref }}
-          WORKBENCH_REF: ${{ inputs.workbench_ref }}
+          AGENT_REF: ${{ needs.plan.outputs.agent_ref || fromJSON(needs.plan.outputs.main_refs).agent }}
+          CONTROL_REF: ${{ needs.plan.outputs.control_ref || fromJSON(needs.plan.outputs.main_refs).control }}
+          GATEWAY_REF: ${{ needs.plan.outputs.gateway_ref || fromJSON(needs.plan.outputs.main_refs).gateway }}
+          INFERENCE_DRIVER_REF: ${{ needs.plan.outputs.inference_driver_ref || fromJSON(needs.plan.outputs.main_refs).inference_driver }}
+          LIBRARY_REF: ${{ needs.plan.outputs.library_ref || fromJSON(needs.plan.outputs.main_refs).library }}
+          STORE_REF: ${{ needs.plan.outputs.store_ref || fromJSON(needs.plan.outputs.main_refs).store }}
+          TOOL_DRIVER_REF: ${{ needs.plan.outputs.tool_driver_ref || fromJSON(needs.plan.outputs.main_refs).tool_driver }}
+          SITE_HOST_REF: ${{ needs.plan.outputs.site_host_ref || fromJSON(needs.plan.outputs.main_refs).site_host }}
+          UI_REF: ${{ needs.plan.outputs.ui_ref || fromJSON(needs.plan.outputs.main_refs).ui }}
+          WORKBENCH_REF: ${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}
         run: |
           python -m unittest discover -s scripts -p test_vendored_source_check.py -v
           python scripts/vendored-source-check.py --at main --branch="$CI_BRANCH" \
@@ -566,7 +581,7 @@ jobs:
       - name: Verify team knowledge reaches only the people it is given to, and a shared project shares knowledge, never chats (row 47)
         if: matrix.shard == 'L3' || matrix.shard == 'W1'
         env:
-          R47_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          R47_WORKBENCH_REF: ${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}
         run: python specs/scripts/row47-team-knowledge-acceptance.py --sabotage
       # Row 35: the console pauses a machine's models; a chat through the gateway
       # names the pause, a restart keeps it, only an operator's session resumes;
@@ -593,7 +608,7 @@ jobs:
       - name: Tool pictures through MCP and Job Sites, vision replay and newest-picture limits (row 29)
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         env:
-          R29_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          R29_WORKBENCH_REF: ${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}
         run: python specs/scripts/row29-tool-pictures-acceptance.py
 
       # Row 4: four agents on this runner's routable address, each behind its
@@ -733,24 +748,24 @@ jobs:
       - name: Verify a removed person's data is hidden, then deleted from the store and every copy (row 7)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         env:
-          R7_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          R7_WORKBENCH_REF: ${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}
         run: python specs/scripts/row7-person-removal-acceptance.py
       - name: Verify past chats migrate, resume once after a crash, yield to live answers and stop (row 27a)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         env:
-          R27A_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          R27A_WORKBENCH_REF: ${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}
         run: python specs/scripts/row27a-backfill-acceptance.py
       # Row 70c: Workbench at the candidate, as row 7's.
       - name: Verify Workbench reads people's groups and a group's memory server is every member's (row 70c)
         if: matrix.shard == 'L2' || matrix.shard == 'W3'
         env:
-          R70C_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          R70C_WORKBENCH_REF: ${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}
         run: python specs/scripts/row70c-workbench-groups-acceptance.py
       # Row 32: Workbench at the candidate, as row 7's.
       - name: Verify skills reach the model only through its tools, hostile archives are refused, and a removed person's skills go (row 32)
         if: matrix.shard == 'L1' || matrix.shard == 'W3'
         env:
-          R32_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          R32_WORKBENCH_REF: ${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}
         run: python specs/scripts/row32-skills-acceptance.py
       - name: Verify Update all survives an agent restart across enrolled machines and apps
         if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
@@ -938,26 +953,14 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ needs.plan.outputs.agent_ref }}
+          ref: ${{ needs.plan.outputs.agent_ref || fromJSON(needs.plan.outputs.main_refs).agent }}
           path: agent
       # A row branch Workbench has no branch for tests Workbench's main, as the
       # acceptance scripts do (row 7's `--workbench`); the checkout itself would fail.
-      - name: Which Workbench
-        id: workbench
-        env:
-          WANTED: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
-        run: |
-          ref="$WANTED"
-          if [ "$ref" != main ] && ! [[ "$ref" =~ ^[0-9a-f]{40}$ ]] \
-            && ! git ls-remote --exit-code https://github.com/eugene-plexus/workbench "refs/heads/$ref" >/dev/null; then
-            echo "workbench has no branch $ref: testing main"
-            ref=main
-          fi
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/workbench
-          ref: ${{ steps.workbench.outputs.ref }}
+          ref: ${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}
           path: workbench
       - uses: actions/setup-python@v6
         with:
@@ -1372,13 +1375,14 @@ jobs:
           exit $status
 
   candidate-ui:
-    if: inputs.ui_ref != ''
+    needs: plan
+    if: needs.plan.outputs.ui_ref != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/ui
-          ref: ${{ inputs.ui_ref }}
+          ref: ${{ needs.plan.outputs.ui_ref }}
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -1402,35 +1406,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ needs.plan.outputs.agent_ref || 'main' }}
+          ref: ${{ needs.plan.outputs.agent_ref || fromJSON(needs.plan.outputs.main_refs).agent }}
           path: agent
-      - name: Choose the Workbench candidate
-        id: workbench
-        env:
-          GIVEN: ${{ inputs.workbench_ref }}
-          BRANCH: ${{ github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name || '' }}
-        run: |
-          # A given candidate wins; on a branch push, Workbench's branch of the
-          # same name when it has one; otherwise main. A specs-only branch has
-          # no Workbench branch, and a checkout of a missing ref fails the job.
-          # A failed lookup fails too, so a run never quietly tests main.
-          ref="$GIVEN"
-          if [ -z "$ref" ] && [ -n "$BRANCH" ]; then
-            set +e
-            git ls-remote --exit-code --heads https://github.com/eugene-plexus/workbench "refs/heads/$BRANCH" > /dev/null
-            found=$?
-            set -e
-            case "$found" in
-              0) ref="$BRANCH" ;;
-              2) ;;
-              *) echo "::error::Could not look up Workbench branch $BRANCH (git ls-remote exited $found)"; exit 1 ;;
-            esac
-          fi
-          echo "ref=${ref:-main}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/workbench
-          ref: ${{ steps.workbench.outputs.ref }}
+          ref: ${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}
           path: workbench
       - uses: astral-sh/setup-uv@v7
         with:
@@ -1452,13 +1433,14 @@ jobs:
           path: /var/lib/eugene-plexus-mv5b/.codex-tmp/acceptance/result.json
 
   candidate-workbench:
-    if: inputs.workbench_ref != ''
+    needs: plan
+    if: needs.plan.outputs.workbench_ref != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/workbench
-          ref: ${{ inputs.workbench_ref }}
+          ref: ${{ needs.plan.outputs.workbench_ref }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"

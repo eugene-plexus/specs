@@ -18,6 +18,7 @@ from ci_plan import (
     plan,
     remote_branch,
     resolve_refs,
+    resolve_main_refs,
 )
 
 
@@ -199,6 +200,26 @@ class BranchTests(Fixture):
         self.assertEqual(refs, {"agent": "b" * 40, "site_host": "c" * 40})
         self.assertNotIn(("agent", "row"), asked)
         self.assertEqual(len(asked), len(REF_INPUTS) - 1)
+
+    def test_frontend_candidates_are_resolved_on_automatic_branch_pushes(self) -> None:
+        refs = resolve_refs("row", {}, lambda repo, branch: "a" * 40)
+        self.assertEqual(refs["ui"], "a" * 40)
+        self.assertEqual(refs["workbench"], "a" * 40)
+
+    def test_explicit_branch_and_default_sources_are_frozen_to_commits(self) -> None:
+        refs = resolve_refs("", {"ui": "row"}, lambda repo, branch: "c" * 40)
+        self.assertEqual(refs["ui"], "c" * 40)
+        mains = resolve_main_refs(lambda repo, branch: "d" * 40)
+        self.assertEqual(set(mains), set(REF_INPUTS))
+        self.assertEqual(set(mains.values()), {"d" * 40})
+        with self.assertRaisesRegex(RuntimeError, "immutable"):
+            resolve_main_refs(lambda repo, branch: None)
+
+    def test_workbench_candidate_selects_integration_without_selecting_unrelated_gates(self) -> None:
+        selected = plan(self.root, self.base, self.commit(), candidates=frozenset({"workbench"}))
+        self.assertTrue(selected["runtime"])
+        self.assertTrue(selected["instruments"])
+        self.assertFalse(selected["full"])
 
     def test_a_failed_branch_lookup_names_git_s_own_error(self) -> None:
         failure = subprocess.CalledProcessError(

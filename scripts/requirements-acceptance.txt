@@ -14,7 +14,10 @@ anthropic==1.9.0
 # locked websockets 17). PyAV, its speech encoders, is in the release lock.
 google-genai==2.33.0
 # C2: the sign-in acceptance signs in through Authlib, the library Open WebUI uses.
-authlib==1.8.0
+# Authlib is also a runtime dependency. Its exact version comes from the
+# release constraints used by every acceptance install, so updates cannot
+# independently pin a conflicting version here (specs#138).
+authlib
 # C3: the agent installs Workbench from its catalogue with uv, as an install does.
 uv==0.12.18
 # Row 29: the acceptance imports site-host's policy, whose workspace tools

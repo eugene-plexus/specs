@@ -179,17 +179,9 @@ class WiringTests(unittest.TestCase):
         for repo in ("specs", "agent", "workbench"):
             self.assertIn("eugene-plexus/" + repo, repos)
         self.assertIn("needs.plan.outputs.agent_ref", repos["eugene-plexus/agent"]["ref"])
-        # Workbench's ref comes from a lookup step: a given candidate, else its
-        # same-named branch only when it exists, else main (a specs-only branch
-        # has no Workbench branch, and a missing ref fails the checkout).
-        self.assertEqual(repos["eugene-plexus/workbench"]["ref"], "${{ steps.workbench.outputs.ref }}")
-        chooser = next(s for s in steps if s.get("id") == "workbench")
-        self.assertIn("inputs.workbench_ref", chooser["env"]["GIVEN"])
-        self.assertIn("git ls-remote --exit-code --heads", chooser["run"])
-        self.assertIn('echo "ref=${ref:-main}"', chooser["run"])
-        self.assertLess(steps.index(chooser), next(
-            i for i, s in enumerate(steps)
-            if s.get("with", {}).get("repository") == "eugene-plexus/workbench"))
+        self.assertEqual(repos["eugene-plexus/workbench"]["ref"],
+                         "${{ needs.plan.outputs.workbench_ref || fromJSON(needs.plan.outputs.main_refs).workbench }}")
+        self.assertNotIn("git ls-remote", "\n".join(s.get("run", "") for s in steps))
         commands = "\n".join(s.get("run", "") for s in steps)
         self.assertIn("mv5b-hindsight-acceptance.py", commands)
         self.assertIn(".codex-tmp", commands)
@@ -464,12 +456,10 @@ class WiringTests(unittest.TestCase):
         self.assertEqual(step["env"]["PREVIOUS"], "${{ github.event.before }}")
         self.assertEqual(step["run"], 'python3 scripts/previous_push.py "$PREVIOUS"')
         self.assertGreater(int(guard["timeout-minutes"]), 55)
-        checks = next(
-            step["run"]
-            for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
-            if step.get("name") == "Check CI planning"
-        )
-        self.assertIn("test_ship.py", checks)
+        acceptance = next(step for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
+                          if step.get("name", "").startswith("Delivery acceptance"))
+        self.assertIn("scripts/delivery-acceptance.py", acceptance["run"])
+        self.assertIn('"test_ship"', Path(__file__).with_name("delivery-acceptance.py").read_text())
 
     def test_no_ci_job_asks_for_more_than_its_callers_grant(self) -> None:
         # A called workflow's job asking for more than its caller grants fails

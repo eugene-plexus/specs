@@ -21,19 +21,19 @@ import json
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from ci_plan import REF_INPUTS, branch_base, git, remote_branch
+from ci_plan import REF_INPUTS, branch_base, git, plan, remote_branch, resolve_main_refs
+from ci_receipt import PendingPlan, find_equivalent, make_receipt
 
 SPECS = Path(__file__).resolve().parent.parent
 REPOSITORY = "eugene-plexus/specs"
 # Every CI input that names a candidate, and the repository it comes from.
-INPUTS = {**REF_INPUTS, "ui": "ui", "workbench": "workbench"}
+INPUTS = REF_INPUTS
 
 
-def dispatch(branch: str, *, full: bool) -> tuple[str, list[str]]:
-    """The ref CI runs at and the `gh workflow run` command for this branch."""
+def dispatch(branch: str, *, full: bool) -> tuple[str, dict[str, str], dict]:
+    """Resolve the workflow ref, explicit inputs, and expected coverage receipt."""
     main = "+refs/heads/main:refs/remotes/origin/main"
     git(SPECS, "fetch", "--quiet", "--no-tags", "origin", main)
     specs = remote_branch("specs", branch)
@@ -61,46 +61,49 @@ def dispatch(branch: str, *, full: bool) -> tuple[str, list[str]]:
         f"  specs: {'its ' + branch if specs else 'main (no ' + branch + ' branch)'}"
         f", planned from {base[:7] or 'nothing (full)'}"
     )
-    command = ["gh", "workflow", "run", "ci.yml", "--repo", REPOSITORY, "--ref", ref]
-    command += ["-f", f"profile={'full' if full else 'edge'}", "-f", f"base={base}"]
-    for name, commit in refs.items():
-        command += ["-f", f"{name}_ref={commit}"]
-    return ref, command
+    inputs = {"profile": "full" if full else "edge", "base": base}
+    inputs.update({f"{name}_ref": commit for name, commit in refs.items()})
+    head = specs or git(SPECS, "rev-parse", "origin/main").strip()
+    selected = plan(
+        SPECS,
+        base,
+        head,
+        full=full,
+        candidates=frozenset(REF_INPUTS[name] for name in refs),
+    )
+    receipt = make_receipt(head, base or head, selected, refs, resolve_main_refs())
+    return ref, inputs, receipt
 
 
-def started_run(ref: str, since: datetime) -> str | None:
-    """The URL of the CI dispatch on `ref` created after `since`, once GitHub lists it."""
-    for _ in range(12):
-        listing = subprocess.check_output(
-            [
-                "gh",
-                "run",
-                "list",
-                "--repo",
-                REPOSITORY,
-                "--workflow",
-                "ci.yml",
-                "--branch",
-                ref,
-                "--event",
-                "workflow_dispatch",
-                "--limit",
-                "10",
-                "--json",
-                "url,createdAt",
-            ],
-            text=True,
-            encoding="utf-8",
+def submit(ref: str, inputs: dict[str, str]) -> str:
+    """Return the dispatched run's own URL, without guessing from concurrent runs."""
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            "--method",
+            "POST",
+            "-H",
+            "X-GitHub-Api-Version: 2026-03-10",
+            f"repos/{REPOSITORY}/actions/workflows/ci.yml/dispatches",
+            "--input",
+            "-",
+        ],
+        input=json.dumps({"ref": ref, "inputs": inputs}),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if result.returncode:
+        raise RuntimeError(
+            f"Dispatch did not confirm a run: {result.stderr.strip()}. Inspect Actions before retrying."
         )
-        runs = [
-            run
-            for run in json.loads(listing or "[]")
-            if datetime.fromisoformat(run["createdAt"].replace("Z", "+00:00")) >= since
-        ]
-        if runs:
-            return min(runs, key=lambda run: run["createdAt"])["url"]
-        time.sleep(5)
-    return None
+    response = json.loads(result.stdout or "{}")
+    if not response.get("workflow_run_id") or not response.get("html_url"):
+        raise RuntimeError(
+            "GitHub accepted the dispatch without run details. Inspect Actions before retrying."
+        )
+    return response["html_url"]
 
 
 def main() -> int:
@@ -109,22 +112,38 @@ def main() -> int:
     )
     parser.add_argument("branch")
     parser.add_argument("--full", action="store_true", help="run every check")
-    parser.add_argument("--dry-run", action="store_true", help="print the dispatch; run nothing")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print the dispatch; run nothing"
+    )
     arguments = parser.parse_args()
     if arguments.branch in {"main", "edge"}:
         parser.error("name a work branch; main runs CI on every push")
-    ref, command = dispatch(arguments.branch, full=arguments.full)
+    ref, inputs, receipt = dispatch(arguments.branch, full=arguments.full)
     if arguments.dry_run:
-        print("Would run: " + " ".join(command))
+        print("Would dispatch: " + json.dumps({"ref": ref, "inputs": inputs}, indent=2))
         return 0
-    since = datetime.now(UTC) - timedelta(seconds=10)
-    subprocess.run(command, check=True)
-    url = started_run(ref, since)
-    if url is None:
-        listing = f"gh run list --repo {REPOSITORY} --workflow ci.yml --branch {ref}"
-        print(f"Dispatched; see `{listing}`.")
-        return 0
-    print(url)
+    try:
+        for attempt in range(13):
+            try:
+                existing = find_equivalent(receipt, ref)
+                break
+            except PendingPlan:
+                if attempt == 12:
+                    raise
+                if attempt == 0:
+                    print(
+                        "Waiting up to 60 seconds for the existing run to record its inputs."
+                    )
+                time.sleep(5)
+        if existing:
+            print(
+                f"These immutable inputs already have a running or successful CI run: {existing}"
+            )
+            return 0
+        print(submit(ref, inputs))
+    except (RuntimeError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 2
     return 0
 
 

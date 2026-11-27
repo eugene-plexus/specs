@@ -165,18 +165,19 @@ class ShipTests(unittest.TestCase):
         self.assertIn("the pin commit would be pushed alone", output)
         self.assertEqual(git(self.specs, "rev-parse", "HEAD"), self.merged)
 
-    def test_a_merged_ci_check_beside_moving_pins_says_to_ship_in_one_push(self) -> None:
-        """agent#43's ship: a merged acceptance check that needed the new agent ran
-        against the old pin in the merged work's own run, and CI held Edge."""
+    def test_a_merged_ci_check_travels_with_the_pins_it_can_require(self) -> None:
         _, output = self.ship(dry_run=True)
         self.assertNotIn("--one-push", output, "scripts/new-check.py is not a CI check")
         write(self.specs / "scripts/a99-thing-acceptance.py", "print('needs new control')\n")
         commit(self.specs, "Merged work: an acceptance check")
         _, output = self.ship(dry_run=True)
         self.assertIn("change CI checks (scripts/a99-thing-acceptance.py)", output)
-        self.assertIn("ship with --one-push", output)
+        self.assertIn("will travel with the component pins in one push", output)
+        self.assertNotIn("would push 2 merged commit(s) first", output)
         _, output = self.ship(dry_run=True, one_push=True)
         self.assertNotIn("change CI checks", output)
+        shipped, _ = self.ship(dry_run=False)
+        self.assertEqual(self.pushes(), [self.initial, shipped])
 
     def test_a_red_main_is_named_when_ci_would_hold_the_first_push(self) -> None:
         self.failed_main_run.return_value = ("failure", "https://example.invalid/runs/5")
@@ -187,8 +188,18 @@ class ShipTests(unittest.TestCase):
         git(self.specs, "reset", "-q", "--hard", self.initial)
         _, output = self.ship(dry_run=True)
         self.assertIn("CI's run of main's head failure: https://example.invalid/runs/5", output)
-        self.assertIn("re-run and passes or a full-plan push lands", output)
+        self.assertIn("Stable release qualification still requires green CI", output)
+        self.assertNotIn("holds it, and Edge", output)
         self.failed_main_run.assert_called_with(self.initial)
+
+    def test_browser_and_powershell_checks_also_travel_with_component_pins(self) -> None:
+        for name in ("scripts/c2-browser-acceptance.mjs", "scripts/s10-isolation-checks.ps1"):
+            with self.subTest(name=name):
+                write(self.specs / name, "# new component behavior\n")
+                commit(self.specs, "New platform acceptance")
+                _, output = self.ship(dry_run=True)
+                self.assertIn("will travel with the component pins in one push", output)
+                self.assertIn(name, output)
 
     def test_a_stop_before_the_first_push_pushes_nothing(self) -> None:
         write(
@@ -238,7 +249,7 @@ class ShipTests(unittest.TestCase):
         self.assertEqual(self.pushes(), [self.initial, self.merged, shipped])
         self.assertNotEqual(code, 0)
         self.assertNotIn("Not shipped", err + out)
-        self.assertIn(f"Pushed; could not watch CI: {cause}", err)
+        self.assertIn(f"Pushed; could not watch Edge: {cause}", err)
         # Each push is listed: the component's main, the merged specs commit, the pin commit.
         self.assertIn(f"control main {self.control[:7]}", err)
         self.assertIn(f"specs main {self.merged[:7]}", err)
@@ -265,6 +276,39 @@ class ShipTests(unittest.TestCase):
         self.assertIn("Not shipped: control: its dependencies changed", err)
         self.assertNotIn("Pushed", err)
         self.assertEqual(self.pushes(), [self.initial])
+
+
+class EdgeWaitTests(unittest.TestCase):
+    def test_diagnostic_api_failure_does_not_end_the_edge_wait(self) -> None:
+        with (
+            patch.object(ship, "git", return_value=B),
+            patch.object(ship, "is_ancestor", side_effect=[False, True]),
+            patch.object(ship, "gh_json", side_effect=ship.Stop("GitHub answered 503")),
+            patch.object(ship.time, "sleep"),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            self.assertEqual(ship.wait_for_edge(A, 1), 0)
+        self.assertIn("GitHub answered 503", output.getvalue())
+
+    def test_failed_ci_does_not_end_waiting_for_verified_edge(self) -> None:
+        calls = []
+
+        def runs(*args: str) -> object:
+            calls.append(args)
+            if args[:2] == ("run", "view"):
+                return {"jobs": [{"name": "test", "conclusion": "failure"}]}
+            return [{"databaseId": 5, "status": "completed", "conclusion": "failure"}]
+
+        with (
+            patch.object(ship, "git", return_value=B),
+            patch.object(ship, "is_ancestor", side_effect=[False, True]),
+            patch.object(ship, "gh_json", side_effect=runs),
+            patch.object(ship.time, "sleep"),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            self.assertEqual(ship.wait_for_edge(A, 1), 0)
+        self.assertIn("CI failed", output.getvalue())
+        self.assertIn("does not gate Edge", output.getvalue())
 
 
 if __name__ == "__main__":

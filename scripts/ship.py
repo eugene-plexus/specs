@@ -12,15 +12,16 @@ built from that `main` (no worktree: the commit is assembled with a private
 index, so no stale `dist` checkout can be picked up); `workbench` and
 `site-host` are pinned in the agent, which is committed and pushed; then the
 specs manifest, both installers and their generated block are updated,
-committed and pushed. Specs CI and the image build then publish Edge by
+committed and pushed. The verified image build then publishes Edge by
 themselves (`edge.yml`); `--wait` watches for that or names the failure.
 
 The pin commit is pushed alone (P11): merged specs commits that `main` holds
 beyond `origin/main` are pushed first, on their own, so their run plans their
 change and the pin push's run plans the pins only (the reduced profile). CI
 passes the pin push's run only once the merged work's run has passed
-(`scripts/previous_push.py`). When a merged specs script needs the new
-component code, it must go out with the pins: pass `--one-push`.
+(`scripts/previous_push.py`). New acceptance checks and workflow changes go
+out with the component pins automatically. `--one-push` also requests this
+for other changes. CI remains a stable-release gate; it does not gate Edge.
 
 What it checks before anything is pushed: each repo is on `main` with no
 uncommitted tracked changes and not behind `origin/main`, and `ruff check` /
@@ -30,7 +31,7 @@ A dependency change stops it, because the lock must be re-resolved first
 (`python scripts/release-inputs.py --resolve --uv <uv>`).
 
 "Not shipped: ..." means nothing was pushed. A stop after a push says so
-instead: "Pushed; could not watch CI: ..." when only the wait failed (a GitHub
+instead: "Pushed; could not watch Edge: ..." when only the wait failed (a GitHub
 rate limit, say), or "Pushed part of the ship; then it stopped: ..." when a
 later step failed, and both list the pushes. Every stop exits 2.
 """
@@ -69,9 +70,9 @@ MANIFEST_REPOS = (
 ORDER = (*MANIFEST_REPOS[1:], "site-host", "workbench", "agent", "ui")
 SHA = re.compile(r"[a-f0-9]{40}")
 # CI's job that holds a reduced-plan push to main until the push before it passed.
-GUARD_JOB = "The previous push to main passed CI"
 #: What CI runs as a check: a merged change to one of these may need the new pins.
-CI_CHECK = re.compile(r"\.github/workflows/[^/]+\.ya?ml|scripts/[^/]+-(acceptance|checks)\.(py|sh)")
+GUARD_JOB = "The previous push to main passed CI"  # also checked by workflow wiring tests
+CI_CHECK = re.compile(r"\.github/workflows/[^/]+\.ya?ml|scripts/[^/]+-(acceptance|checks)\.(py|sh|mjs|js|ps1)")
 WB_PIN = re.compile(
     r"(workbench/archive/)([a-f0-9]{40})(\.tar\.gz\n  version: )([a-f0-9]{40})"
 )
@@ -458,21 +459,20 @@ def ship(
         if red:
             print(
                 f"  specs: CI's run of main's head {red[0]}: {red[1]}\n"
-                "    This ship's first push plans reduced coverage, so CI holds it, and Edge,\n"
-                "    until that run is re-run and passes or a full-plan push lands on main."
+                "    This ship's reduced CI run depends on that earlier result.\n"
+                "    CI does not gate Edge. Stable release qualification still requires green CI."
             )
-    # A merged CI check that needs the new component code fails against the old
-    # pins in the merged work's own run, and CI then holds the pin push and Edge
-    # (agent#43's ship, 2026-11-06). Say so while it can still go out with the pins.
+    # Tests for new component behavior cannot pass against the previous pins.
+    # Put them and the pins on the remote together, before any run can start.
     if merged and not one_push and plans:
         changed = git(SPECS, "diff", "--name-only", f"origin/main..{merged_head}").split()
         checks = [p for p in changed if CI_CHECK.fullmatch(p)]
         if checks:
             print(
                 f"  specs: the merged commits change CI checks ({', '.join(checks)}) while "
-                f"{', '.join(plans)} move. A check that needs the new code fails against the "
-                "old pins in their own run, and CI holds Edge: ship with --one-push."
+                f"{', '.join(plans)} move. They will travel with the component pins in one push."
             )
+            one_push = True
     for plan in plans.values():
         if plan.push_main and not dry_run:
             push(plan.repo, f"{plan.name} main {plan.head[:7]}", "HEAD:main")
@@ -535,7 +535,7 @@ def ship(
     push(SPECS, f"specs main {commit[:7]}", "HEAD:main")
     alone = "" if one_push and merged else " alone"
     print(
-        f"Pushed specs {commit[:7]}{alone}. Edge publishes once its CI and image pass."
+        f"Pushed specs {commit[:7]}{alone}. Edge publishes once its image is verified."
     )
     return commit
 
@@ -573,9 +573,15 @@ def failed_main_run(commit: str) -> tuple[str, str] | None:
 
 
 def wait_for_edge(commit: str, minutes: float) -> int:
-    """Return 0 once `edge` contains `commit`; 1 with the failing jobs if CI fails."""
+    """Wait for the publisher's verdict; workflow failures are reported once.
+
+    CI does not gate Edge. Even a failed image run can be replaced by a rerun
+    or a verified image with identical inputs from another reachable commit.
+    """
     deadline = time.perf_counter() + minutes * 60
     started = time.perf_counter()
+    reported: set[tuple[str, int, str]] = set()
+    diagnostics: set[str] = set()
     while time.perf_counter() < deadline:
         git(SPECS, "fetch", "-q", "origin", "edge")
         edge = git(SPECS, "rev-parse", "origin/edge")
@@ -587,47 +593,49 @@ def wait_for_edge(commit: str, minutes: float) -> int:
             print("On an install: Machines -> the machine's update card -> Check now, then Update.")
             return 0
         for workflow in ("ci.yml", "container.yml"):
-            runs = gh_json(
-                "run",
-                "list",
-                "--workflow",
-                workflow,
-                "--commit",
-                commit,
-                "--event",
-                "push",
-                "--json",
-                "databaseId,status,conclusion",
-            )
-            for entry in runs if isinstance(runs, list) else []:
-                # A cancelled run is not a failure here. A failed run of the
-                # merged work pushed first fails this commit's run as well
-                # (its "previous push" job), and is named through it.
-                if entry["status"] == "completed" and entry["conclusion"] in (
-                    "failure",
-                    "timed_out",
-                ):
-                    jobs = gh_json(
-                        "run", "view", str(entry["databaseId"]), "--json", "jobs"
-                    )
-                    failed = [
-                        j["name"]
-                        for j in (jobs or {}).get("jobs", [])
-                        if j.get("conclusion") == "failure"
-                    ]
-                    print(
-                        f"{workflow} failed for {commit[:7]}: {', '.join(failed) or entry['conclusion']}"
-                    )
-                    print(f"  gh run view {entry['databaseId']} --log-failed")
-                    if GUARD_JOB in failed:
-                        print(
-                            "  The push before this one did not pass CI, so this reduced-plan\n"
-                            "  run is held. Merged specs work that needs the new component code\n"
-                            "  fails against the old pins: ship such work with --one-push. Only a\n"
-                            "  re-run of that run that passes, or a full-plan push to main,\n"
-                            "  clears the hold."
+            try:
+                runs = gh_json(
+                    "run",
+                    "list",
+                    "--workflow",
+                    workflow,
+                    "--branch",
+                    "main",
+                    "--commit",
+                    commit,
+                    "--event",
+                    "push",
+                    "--json",
+                    "databaseId,status,conclusion",
+                )
+                for entry in runs if isinstance(runs, list) else []:
+                    key = (workflow, entry["databaseId"], entry["conclusion"])
+                    if entry["status"] == "completed" and entry["conclusion"] in (
+                        "failure",
+                        "timed_out",
+                    ) and key not in reported:
+                        reported.add(key)
+                        jobs = gh_json(
+                            "run", "view", str(entry["databaseId"]), "--json", "jobs"
                         )
-                    return 1
+                        failed = [
+                            j["name"]
+                            for j in (jobs or {}).get("jobs", [])
+                            if j.get("conclusion") == "failure"
+                        ]
+                        label = "CI" if workflow == "ci.yml" else "Container image"
+                        print(f"{label} failed for {commit[:7]}: {', '.join(failed) or entry['conclusion']}")
+                        print(f"  gh run view {entry['databaseId']} --log-failed")
+                        print(
+                            "  CI does not gate Edge; fix it before a stable release."
+                            if workflow == "ci.yml" else
+                            "  Waiting for the publisher or a replacement verified image."
+                        )
+            except Stop as error:
+                message = f"Could not read {workflow} diagnostics: {error}"
+                if message not in diagnostics:
+                    print(message)
+                    diagnostics.add(message)
         time.sleep(30)
     print(
         f"Edge did not include {commit[:7]} within {minutes:.0f} minutes; see `gh run list`."
@@ -691,10 +699,10 @@ def report_stop(stop: Stop, *, waiting: bool) -> int:
     pushes, when only the wait fails (a rate limit, say), leaves the pins on
     origin, so it says so."""
     if not PUSHED:
-        lead = "Could not watch CI" if waiting else "Not shipped"
+        lead = "Could not watch Edge" if waiting else "Not shipped"
         print(f"{lead}: {stop}", file=sys.stderr)
         return 2
-    lead = "Pushed; could not watch CI" if waiting else "Pushed part of the ship; then it stopped"
+    lead = "Pushed; could not watch Edge" if waiting else "Pushed part of the ship; then it stopped"
     print(f"{lead}: {stop}", file=sys.stderr)
     print("Already pushed:", file=sys.stderr)
     for item in PUSHED:
